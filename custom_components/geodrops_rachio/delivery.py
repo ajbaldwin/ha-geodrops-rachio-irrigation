@@ -32,13 +32,19 @@ async def async_deliver(hass: HomeAssistant, entry_data: dict, *,
     """
     pyscript_dir = pathlib.Path(pyscript_dir)
     bundled_dir = pathlib.Path(bundled_dir)
-    bundled_version = read_stamp(bundled_dir / "VERSION") or "unknown"
     stamp_path = pyscript_dir / INSTALLED_STAMP
     config_path = pyscript_dir / CONFIG_FILENAME
 
     config_text = generate_config(entry_data)  # raises ValueError on bad overrides
 
-    code_changed = needs_delivery(bundled_version, stamp_path)
+    def _read_version_state() -> tuple[str, bool]:
+        # Both stamp reads are blocking file I/O — read_stamp(bundled VERSION)
+        # and the installed-stamp read inside needs_delivery() — so this
+        # whole comparison runs inside the executor job, never on the loop.
+        bundled_version = read_stamp(bundled_dir / "VERSION") or "unknown"
+        return bundled_version, needs_delivery(bundled_version, stamp_path)
+
+    bundled_version, code_changed = await hass.async_add_executor_job(_read_version_state)
 
     def _write_code() -> None:
         (pyscript_dir / "modules").mkdir(parents=True, exist_ok=True)
