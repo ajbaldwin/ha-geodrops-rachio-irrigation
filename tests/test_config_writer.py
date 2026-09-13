@@ -53,3 +53,41 @@ def test_non_mapping_override_raises():
     data = {**BASE, "advanced_overrides": "- a\n- b"}   # valid YAML, but a list
     with pytest.raises(ValueError):
         generate_config(data)
+
+
+def test_emits_bands_defaults():
+    doc = yaml.safe_load(generate_config(BASE))
+    assert doc["bands"] == {
+        "dry": {"low": 0, "high": 62},
+        "dry_plus": {"low": 62, "high": 67},
+        "moist": {"low": 67, "high": 76},
+        "moist_plus": {"low": 76, "high": 87},
+        "wet": {"low": 87, "high": 95},
+        "wet_plus": {"low": 95, "high": 100},
+    }
+
+
+def test_emits_drought_profiles_defaults():
+    doc = yaml.safe_load(generate_config(BASE))
+    profiles = doc["drought_profiles"]
+    assert set(profiles) == {
+        "Level 0 - Normal", "Level 1 - Mild", "Level 2 - Significant",
+        "Level 3 - Critical", "Level 4 - Emergency",
+    }
+    assert profiles["Level 0 - Normal"] == {
+        "target_offset": 0, "trigger_margin": 0, "runtime_scale": 1.0,
+        "rain_skip_horizon_hours": 12, "end_anchor": "sunrise",
+    }
+    assert profiles["Level 4 - Emergency"] == {
+        "target_offset": -2, "trigger_margin": 0, "runtime_scale": 0.5,
+        "rain_skip_horizon_hours": 24, "end_anchor": "dawn",
+    }
+
+
+def test_advanced_overrides_do_not_touch_bands_or_profiles():
+    data = {**BASE, "advanced_overrides": "cycle_minutes: 7"}
+    doc = yaml.safe_load(generate_config(data))
+    assert doc["tunables"]["cycle_minutes"] == 7
+    # bands/drought_profiles come from the defaults regardless of overrides.
+    assert doc["bands"]["moist"] == {"low": 67, "high": 76}
+    assert doc["drought_profiles"]["Level 3 - Critical"]["end_anchor"] == "dawn"

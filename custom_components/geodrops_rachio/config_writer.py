@@ -12,6 +12,55 @@ _DEFAULT_TUNABLES = {
     "self_calibration_enabled": False,
 }
 
+# Soil-moisture bands. The scheduler's parse_config direct-indexes raw["bands"],
+# so a generated config without this section is a KeyError on a real run. Values
+# copied verbatim from the canonical scheduler's examples/config.example.yaml
+# (agronomy, not site-specific — the wizard does not collect them). `low` is
+# inclusive, `high` exclusive except the top band's inclusive 100.
+_DEFAULT_BANDS = {
+    "dry": {"low": 0, "high": 62},
+    "dry_plus": {"low": 62, "high": 67},
+    "moist": {"low": 67, "high": 76},
+    "moist_plus": {"low": 76, "high": 87},
+    "wet": {"low": 87, "high": 95},
+    "wet_plus": {"low": 95, "high": 100},
+}
+
+# Drought-rating profiles. parse_config also direct-indexes
+# raw["drought_profiles"]; the KEYS must match the drought_level select's
+# options exactly. Values copied verbatim from the canonical scheduler's
+# examples/config.example.yaml.
+_DEFAULT_DROUGHT_PROFILES = {
+    "Level 0 - Normal": {
+        "target_offset": 0, "trigger_margin": 0, "runtime_scale": 1.0,
+        "rain_skip_horizon_hours": 12, "end_anchor": "sunrise",
+    },
+    "Level 1 - Mild": {
+        "target_offset": 0, "trigger_margin": 2, "runtime_scale": 0.9,
+        "rain_skip_horizon_hours": 18, "end_anchor": "sunrise",
+    },
+    "Level 2 - Significant": {
+        "target_offset": -1, "trigger_margin": 4, "runtime_scale": 0.8,
+        "rain_skip_horizon_hours": 24, "end_anchor": "sunrise",
+    },
+    "Level 3 - Critical": {
+        "target_offset": -1, "trigger_margin": 6, "runtime_scale": 0.7,
+        "rain_skip_horizon_hours": 24, "end_anchor": "dawn",
+    },
+    "Level 4 - Emergency": {
+        "target_offset": -2, "trigger_margin": 0, "runtime_scale": 0.5,
+        "rain_skip_horizon_hours": 24, "end_anchor": "dawn",
+    },
+}
+
+
+def _copy_bands() -> dict:
+    return {name: dict(vals) for name, vals in _DEFAULT_BANDS.items()}
+
+
+def _copy_drought_profiles() -> dict:
+    return {name: dict(vals) for name, vals in _DEFAULT_DROUGHT_PROFILES.items()}
+
 
 def _deep_merge(base: dict, overlay: dict) -> dict:
     out = dict(base)
@@ -46,6 +95,8 @@ def generate_config(data: dict) -> str:
     doc = {
         "homeassistant": dict(data.get("bindings", {})),
         "tunables": tunables,
+        "bands": _copy_bands(),
+        "drought_profiles": _copy_drought_profiles(),
         "zones": zones,
     }
     return GENERATED_HEADER + yaml.safe_dump(doc, sort_keys=False, default_flow_style=False)
