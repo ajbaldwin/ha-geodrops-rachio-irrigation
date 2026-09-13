@@ -37,6 +37,11 @@ REQUIRED_COMPONENTS = ("pyscript", "rachio")
 # (e.g. a hose/spray zone) or when the user prefers to type the numbers.
 MANUAL_ZONE = "__manual__"
 
+# notify.* services that can't be driven by `service.call("notify", <name>)`
+# the way the scheduler does — the generic entity-targeting service is excluded
+# from the notify picker and rejected by validation.
+GENERIC_NOTIFY_SERVICES = {"send_message"}
+
 # ---- Fixed, integration-owned bindings (native entities from Task 6c) ----
 FIXED_BINDINGS: dict[str, Any] = {
     "drought_level_select": "select.geodrops_rachio_drought_level",
@@ -240,39 +245,80 @@ class _BindingsWizardSteps:
             )
             self._live_zones = []
 
-    async def async_step_bindings(self, user_input=None):
-        if user_input is not None:
-            self._core = {
-                "notify_service": user_input["notify_service"],
-                "calendar_entity": user_input["calendar_entity"],
-                "rachio_device_name": user_input["rachio_device_name"],
-                "rachio_api_key_secret": self._secret_name,
-                "standby_switch": user_input["standby_switch"],
-                "forecast_entity": user_input["forecast_entity"],
-            }
-            await self._fetch_zones_for_device(user_input["rachio_device_name"])
-            return await self.async_step_weather()
+    def _notify_options(self) -> list[str]:
+        """Callable notify.* services, as `notify.<name>` values.
 
-        existing = self._existing_bindings()
+        The scheduler calls `service.call("notify", <name>)`, so the target must
+        be a real notify service (e.g. a legacy notify.mobile_app_*), NOT a
+        notify entity that only answers notify.send_message. The generic
+        send_message service needs an entity_id target, so it's excluded.
+        """
+        services = self.hass.services.async_services().get("notify", {})
+        return sorted(
+            f"notify.{name}" for name in services
+            if name not in GENERIC_NOTIFY_SERVICES)
+
+    def _notify_service_field(self, default):
+        options = self._notify_options()
+        if options:
+            if default not in options:
+                default = options[0]
+            return (
+                vol.Required("notify_service", default=default),
+                selector.SelectSelector(selector.SelectSelectorConfig(
+                    options=options, mode=selector.SelectSelectorMode.DROPDOWN,
+                    custom_value=True)),
+            )
+        # No notify services registered (unusual) — accept free text so setup
+        # isn't blocked; the submit-time check still validates it.
+        return (vol.Required("notify_service", default=default or ""), str)
+
+    def _notify_service_valid(self, value: str) -> bool:
+        name = (value or "").split(".", 1)[-1]
+        return bool(name) and name not in GENERIC_NOTIFY_SERVICES and (
+            self.hass.services.has_service("notify", name))
+
+    def _build_bindings_schema(self, defaults: dict) -> vol.Schema:
+        notify_key, notify_selector = self._notify_service_field(
+            defaults.get("notify_service"))
         device_key, device_selector = self._device_name_field(
-            existing.get("rachio_device_name", ""))
-        schema = vol.Schema({
+            defaults.get("rachio_device_name", ""))
+        return vol.Schema({
+            notify_key: notify_selector,
             vol.Required(
-                "notify_service", default=existing.get("notify_service")
-            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="notify")),
-            vol.Required(
-                "calendar_entity", default=existing.get("calendar_entity")
+                "calendar_entity", default=defaults.get("calendar_entity")
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="calendar")),
             device_key: device_selector,
             vol.Optional(
                 "standby_switch",
-                default=existing.get("standby_switch", DEFAULT_STANDBY_SWITCH),
+                default=defaults.get("standby_switch", DEFAULT_STANDBY_SWITCH),
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="switch")),
             vol.Required(
-                "forecast_entity", default=existing.get("forecast_entity")
+                "forecast_entity", default=defaults.get("forecast_entity")
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="weather")),
         })
-        return self.async_show_form(step_id="bindings", data_schema=schema)
+
+    async def async_step_bindings(self, user_input=None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if not self._notify_service_valid(user_input["notify_service"]):
+                errors["notify_service"] = "invalid_notify_service"
+            else:
+                self._core = {
+                    "notify_service": user_input["notify_service"],
+                    "calendar_entity": user_input["calendar_entity"],
+                    "rachio_device_name": user_input["rachio_device_name"],
+                    "rachio_api_key_secret": self._secret_name,
+                    "standby_switch": user_input["standby_switch"],
+                    "forecast_entity": user_input["forecast_entity"],
+                }
+                await self._fetch_zones_for_device(user_input["rachio_device_name"])
+                return await self.async_step_weather()
+
+        defaults = user_input if user_input is not None else self._existing_bindings()
+        schema = self._build_bindings_schema(defaults)
+        return self.async_show_form(
+            step_id="bindings", data_schema=schema, errors=errors)
 
     async def async_step_weather(self, user_input=None):
         if user_input is not None:

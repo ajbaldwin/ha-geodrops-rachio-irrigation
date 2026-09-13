@@ -19,7 +19,7 @@
         "title": "Core Setup",
         "description": "Point the scheduler at your notification, calendar, Rachio controller, and forecast entities.",
         "data": {
-          "notify_service": "Mobile / Notify Service",
+          "notify_service": "Notification Service",
           "calendar_entity": "Irrigation Log Calendar",
           "rachio_device_name": "Rachio Controller",
           "standby_switch": "Rachio Standby Switch",
@@ -28,7 +28,8 @@
         "data_description": {
           "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
-          "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means)."
+          "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
+          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. notify.mobile_app_<your phone>. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
         }
       },
       "weather": {
@@ -127,6 +128,9 @@
           "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
         }
       }
+    },
+    "error": {
+      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity."
     }
   },
   "options": {
@@ -145,7 +149,7 @@
         "title": "Core Setup",
         "description": "Point the scheduler at your notification, calendar, Rachio controller, and forecast entities.",
         "data": {
-          "notify_service": "Mobile / Notify Service",
+          "notify_service": "Notification Service",
           "calendar_entity": "Irrigation Log Calendar",
           "rachio_device_name": "Rachio Controller",
           "standby_switch": "Rachio Standby Switch",
@@ -154,7 +158,8 @@
         "data_description": {
           "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
-          "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means)."
+          "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
+          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. notify.mobile_app_<your phone>. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
         }
       },
       "weather": {
@@ -253,6 +258,9 @@
           "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
         }
       }
+    },
+    "error": {
+      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity."
     }
   }
 }
