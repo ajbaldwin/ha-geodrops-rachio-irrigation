@@ -1,9 +1,12 @@
 from __future__ import annotations
 import hashlib
+import logging
 import pathlib
 import shutil
 from homeassistant.core import HomeAssistant
 from .config_writer import generate_config
+
+_LOGGER = logging.getLogger(__name__)
 
 CONFIG_FILENAME = "geodrops_rachio_config.yaml"
 SCRIPT_FILENAME = "geodrops_rachio.py"
@@ -86,14 +89,27 @@ async def async_deliver(hass: HomeAssistant, entry_data: dict, *,
     def _existing_config() -> str | None:
         return config_path.read_text(encoding="utf-8") if config_path.exists() else None
 
+    async def _reload_pyscript() -> None:
+        # On restart this integration can set up before pyscript has registered
+        # its reload service. Skipping is safe: the files are already on disk,
+        # so pyscript loads them on its own startup. The reload matters only for
+        # live re-delivery while pyscript is already running (options changes),
+        # where the service is present.
+        if hass.services.has_service("pyscript", "reload"):
+            await hass.services.async_call("pyscript", "reload", blocking=True)
+        else:
+            _LOGGER.debug(
+                "pyscript.reload not available yet; skipping — pyscript will "
+                "load the delivered script on its own startup")
+
     if code_changed:
         await hass.async_add_executor_job(_write_code)
         await hass.async_add_executor_job(_write_config)
-        await hass.services.async_call("pyscript", "reload", blocking=True)
+        await _reload_pyscript()
     else:
         old_config = await hass.async_add_executor_job(_existing_config)
         if old_config != config_text:
             await hass.async_add_executor_job(_write_config)
-            await hass.services.async_call("pyscript", "reload", blocking=True)
+            await _reload_pyscript()
 
     return code_changed
