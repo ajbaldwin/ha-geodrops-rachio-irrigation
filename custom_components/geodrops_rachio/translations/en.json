@@ -6,7 +6,7 @@
     },
     "step": {
       "connect": {
-        "title": "Connect to Rachio",
+        "title": "Connect Your Rachio Account",
         "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you.\n\nHome Assistant keeps API keys in **`config/secrets.yaml`**. Below, enter the **name** of the entry in that file that holds your Rachio API key — not the key itself. If you haven't added it yet, add a line to `secrets.yaml` first, then come back.\n\nIf the name can't be read, you can still complete setup by entering everything manually on the next screens.",
         "data": {
           "rachio_api_key_secret": "Rachio API Key — Secret Name"
@@ -128,7 +128,7 @@
   "options": {
     "step": {
       "connect": {
-        "title": "Connect to Rachio",
+        "title": "Connect Your Rachio Account",
         "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you.\n\nHome Assistant keeps API keys in **`config/secrets.yaml`**. Below, enter the **name** of the entry in that file that holds your Rachio API key — not the key itself. If you haven't added it yet, add a line to `secrets.yaml` first, then come back.\n\nIf the name can't be read, you can still complete setup by entering everything manually on the next screens.",
         "data": {
           "rachio_api_key_secret": "Rachio API Key — Secret Name"
