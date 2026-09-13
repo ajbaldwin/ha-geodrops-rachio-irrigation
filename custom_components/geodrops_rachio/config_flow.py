@@ -375,9 +375,17 @@ class _BindingsWizardSteps:
         Lets the admin add, edit, or remove zones, or leave them as-is and
         move on to the advanced step.
         """
+        # Inline labels (dict) so the menu never renders blank when the
+        # frontend hasn't loaded this integration's translations yet — a
+        # list here would rely on a translation lookup for each label.
         return self.async_show_menu(
             step_id="manage_zones",
-            menu_options=["add_zone", "edit_zone", "remove_zone", "finish"])
+            menu_options={
+                "add_zone": "Add a zone",
+                "edit_zone": "Edit a zone",
+                "remove_zone": "Remove a zone",
+                "finish": "Done",
+            })
 
     async def async_step_add_zone(self, user_input=None):
         self._editing_key = None
