@@ -49,7 +49,48 @@
       },
       "zone": {
         "title": "Add a Zone",
-        "description": "Define one Rachio zone: its switch, its GeoDrops moisture sensors, and how much water a full refill needs.",
+        "description": "Pick a Rachio zone to auto-fill its runtime and refill depth, or enter one manually.",
+        "data": {
+          "key": "Zone Name",
+          "rachio_switch": "Rachio Zone Switch",
+          "dominant_sensor": "GeoDrops Dominant Moisture Sensor",
+          "state_sensor": "GeoDrops Moisture State Sensor",
+          "quality_sensors": "GeoDrops Quality Sensors",
+          "target_range": "GeoDrops Target Moisture Level",
+          "geography": "Zone Grouping (optional)",
+          "adjacency": "Adjacent Zones (optional)",
+          "runtime_minutes": "Full-Refill Runtime (minutes)",
+          "refill_depth_mm": "Full-Refill Depth (mm)",
+          "spray": "Spray Zone",
+          "add_another_zone": "Add another zone after this one",
+          "rachio_zone": "Rachio Zone"
+        },
+        "data_description": {
+          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs.",
+          "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
+          "geography": "A free-text label to group zones for your own organization (e.g. front, back). Not used by the scheduler's logic.",
+          "adjacency": "Other zones physically next to this one; the scheduler avoids watering neighbors back-to-back to limit runoff.",
+          "runtime_minutes": "Minutes for a full refill of this zone — use the Rachio app's computed zone runtime.",
+          "refill_depth_mm": "Full-refill depth in mm — Rachio's depthOfWater (inches) × 25.4.",
+          "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running.",
+          "rachio_zone": "Pick your zone from the live list pulled from Rachio — its runtime and refill depth are pre-filled on the next screen. Choose \"Enter manually\" for a zone that isn't in Rachio."
+        }
+      },
+      "advanced": {
+        "title": "Advanced",
+        "description": "Active Watering Calibration is Beta and off by default.",
+        "data": {
+          "self_calibration_enabled": "Enable Active Watering Calibration (Beta)",
+          "advanced_overrides": "Advanced tunable overrides (YAML)"
+        },
+        "data_description": {
+          "self_calibration_enabled": "When on, each zone learns its own dosing from soil-moisture response. Beta — leave off until you've watched it run.",
+          "advanced_overrides": "Optional YAML mapping merged into tunables for advanced tuning. Leave blank unless you know what you're changing."
+        }
+      },
+      "zone_details": {
+        "title": "Zone Details",
+        "description": "Confirm this zone's switch and GeoDrops sensors. Runtime and refill depth are pre-filled from Rachio when available — edit if needed.",
         "data": {
           "key": "Zone Name",
           "rachio_switch": "Rachio Zone Switch",
@@ -69,21 +110,9 @@
           "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
           "geography": "A free-text label to group zones for your own organization (e.g. front, back). Not used by the scheduler's logic.",
           "adjacency": "Other zones physically next to this one; the scheduler avoids watering neighbors back-to-back to limit runoff.",
-          "runtime_minutes": "Minutes for a full refill of this zone — use the Rachio app's computed zone runtime.",
-          "refill_depth_mm": "Full-refill depth in mm — Rachio's depthOfWater (inches) × 25.4.",
+          "runtime_minutes": "Minutes for a full refill — pre-filled from Rachio's computed zone runtime when available.",
+          "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
           "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running."
-        }
-      },
-      "advanced": {
-        "title": "Advanced",
-        "description": "Active Watering Calibration is Beta and off by default.",
-        "data": {
-          "self_calibration_enabled": "Enable Active Watering Calibration (Beta)",
-          "advanced_overrides": "Advanced tunable overrides (YAML)"
-        },
-        "data_description": {
-          "self_calibration_enabled": "When on, each zone learns its own dosing from soil-moisture response. Beta — leave off until you've watched it run.",
-          "advanced_overrides": "Optional YAML mapping merged into tunables for advanced tuning. Leave blank unless you know what you're changing."
         }
       }
     }
@@ -134,7 +163,48 @@
       },
       "zone": {
         "title": "Add a Zone",
-        "description": "Define one Rachio zone: its switch, its GeoDrops moisture sensors, and how much water a full refill needs.",
+        "description": "Pick a Rachio zone to auto-fill its runtime and refill depth, or enter one manually.",
+        "data": {
+          "key": "Zone Name",
+          "rachio_switch": "Rachio Zone Switch",
+          "dominant_sensor": "GeoDrops Dominant Moisture Sensor",
+          "state_sensor": "GeoDrops Moisture State Sensor",
+          "quality_sensors": "GeoDrops Quality Sensors",
+          "target_range": "GeoDrops Target Moisture Level",
+          "geography": "Zone Grouping (optional)",
+          "adjacency": "Adjacent Zones (optional)",
+          "runtime_minutes": "Full-Refill Runtime (minutes)",
+          "refill_depth_mm": "Full-Refill Depth (mm)",
+          "spray": "Spray Zone",
+          "add_another_zone": "Add another zone after this one",
+          "rachio_zone": "Rachio Zone"
+        },
+        "data_description": {
+          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs.",
+          "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
+          "geography": "A free-text label to group zones for your own organization (e.g. front, back). Not used by the scheduler's logic.",
+          "adjacency": "Other zones physically next to this one; the scheduler avoids watering neighbors back-to-back to limit runoff.",
+          "runtime_minutes": "Minutes for a full refill of this zone — use the Rachio app's computed zone runtime.",
+          "refill_depth_mm": "Full-refill depth in mm — Rachio's depthOfWater (inches) × 25.4.",
+          "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running.",
+          "rachio_zone": "Pick your zone from the live list pulled from Rachio — its runtime and refill depth are pre-filled on the next screen. Choose \"Enter manually\" for a zone that isn't in Rachio."
+        }
+      },
+      "advanced": {
+        "title": "Advanced",
+        "description": "Active Watering Calibration is Beta and off by default.",
+        "data": {
+          "self_calibration_enabled": "Enable Active Watering Calibration (Beta)",
+          "advanced_overrides": "Advanced tunable overrides (YAML)"
+        },
+        "data_description": {
+          "self_calibration_enabled": "When on, each zone learns its own dosing from soil-moisture response. Beta — leave off until you've watched it run.",
+          "advanced_overrides": "Optional YAML mapping merged into tunables for advanced tuning. Leave blank unless you know what you're changing."
+        }
+      },
+      "zone_details": {
+        "title": "Zone Details",
+        "description": "Confirm this zone's switch and GeoDrops sensors. Runtime and refill depth are pre-filled from Rachio when available — edit if needed.",
         "data": {
           "key": "Zone Name",
           "rachio_switch": "Rachio Zone Switch",
@@ -154,21 +224,9 @@
           "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
           "geography": "A free-text label to group zones for your own organization (e.g. front, back). Not used by the scheduler's logic.",
           "adjacency": "Other zones physically next to this one; the scheduler avoids watering neighbors back-to-back to limit runoff.",
-          "runtime_minutes": "Minutes for a full refill of this zone — use the Rachio app's computed zone runtime.",
-          "refill_depth_mm": "Full-refill depth in mm — Rachio's depthOfWater (inches) × 25.4.",
+          "runtime_minutes": "Minutes for a full refill — pre-filled from Rachio's computed zone runtime when available.",
+          "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
           "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running."
-        }
-      },
-      "advanced": {
-        "title": "Advanced",
-        "description": "Active Watering Calibration is Beta and off by default.",
-        "data": {
-          "self_calibration_enabled": "Enable Active Watering Calibration (Beta)",
-          "advanced_overrides": "Advanced tunable overrides (YAML)"
-        },
-        "data_description": {
-          "self_calibration_enabled": "When on, each zone learns its own dosing from soil-moisture response. Beta — leave off until you've watched it run.",
-          "advanced_overrides": "Optional YAML mapping merged into tunables for advanced tuning. Leave blank unless you know what you're changing."
         }
       }
     }
