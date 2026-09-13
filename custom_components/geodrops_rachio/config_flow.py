@@ -523,14 +523,18 @@ class _BindingsWizardSteps:
         key field is shown), and submit replaces that zone in place.
         """
         if user_input is not None:
-            zid = self._picked_zone["id"] if self._picked_zone else ""
             if self._editing_key:
+                stored = self._stored_zone(self._editing_key)
+                zid = (
+                    self._picked_zone["id"] if self._picked_zone
+                    else stored.get("rachio_zone_id", ""))
                 self._data["zones"] = [
                     z for z in self._data["zones"] if z["key"] != self._editing_key]
                 self._append_zone(dict(user_input, key=self._editing_key),
                                   rachio_zone_id=zid)
                 self._editing_key = None
                 return await self.async_step_manage_zones()
+            zid = self._picked_zone["id"] if self._picked_zone else ""
             self._append_zone(user_input, rachio_zone_id=zid)
             if user_input.get("add_another_zone"):
                 return await self.async_step_zone()
