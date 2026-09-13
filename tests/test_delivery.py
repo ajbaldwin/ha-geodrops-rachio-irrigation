@@ -54,3 +54,36 @@ async def test_async_deliver_writes_files_and_reloads(hass, tmp_path, monkeypatc
         hass, entry_data, pyscript_dir=pyscript_dir, bundled_dir=bundled)
     assert changed2 is False
     hass.services.async_call.assert_not_awaited()
+
+
+async def test_async_deliver_reloads_when_only_config_changes(hass, tmp_path, monkeypatch):
+    bundled = tmp_path / "bundled_app"
+    (bundled / "irrigation_lib").mkdir(parents=True)
+    (bundled / "geodrops_rachio.py").write_text("# script\n")
+    (bundled / "irrigation_lib" / "__init__.py").write_text("")
+    (bundled / "VERSION").write_text("2.0.0\n")
+
+    pyscript_dir = tmp_path / "pyscript"
+    pyscript_dir.mkdir()
+
+    monkeypatch.setattr(type(hass.services), "async_call", AsyncMock())
+    entry_data = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
+                  "advanced_overrides": ""}
+
+    changed = await delivery.async_deliver(
+        hass, entry_data, pyscript_dir=pyscript_dir, bundled_dir=bundled)
+    assert changed is True
+
+    # Same bundled dir/stamp (code unchanged), but different entry_data so
+    # the generated config text differs -> must rewrite config and reload,
+    # even though the code/version stamp did not change.
+    hass.services.async_call.reset_mock()
+    new_entry_data = {"bindings": {}, "zones": [], "self_calibration_enabled": True,
+                       "advanced_overrides": ""}
+    changed2 = await delivery.async_deliver(
+        hass, new_entry_data, pyscript_dir=pyscript_dir, bundled_dir=bundled)
+
+    assert changed2 is False
+    hass.services.async_call.assert_awaited_with("pyscript", "reload", blocking=True)
+    updated_config = (pyscript_dir / "geodrops_rachio_config.yaml").read_text(encoding="utf-8")
+    assert "self_calibration_enabled: true" in updated_config
