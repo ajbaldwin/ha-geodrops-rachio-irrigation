@@ -54,6 +54,10 @@ class ZoneStateCoordinator:
     def add_listener(self, cb) -> None:
         self._listeners.append(cb)
 
+    def remove_listener(self, cb) -> None:
+        if cb in self._listeners:
+            self._listeners.remove(cb)
+
     @callback
     def _notify(self) -> None:
         for cb in self._listeners:

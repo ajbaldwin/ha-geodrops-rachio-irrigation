@@ -128,6 +128,7 @@ class ZoneCoordinatorSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         self._coord.add_listener(self._update)
+        self.async_on_remove(lambda: self._coord.remove_listener(self._update))
         self._update()
 
     @callback

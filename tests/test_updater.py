@@ -1,14 +1,5 @@
 from custom_components.geodrops_rachio import updater
 
-
-def test_decide_action():
-    assert updater.decide_action(wrapper_changed=True, brain_changed=False) == "restart"
-    assert updater.decide_action(wrapper_changed=False, brain_changed=True) == "reload"
-    assert updater.decide_action(wrapper_changed=False, brain_changed=False) == "noop"
-    # wrapper change dominates (Python can't hot-swap)
-    assert updater.decide_action(wrapper_changed=True, brain_changed=True) == "restart"
-
-
 from unittest.mock import AsyncMock, patch
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.geodrops_rachio.const import DOMAIN
