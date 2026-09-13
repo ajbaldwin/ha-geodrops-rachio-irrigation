@@ -5,20 +5,28 @@
       "single_instance_allowed": "GeoDrops + Rachio Irrigation is already configured."
     },
     "step": {
+      "connect": {
+        "title": "Connect to Rachio",
+        "description": "Enter the secrets.yaml key NAME that holds your Rachio API key. If it resolves, the wizard reads your controllers and zones to pre-fill the rest of setup.",
+        "data": {
+          "rachio_api_key_secret": "Rachio API Key — Secret Name"
+        },
+        "data_description": {
+          "rachio_api_key_secret": "The key NAME in secrets.yaml that holds your Rachio API key — not the key value itself."
+        }
+      },
       "bindings": {
         "title": "Core Setup",
         "description": "Point the scheduler at your notification, calendar, Rachio controller, and forecast entities.",
         "data": {
           "notify_service": "Mobile / Notify Service",
           "calendar_entity": "Irrigation Log Calendar",
-          "rachio_device_name": "Rachio Controller Name",
-          "rachio_api_key_secret": "Rachio API Key — Secret Name",
+          "rachio_device_name": "Rachio Controller",
           "standby_switch": "Rachio Standby Switch",
           "forecast_entity": "Weather Forecast Entity"
         },
         "data_description": {
-          "rachio_device_name": "The exact device name of your Rachio controller (Rachio app → Settings → Devices).",
-          "rachio_api_key_secret": "The key NAME in secrets.yaml that holds your Rachio API key — not the key value itself.",
+          "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
           "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means)."
         }
@@ -119,20 +127,28 @@
   },
   "options": {
     "step": {
+      "connect": {
+        "title": "Connect to Rachio",
+        "description": "Enter the secrets.yaml key NAME that holds your Rachio API key. If it resolves, the wizard reads your controllers and zones to pre-fill the rest of setup.",
+        "data": {
+          "rachio_api_key_secret": "Rachio API Key — Secret Name"
+        },
+        "data_description": {
+          "rachio_api_key_secret": "The key NAME in secrets.yaml that holds your Rachio API key — not the key value itself."
+        }
+      },
       "bindings": {
         "title": "Core Setup",
         "description": "Point the scheduler at your notification, calendar, Rachio controller, and forecast entities.",
         "data": {
           "notify_service": "Mobile / Notify Service",
           "calendar_entity": "Irrigation Log Calendar",
-          "rachio_device_name": "Rachio Controller Name",
-          "rachio_api_key_secret": "Rachio API Key — Secret Name",
+          "rachio_device_name": "Rachio Controller",
           "standby_switch": "Rachio Standby Switch",
           "forecast_entity": "Weather Forecast Entity"
         },
         "data_description": {
-          "rachio_device_name": "The exact device name of your Rachio controller (Rachio app → Settings → Devices).",
-          "rachio_api_key_secret": "The key NAME in secrets.yaml that holds your Rachio API key — not the key value itself.",
+          "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
           "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means)."
         }
