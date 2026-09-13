@@ -29,7 +29,7 @@
           "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
           "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
-          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. notify.mobile_app_<your phone>. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
+          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
         }
       },
       "weather": {
@@ -159,7 +159,7 @@
           "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
           "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
-          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. notify.mobile_app_<your phone>. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
+          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
         }
       },
       "weather": {
