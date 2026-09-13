@@ -72,39 +72,47 @@ All carry `unique_id = f"{entry_id}_zone_{slug}_<suffix>"`,
 
 | suffix | source | device_class / unit | notes |
 |--------|--------|---------------------|-------|
-| `soil_moisture` | `last_nightly.dominant_by_zone[key]` | none / `pts` (0–100) | dominant moisture the scheduler waters toward |
-| `deficit` | per-zone dosing `deficit_pts` in `last_nightly` | none / `pts` | target − dominant at last plan |
-| `planned_runtime` | `last_nightly.runs` `[key, minutes]` | duration / `min` | minutes planned last nightly |
-| `last_delivered_runtime` | `last_nightly.delivered[key]` | duration / `min` | minutes actually delivered |
-| `last_watered` | `last_nightly` timestamp when `key in watered` | `timestamp` | last night the zone watered |
-| `calibration_state` | efficacy file `[key]["state"]` | enum | e.g. `calibrating`, `converged`, `excluded` |
+| `soil_moisture` | the zone's own `dominant_sensor` (from zone config) | none / `pts` (0–100) | live mirror of the GeoDrops dominant sensor, attached to the zone device |
+| `planned_runtime` | `pyscript.geodrops_rachio_preview` attr `planned_minutes[key]` | duration / `min` | minutes the last preview/plan would water |
+| `last_delivered_runtime` | `pyscript.geodrops_rachio_last_nightly` attr `delivered_minutes[key]` | duration / `min` | minutes actually delivered last nightly |
+| `last_watered` | `last_nightly` attr `end` when `key in last_nightly.watered` | `timestamp` | last night the zone watered |
+| `calibration_state` | efficacy file `[key]["state"]` | enum | `calibrating` / `converged` / … |
 | `efficacy` | efficacy file `[key]["efficacy"]` | none / `pts/min` | null while calibrating |
 
-Every sensor **degrades to `unknown`** when its source key/attribute/file is
-absent, so a partial payload or a fresh install never raises.
+Every sensor **degrades to `unknown`** when its source key/attribute/file/entity
+is absent, so a partial payload or a fresh install never raises.
+
+**Dropped from v1:** a per-zone `deficit` sensor — deficit = target − dominant,
+but `target` is computed inside the scheduler from the drought level + bands and
+is not published; deriving it in the integration would duplicate scheduler logic.
+Deferred until the scheduler publishes it (see Out of scope).
 
 ### 3. Data sources (read-only)
 
-Two sources, both already produced by the scheduler; no scheduler change:
+Sources, all already produced by the scheduler; no scheduler change. A single
+**coordinator** owns them and fans values to the per-zone entities:
 
-1. **Published state entity** `pyscript.geodrops_rachio_last_nightly`
-   (namespaced by PR #4). Its attributes carry per-zone data:
-   `dominant_by_zone`, `runs` (`[[key, minutes], …]`), `delivered`
-   (`{key: minutes}`), `watered` (`[key, …]`), and per-zone dosing detail
-   including `deficit_pts`. A single **coordinator** subscribes to this entity
-   via `async_track_state_change_event` and fans values out to the per-zone
-   sensors. Exact attribute keys are confirmed against the vendored script
-   during implementation; any missing key → that sensor reads `unknown` (Risk R1).
+1. **Published entities** — subscribe via `async_track_state_change_event`:
+   - `pyscript.geodrops_rachio_last_nightly` (namespaced by PR #4). Confirmed
+     attribute shape: `delivered_minutes` (`{key: minutes}`), `watered`
+     (`[key, …]`), `end` (ISO timestamp), and `calibration`
+     (`{key: {state, efficacy, …}}` — for watered zones only). Sources
+     `last_delivered_runtime` and `last_watered`.
+   - `pyscript.geodrops_rachio_preview` — attribute `planned_minutes`
+     (`{key: minutes}`). Sources `planned_runtime`. May be empty on a fresh box
+     → `unknown`.
+   - The zone's own `dominant_sensor` (an entity id from the zone config) →
+     `soil_moisture` mirror.
 
-2. **State file** `<config>/pyscript/geodrops_rachio_state/geodrops_rachio_efficacy.json`,
-   shape `{zone_key: {"efficacy", "span_pts", "state", "n_obs", …}}`. Read via
-   `hass.async_add_executor_job` (file I/O off the loop). Refreshed:
-   - on startup, and
-   - whenever `last_nightly` changes (calibration runs alongside the nightly),
-   - with a slow periodic fallback (e.g. hourly) in case of external edits.
-
-   The path is derived from delivery's constants (`STATE_DIR` basename +
-   `geodrops_rachio_efficacy.json`), centralized as a constant in `const.py`.
+2. **State file** `<config>/pyscript/geodrops_rachio_state/irrigation_efficacy.json`
+   (confirmed name — only the *directory* is namespaced; `EFFICACY_PATH` in the
+   scheduler is `STATE_DIR + "/irrigation_efficacy.json"`), shape
+   `{zone_key: {"efficacy", "span_pts", "state", "n_obs", …}}`. Read via
+   `hass.async_add_executor_job` (file I/O off the loop). Covers **all** zones
+   (the `last_nightly.calibration` attr covers only zones that watered), so it is
+   the source for `calibration_state` + `efficacy`. Refreshed on startup, on each
+   `last_nightly` change, and on a slow periodic fallback (hourly). The path is a
+   `const.py` constant shared with `delivery`.
 
 A small **`ZoneStateCoordinator`** (plain object, not necessarily a
 `DataUpdateCoordinator`) owns both sources and exposes
