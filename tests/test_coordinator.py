@@ -29,3 +29,17 @@ def test_parse_efficacy_extracts_zone():
         "efficacy": 0.42, "calibration_state": "converged"}
     assert parse_efficacy(store, "missing") == {
         "efficacy": None, "calibration_state": None}
+
+
+def test_remove_listener_stops_callbacks():
+    from custom_components.geodrops_rachio.coordinator import ZoneStateCoordinator
+    c = ZoneStateCoordinator(None, None)
+    calls = []
+    cb = lambda: calls.append(1)
+    c.add_listener(cb)
+    c._notify()
+    assert calls == [1]
+    c.remove_listener(cb)
+    c._notify()
+    assert calls == [1]  # no further callbacks after removal
+    c.remove_listener(lambda: None)  # removing an unknown cb is a no-op
