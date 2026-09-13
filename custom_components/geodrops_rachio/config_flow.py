@@ -522,6 +522,7 @@ class _BindingsWizardSteps:
         instead pre-fills from the stored zone, the key stays immutable (no
         key field is shown), and submit replaces that zone in place.
         """
+        errors: dict[str, str] = {}
         if user_input is not None:
             if self._editing_key:
                 stored = self._stored_zone(self._editing_key)
@@ -534,11 +535,15 @@ class _BindingsWizardSteps:
                                   rachio_zone_id=zid)
                 self._editing_key = None
                 return await self.async_step_manage_zones()
-            zid = self._picked_zone["id"] if self._picked_zone else ""
-            self._append_zone(user_input, rachio_zone_id=zid)
-            if user_input.get("add_another_zone"):
-                return await self.async_step_zone()
-            return await self.async_step_advanced()
+            if any(slug(user_input["key"]) == slug(z["key"])
+                   for z in self._data["zones"]):
+                errors["key"] = "duplicate_zone_key"
+            else:
+                zid = self._picked_zone["id"] if self._picked_zone else ""
+                self._append_zone(user_input, rachio_zone_id=zid)
+                if user_input.get("add_another_zone"):
+                    return await self.async_step_zone()
+                return await self.async_step_advanced()
 
         editing = bool(self._editing_key)
         stored = self._stored_zone(self._editing_key) if editing else {}
@@ -585,14 +590,20 @@ class _BindingsWizardSteps:
         if not editing:
             schema_dict[vol.Optional("add_another_zone", default=False)] = bool
         return self.async_show_form(
-            step_id="zone_details", data_schema=vol.Schema(schema_dict))
+            step_id="zone_details", data_schema=vol.Schema(schema_dict),
+            errors=errors)
 
     async def _async_step_zone_manual(self, user_input=None):
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._append_zone(user_input)
-            if user_input.get("add_another_zone"):
-                return await self.async_step_zone()
-            return await self.async_step_advanced()
+            if any(slug(user_input["key"]) == slug(z["key"])
+                   for z in self._data["zones"]):
+                errors["key"] = "duplicate_zone_key"
+            else:
+                self._append_zone(user_input)
+                if user_input.get("add_another_zone"):
+                    return await self.async_step_zone()
+                return await self.async_step_advanced()
 
         existing_keys = [z["key"] for z in self._data["zones"]]
         schema = vol.Schema({
@@ -615,7 +626,8 @@ class _BindingsWizardSteps:
             vol.Optional("spray", default=False): bool,
             vol.Optional("add_another_zone", default=False): bool,
         })
-        return self.async_show_form(step_id="zone", data_schema=schema)
+        return self.async_show_form(
+            step_id="zone", data_schema=schema, errors=errors)
 
     async def async_step_advanced(self, user_input=None):
         if user_input is not None:
