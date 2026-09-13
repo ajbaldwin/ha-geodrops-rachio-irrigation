@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from irrigation_lib.blocks import ZoneRun
+from geodrops_rachio_lib.blocks import ZoneRun
 
 # Slack for float dust from drought-scaled runtimes (mirrors blocks.py).
 _EPS = 1e-9

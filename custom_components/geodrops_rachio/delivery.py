@@ -8,6 +8,10 @@ from .config_writer import generate_config
 CONFIG_FILENAME = "geodrops_rachio_config.yaml"
 SCRIPT_FILENAME = "geodrops_rachio.py"
 INSTALLED_STAMP = ".geodrops_rachio_version"
+# Namespaced lib package name (see tools/vendor_scheduler.py): delivered to the
+# shared pyscript modules/ dir without colliding with the standalone
+# scheduler's irrigation_lib.
+LIB_DIRNAME = "geodrops_rachio_lib"
 
 
 def read_stamp(path) -> str | None:
@@ -25,7 +29,7 @@ def bundle_fingerprint(bundled_dir) -> str:
     bundled_dir = pathlib.Path(bundled_dir)
     h = hashlib.sha256()
     h.update((bundled_dir / SCRIPT_FILENAME).read_bytes())
-    lib = bundled_dir / "irrigation_lib"
+    lib = bundled_dir / LIB_DIRNAME
     for f in sorted(lib.rglob("*")):
         if f.is_file() and "__pycache__" not in f.parts:
             h.update(str(f.relative_to(lib)).encode("utf-8"))
@@ -70,10 +74,10 @@ async def async_deliver(hass: HomeAssistant, entry_data: dict, *,
     def _write_code() -> None:
         (pyscript_dir / "modules").mkdir(parents=True, exist_ok=True)
         shutil.copy2(bundled_dir / SCRIPT_FILENAME, pyscript_dir / SCRIPT_FILENAME)
-        lib_dst = pyscript_dir / "modules" / "irrigation_lib"
+        lib_dst = pyscript_dir / "modules" / LIB_DIRNAME
         if lib_dst.exists():
             shutil.rmtree(lib_dst)
-        shutil.copytree(bundled_dir / "irrigation_lib", lib_dst)
+        shutil.copytree(bundled_dir / LIB_DIRNAME, lib_dst)
         stamp_path.write_text(fingerprint + "\n", encoding="utf-8")
 
     def _write_config() -> None:

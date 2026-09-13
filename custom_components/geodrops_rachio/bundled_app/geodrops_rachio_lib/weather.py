@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from irrigation_lib.config import Tunables
+from geodrops_rachio_lib.config import Tunables
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ scheduler parser, which is exactly why C1 (missing bands/drought_profiles)
 slipped through. This test closes that gap: it assembles a realistic
 ConfigEntry data dict the way the config flow does, runs it through
 generate_config, then parses the result with the VENDORED scheduler's
-irrigation_lib.config — the same code that will run on the box.
+geodrops_rachio_lib.config — the same code that will run on the box.
 """
 import pathlib
 import sys
@@ -21,7 +21,7 @@ from custom_components.geodrops_rachio.config_flow import (
 )
 
 # Import the VENDORED scheduler lib (the bytes that ship on the box), not the
-# canonical source tree. irrigation_lib is pure Python (dataclasses + yaml, no
+# canonical source tree. geodrops_rachio_lib is pure Python (dataclasses + yaml, no
 # pyscript globals), so it imports fine once its parent dir is on sys.path.
 _BUNDLED = (
     pathlib.Path(__file__).resolve().parent.parent
@@ -30,7 +30,7 @@ _BUNDLED = (
 if str(_BUNDLED) not in sys.path:
     sys.path.insert(0, str(_BUNDLED))
 
-from irrigation_lib import config as scheduler_config  # noqa: E402
+from geodrops_rachio_lib import config as scheduler_config  # noqa: E402
 
 
 def _wizard_data() -> dict:

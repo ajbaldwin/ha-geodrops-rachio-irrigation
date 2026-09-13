@@ -8,8 +8,8 @@ Rachio runtime API, and the plan-execution engine are all inlined here rather
 than split into modules.
 
 Pure, unit-tested logic (no pyscript globals) stays in
-``pyscript/modules/irrigation_lib/`` and is imported below. That package is
-named ``irrigation_lib`` (not ``irrigation``) so its module name cannot collide
+``pyscript/modules/geodrops_rachio_lib/`` and is imported below. That package is
+named ``geodrops_rachio_lib`` (not ``irrigation``) so its module name cannot collide
 with this app's name (``irrigation``) — pyscript resolves a bare ``import
 irrigation`` to the app, which would recurse forever.
 
@@ -20,25 +20,25 @@ import datetime as dt
 import random
 import time
 
-# NOTE: import each submodule by its dotted path, NOT `from irrigation_lib import
+# NOTE: import each submodule by its dotted path, NOT `from geodrops_rachio_lib import
 # abort, ...`. pyscript does not auto-load a package's submodules for the
 # `from package import submodule` form — it would look for an attribute on the
-# (empty) irrigation_lib package and fail with AttributeError. `import
-# irrigation_lib.X as X` loads the leaf module file directly.
-import irrigation_lib.abort as abort
-import irrigation_lib.blocks as blocks
-import irrigation_lib.calibration as calibration
-import irrigation_lib.config as config
-import irrigation_lib.dosing as dosing
-import irrigation_lib.drought as drought
-import irrigation_lib.evaluate as evaluate
-import irrigation_lib.plan as plan
-import irrigation_lib.program as program
-import irrigation_lib.rachio_runtime as rachio_runtime
-import irrigation_lib.recovery as recovery
-import irrigation_lib.report_format as report_format
-import irrigation_lib.sensors as sensors
-import irrigation_lib.weather as weather
+# (empty) geodrops_rachio_lib package and fail with AttributeError. `import
+# geodrops_rachio_lib.X as X` loads the leaf module file directly.
+import geodrops_rachio_lib.abort as abort
+import geodrops_rachio_lib.blocks as blocks
+import geodrops_rachio_lib.calibration as calibration
+import geodrops_rachio_lib.config as config
+import geodrops_rachio_lib.dosing as dosing
+import geodrops_rachio_lib.drought as drought
+import geodrops_rachio_lib.evaluate as evaluate
+import geodrops_rachio_lib.plan as plan
+import geodrops_rachio_lib.program as program
+import geodrops_rachio_lib.rachio_runtime as rachio_runtime
+import geodrops_rachio_lib.recovery as recovery
+import geodrops_rachio_lib.report_format as report_format
+import geodrops_rachio_lib.sensors as sensors
+import geodrops_rachio_lib.weather as weather
 
 CONFIG_PATH = "/config/pyscript/geodrops_rachio_config.yaml"
 # Diagnostic records survive a restart by being written here and re-published on

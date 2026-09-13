@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from irrigation_lib.config import ZoneConfig, state_rank
+from geodrops_rachio_lib.config import ZoneConfig, state_rank
 
 _UNAVAILABLE = {"unknown", "unavailable", "none", ""}
 
