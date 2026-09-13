@@ -1,0 +1,11 @@
+{
+  "domain": "geodrops_rachio",
+  "name": "GeoDrops + Rachio Irrigation",
+  "version": "0.1.0",
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "dependencies": [],
+  "codeowners": ["@ajbaldwin"],
+  "documentation": "https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation",
+  "issue_tracker": "https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation/issues"
+}
