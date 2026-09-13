@@ -361,10 +361,10 @@ async def test_options_flow_prefills_and_preserves_zones(hass, enable_pyscript_a
             result["flow_id"], BINDINGS_INPUT)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], WEATHER_INPUT)
-        assert result["step_id"] == "zone_gate"
+        assert result["step_id"] == "manage_zones"
 
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"add_or_edit_zones": False})
+            result["flow_id"], {"next_step_id": "finish"})
         assert result["step_id"] == "advanced"
 
         result = await hass.config_entries.options.async_configure(
@@ -375,3 +375,80 @@ async def test_options_flow_prefills_and_preserves_zones(hass, enable_pyscript_a
     assert entry.data["self_calibration_enabled"] is True
     assert entry.data["bindings"]["drought_level_select"] == (
         "select.geodrops_rachio_drought_level")
+
+
+async def test_options_remove_zone(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"notify_service": "notify.phone", "rachio_device_name": "Main House"},
+        "zones": [dict(ZONE_INPUT)], "self_calibration_enabled": False,
+        "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    with _patch_poll(key=None):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], WEATHER_INPUT)
+        assert result["step_id"] == "manage_zones"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "remove_zone"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"zone": "front"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"confirm": True})
+        # back to manage_zones; finish
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "finish"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"self_calibration_enabled": False})
+    assert entry.data["zones"] == []
+
+
+async def test_options_edit_zone_in_place(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"notify_service": "notify.phone", "rachio_device_name": "Main House"},
+        "zones": [dict(ZONE_INPUT)], "self_calibration_enabled": False,
+        "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    with _patch_poll(key=None):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], WEATHER_INPUT)
+        assert result["step_id"] == "manage_zones"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "edit_zone"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"zone": "front"})
+        assert result["step_id"] == "zone_details"
+        # key field is not offered on edit (immutable)
+        assert "key" not in _field_names(result)
+        # existing values are pre-filled from the stored zone
+        defaults = {str(f): f.default() for f in result["data_schema"].schema
+                    if callable(getattr(f, "default", None)) and f.default() is not None}
+        assert defaults.get("runtime_minutes") == 45
+        assert defaults.get("refill_depth_mm") == 7.11
+        assert defaults.get("rachio_switch") == "switch.front"
+
+        updated = dict(ZONE_INPUT)
+        del updated["key"]
+        del updated["add_another_zone"]
+        updated["runtime_minutes"] = 60
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], updated)
+        # replaces the zone in place and returns to manage_zones
+        assert result["step_id"] == "manage_zones"
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "finish"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"self_calibration_enabled": False})
+
+    assert len(entry.data["zones"]) == 1
+    assert entry.data["zones"][0]["key"] == "front"
+    assert entry.data["zones"][0]["runtime_minutes"] == 60
