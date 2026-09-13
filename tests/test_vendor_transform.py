@@ -162,6 +162,21 @@ def test_missing_service_def_raises():
         transform_app_to_script(src, stop_entity="button.geodrops_rachio_stop")
 
 
+def test_namespaces_persisted_entity_names():
+    """last_nightly/calibration are published as `state.set("pyscript." + name)`,
+    so the bare name literals must be namespaced too — the pyscript.irrigation_
+    prefix rule can't see a name assembled by concatenation."""
+    src = SAMPLE + (
+        '\nPERSISTED = ("irrigation_last_nightly", "irrigation_calibration")\n'
+        'def _p(entity):\n    state.set("pyscript." + entity, value=1)\n'
+    )
+    out = transform_app_to_script(src, stop_entity="button.geodrops_rachio_stop")
+    assert '"geodrops_rachio_last_nightly"' in out
+    assert '"geodrops_rachio_calibration"' in out
+    assert '"irrigation_last_nightly"' not in out
+    assert '"irrigation_calibration"' not in out
+
+
 def test_namespaces_lib_import_package():
     src = SAMPLE + "\nimport irrigation_lib.config as config\n"
     out = transform_app_to_script(src, stop_entity="button.geodrops_rachio_stop")
