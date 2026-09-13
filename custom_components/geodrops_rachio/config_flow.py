@@ -341,6 +341,11 @@ class _BindingsWizardSteps:
         })
         return self.async_show_form(step_id="zone_gate", data_schema=schema)
 
+    def _rachio_switch_selector(self):
+        """Switch picker constrained to the Rachio integration's entities."""
+        return selector.EntitySelector(selector.EntitySelectorConfig(
+            domain="switch", integration="rachio"))
+
     def _target_range_selector(self):
         return selector.SelectSelector(
             selector.SelectSelectorConfig(
@@ -412,21 +417,21 @@ class _BindingsWizardSteps:
         an exact object-id match, then an object-id containing the slug. Returns
         None when nothing plausible exists, so the field then requires a pick.
         """
-        if not zone_name:
-            return None
-        want = zone_name.strip().lower()
         slug = _slug(zone_name)
+        if not slug:
+            return None
         states = self.hass.states.async_all("switch")
+        # Friendly-name match, normalized so "Front Slope" == "front_slope".
         for st in states:
             friendly = st.attributes.get("friendly_name")
-            if friendly and friendly.strip().lower() == want:
+            if friendly and _slug(friendly) == slug:
                 return st.entity_id
         ids = [st.entity_id for st in states]
         exact = f"switch.{slug}"
         if exact in ids:
             return exact
         for eid in ids:
-            if slug and slug in eid.split(".", 1)[1]:
+            if slug in eid.split(".", 1)[1]:
                 return eid
         return None
 
@@ -450,8 +455,7 @@ class _BindingsWizardSteps:
             else vol.Required("rachio_switch"))
         schema = vol.Schema({
             vol.Required("key", default=_slug(pz.get("name", ""))): str,
-            switch_key: selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch")),
+            switch_key: self._rachio_switch_selector(),
             vol.Required("dominant_sensor"): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")),
             vol.Required("state_sensor"): selector.EntitySelector(
@@ -481,8 +485,7 @@ class _BindingsWizardSteps:
         existing_keys = [z["key"] for z in self._data["zones"]]
         schema = vol.Schema({
             vol.Required("key"): str,
-            vol.Required("rachio_switch"): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch")),
+            vol.Required("rachio_switch"): self._rachio_switch_selector(),
             vol.Required("dominant_sensor"): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")),
             vol.Required("state_sensor"): selector.EntitySelector(

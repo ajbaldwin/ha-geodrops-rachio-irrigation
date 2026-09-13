@@ -219,6 +219,31 @@ async def test_zone_details_no_switch_match_requires_pick(
         assert switch_field.default is vol.UNDEFINED
 
 
+async def test_switch_match_normalizes_spaces_and_underscores(
+        hass, enable_pyscript_and_rachio):
+    # Rachio zone "Front Slope" should match a switch named "front_slope".
+    hass.states.async_set(
+        "switch.zone_ctrl", "off", {"friendly_name": "front_slope"})
+    zones = [{
+        "id": "z9", "name": "Front Slope", "zoneNumber": 2,
+        "runtime_minutes": 20.0, "refill_depth_mm": 10.0,
+    }]
+    with _patch_poll(key="KEY", devices=DEVICES, zones=zones):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], WEATHER_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"rachio_zone": "z9"})
+        switch_field = next(
+            f for f in result["data_schema"].schema if f == "rachio_switch")
+        assert switch_field.default() == "switch.zone_ctrl"
+
+
 async def test_no_key_free_text_device_and_manual_zone(
         hass, enable_pyscript_and_rachio):
     with _patch_poll(key=None):
