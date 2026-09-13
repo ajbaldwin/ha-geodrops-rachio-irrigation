@@ -28,3 +28,18 @@ async def test_flag_switches_created_and_toggle(hass, enable_pyscript_and_rachio
         "switch", "turn_on",
         {"entity_id": "switch.geodrops_rachio_run_active"}, blocking=True)
     assert hass.states.get("switch.geodrops_rachio_run_active").state == "on"
+
+
+async def test_observed_sensor_buffers_and_averages(hass, enable_pyscript_and_rachio):
+    data = {**ENTRY_DATA, "bindings": {
+        "weather": {"temperature": "sensor.station_temp"}}}
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    hass.states.async_set("sensor.station_temp", "10.0")
+    await hass.async_block_till_done()
+    hass.states.async_set("sensor.station_temp", "30.0")
+    await hass.async_block_till_done()
+    s = hass.states.get("sensor.geodrops_rachio_observed_overnight_temp")
+    assert s is not None and float(s.state) == 20.0
