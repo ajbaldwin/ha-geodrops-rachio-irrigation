@@ -1,9 +1,24 @@
+import pytest
+from unittest.mock import AsyncMock, patch
+
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.geodrops_rachio.const import DOMAIN
 
 ENTRY_DATA = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
               "advanced_overrides": ""}
+
+
+@pytest.fixture(autouse=True)
+def _mock_delivery():
+    """Entity-platform tests exercise real config entry setup, but delivery
+    of the bundled pyscript app is out of scope here (bundled_app/ doesn't
+    exist until the vendoring/release task) — stub it out."""
+    with patch(
+        "custom_components.geodrops_rachio.delivery.async_deliver",
+        AsyncMock(return_value=False),
+    ):
+        yield
 
 
 async def test_control_entities_created(hass, enable_pyscript_and_rachio):
