@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
-import pathlib
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import (
@@ -80,7 +79,8 @@ class ZoneStateCoordinator:
                 with open(path, "r", encoding="utf-8") as fh:
                     data = json.load(fh)
                 return data if isinstance(data, dict) else {}
-            except (OSError, ValueError):
+            except (OSError, ValueError) as err:
+                _LOGGER.debug("Could not read efficacy file %s: %s", path, err)
                 return {}
 
         self._efficacy = await self.hass.async_add_executor_job(_read)

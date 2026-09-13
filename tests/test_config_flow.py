@@ -454,6 +454,47 @@ async def test_options_edit_zone_in_place(hass, enable_pyscript_and_rachio):
     assert entry.data["zones"][0]["runtime_minutes"] == 60
 
 
+async def test_options_add_zone_duplicate_key_rejected(hass, enable_pyscript_and_rachio):
+    # An existing zone with key "front"; adding another zone whose key slugs
+    # to the same value ("Front") must be rejected, not silently collide on
+    # the same unique_id/entity_id/device identifier.
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"notify_service": "notify.phone", "rachio_device_name": "Main House"},
+        "zones": [dict(ZONE_INPUT)], "self_calibration_enabled": False,
+        "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    with _patch_poll(key=None):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], WEATHER_INPUT)
+        assert result["step_id"] == "manage_zones"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "add_zone"})
+        assert result["step_id"] == "zone"
+
+        dup = dict(ZONE_INPUT, key="Front", rachio_switch="switch.front2")
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], dup)
+        assert result["step_id"] == "zone"
+        assert result["errors"] == {"key": "duplicate_zone_key"}
+
+        # Recovering with a non-colliding key must still work, and only that
+        # zone gets added -- the duplicate attempt left no trace.
+        ok = dict(ZONE_INPUT, key="back", rachio_switch="switch.back")
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], ok)
+        assert result["step_id"] == "advanced"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"self_calibration_enabled": False})
+
+    keys = sorted(z["key"] for z in entry.data["zones"])
+    assert keys == ["back", "front"]
+
+
 async def test_options_edit_zone_preserves_rachio_zone_id(hass, enable_pyscript_and_rachio):
     # A zone originally added via the live Rachio picker carries a
     # rachio_zone_id; editing it (which never re-picks from Rachio) must not
