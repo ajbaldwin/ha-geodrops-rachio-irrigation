@@ -46,3 +46,10 @@ def test_invalid_override_yaml_raises():
     data = {**BASE, "advanced_overrides": "probe_growth: : :"}
     with pytest.raises(ValueError):
         generate_config(data)
+
+
+def test_non_mapping_override_raises():
+    import pytest
+    data = {**BASE, "advanced_overrides": "- a\n- b"}   # valid YAML, but a list
+    with pytest.raises(ValueError):
+        generate_config(data)
