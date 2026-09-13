@@ -160,3 +160,12 @@ def test_missing_service_def_raises():
     src = SAMPLE.replace("def irrigation_run_now():", "def irrigation_go():")
     with pytest.raises(TransformError):
         transform_app_to_script(src, stop_entity="button.geodrops_rachio_stop")
+
+
+def test_namespaces_lib_import_package():
+    src = SAMPLE + "\nimport irrigation_lib.config as config\n"
+    out = transform_app_to_script(src, stop_entity="button.geodrops_rachio_stop")
+    assert "import geodrops_rachio_lib.config as config" in out
+    # The shared package name must be gone so we never clobber the standalone
+    # scheduler's /config/pyscript/modules/irrigation_lib.
+    assert "irrigation_lib" not in out

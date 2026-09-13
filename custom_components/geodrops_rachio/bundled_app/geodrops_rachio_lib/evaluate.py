@@ -4,8 +4,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from irrigation_lib.drought import EffectiveTarget
-from irrigation_lib.sensors import ZoneReading
+from geodrops_rachio_lib.drought import EffectiveTarget
+from geodrops_rachio_lib.sensors import ZoneReading
 
 
 @dataclass(frozen=True)

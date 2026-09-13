@@ -33,6 +33,15 @@ DELIVERED_RUN_ACTIVE_CALL = 'service.call("switch", "turn_on" if on else "turn_o
 # Only these three collide in a shared namespace; external helpers the user owns
 # (e.g. input_boolean.irrigation_standby) and internal @time_trigger functions
 # are left untouched.
+# The scheduler's pure-logic package is named `irrigation_lib` and is delivered
+# to the SHARED /config/pyscript/modules/ dir. The standalone scheduler uses the
+# same package name there, so a shared name means our delivery clobbers the
+# operator's lib (and vice versa). Rename the package to `geodrops_rachio_lib`
+# in the script's imports and in the lib's own cross-imports, and deliver it
+# under that name, so the two never touch each other's files.
+CANONICAL_LIB = "irrigation_lib"
+DELIVERED_LIB = "geodrops_rachio_lib"
+
 NAMESPACED_SERVICES = ("run_now", "preview", "stop", "reset", "refresh_runtimes")
 CANONICAL_STATE_PREFIX = "pyscript.irrigation_"
 DELIVERED_STATE_PREFIX = "pyscript.geodrops_rachio_"
@@ -100,6 +109,10 @@ def transform_app_to_script(source: str, *, stop_entity: str) -> str:
     out = _require_replace(
         out, CANONICAL_TASK_KEY, DELIVERED_TASK_KEY, what="run task uniqueness key"
     )
+    # Rename the imported lib package so the delivered top-level script imports
+    # geodrops_rachio_lib (delivered to modules/) rather than the shared
+    # irrigation_lib the standalone scheduler also uses.
+    out = out.replace(CANONICAL_LIB, DELIVERED_LIB)
     return out
 
 
@@ -110,12 +123,18 @@ def vendor(scheduler_repo: str, dest_pkg: str) -> None:
     script = transform_app_to_script(app, stop_entity=STOP_ENTITY)
     (dest).mkdir(parents=True, exist_ok=True)
     (dest / "geodrops_rachio.py").write_text(script, encoding="utf-8")
-    lib_src = src_root / "irrigation_lib"
-    lib_dst = dest / "irrigation_lib"
-    if lib_dst.exists():
-        import shutil; shutil.rmtree(lib_dst)
+    lib_src = src_root / CANONICAL_LIB
+    lib_dst = dest / DELIVERED_LIB
     import shutil
+    if lib_dst.exists():
+        shutil.rmtree(lib_dst)
     shutil.copytree(lib_src, lib_dst, ignore=shutil.ignore_patterns("__pycache__"))
+    # Rewrite the lib's own cross-imports (from irrigation_lib.x import ...) to
+    # the delivered package name so the renamed package resolves internally.
+    for py in lib_dst.rglob("*.py"):
+        text = py.read_text(encoding="utf-8")
+        if CANONICAL_LIB in text:
+            py.write_text(text.replace(CANONICAL_LIB, DELIVERED_LIB), encoding="utf-8")
     version = _scheduler_version(src_root)
     (dest / "VERSION").write_text(version + "\n", encoding="utf-8")
     print(f"vendored scheduler {version} -> {dest}")
