@@ -78,6 +78,20 @@ all present in HA. Ideally stamp a real `bundled_app/VERSION` first (see residua
    - **PASS:** it produces a plan with no exception. A `KeyError: 'bands'` /
      `'drought_profiles'` or a `FileNotFoundError` here means the generated config or the
      delivered script's config path is wrong — stop and report.
+   - **CAUTION — service-name collision:** if this box ALSO runs the original standalone
+     scheduler (files under `/config/pyscript/apps/irrigation/`), BOTH scripts register the
+     same `pyscript.irrigation_*` services, so `pyscript.irrigation_preview` may invoke the
+     OLD app (reading the old config with all its zones), not ours. This box is then NOT a
+     clean test. Two ways to still validate:
+     1. **Inspect our generated config directly** (shadowing-proof): `cat
+        /config/pyscript/geodrops_rachio_config.yaml` — it must contain `homeassistant:` +
+        `tunables:` + `bands:` + `drought_profiles:` + a `zones:` block with ONLY the
+        zone(s) you entered in the wizard. (Verified correct on the darkstrike box
+        2026-09-13: single `front_yard` zone + full bands/drought_profiles.)
+     2. **Run the real preview on a CLEAN HA instance** with NO standalone scheduler, so our
+        vendored `geodrops_rachio.py` is the only script defining those services. Until the
+        service names are namespaced (see residuals), that's the only way to exercise OUR
+        running script end-to-end.
 6. **Verify restart-free brain update.** Simplest: Settings → the integration → Reload
    (or bump `bundled_app/VERSION` + trigger a HACS update). Confirm it re-delivers and
    `pyscript.reload`s with **no HA restart** and the scheduler still previews.
@@ -110,7 +124,15 @@ toggles during a run.
   is a guess. Confirm the actual id HACS assigns (Developer Tools → States, filter `update.`)
   once the repo is tracked in HACS; if different, fix the constant (or resolve it dynamically).
   Until then, T10 step 6's automatic path may not fire.
+- **Service-name collision / coexistence (NEW, from 2026-09-13 testing):** the vendored
+  script registers the same `pyscript.irrigation_*` services as the original standalone
+  scheduler, so the two cannot run on the same HA box without shadowing each other. For the
+  target audience (new users without the standalone) this is fine, but decide one of:
+  (a) namespace the vendored services in the vendor transform (e.g. `geodrops_rachio_*`), or
+  (b) explicitly document that this integration and the standalone scheduler are mutually
+  exclusive on one box. Until resolved, validate on a clean instance (see T10 step 5).
 - **Deferred minors** (non-blocking): dead `updater.decide_action`; observed sensors use a
   12h window not the overnight span; zone options flow is add-only with misleading "replace"
   copy; the wizard doesn't collect `rachio_zone_id` (disables the scheduler's live-runtime
-  pull, so static runtimes are always used); `target_range`/zone key are free-text.
+  pull, so static runtimes are always used); ~~`target_range` free-text~~ (fixed: now a
+  dropdown); zone `key` is still free-text.
