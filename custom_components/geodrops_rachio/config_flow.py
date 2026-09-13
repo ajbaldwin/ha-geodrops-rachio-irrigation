@@ -28,6 +28,7 @@ from .rachio_client import (
     async_fetch_devices,
     resolve_secret,
 )
+from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,10 +102,7 @@ def _zone_label(zone: dict) -> str:
 
 def _slug(name: str) -> str:
     """A config-key-friendly slug from a Rachio zone name (editable default)."""
-    out = "".join(c if c.isalnum() else "_" for c in name.lower())
-    while "__" in out:
-        out = out.replace("__", "_")
-    return out.strip("_")
+    return slug(name)
 
 
 def _optional_number(name: str, default):

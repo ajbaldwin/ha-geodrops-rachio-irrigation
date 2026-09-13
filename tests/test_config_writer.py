@@ -91,3 +91,28 @@ def test_advanced_overrides_do_not_touch_bands_or_profiles():
     # bands/drought_profiles come from the defaults regardless of overrides.
     assert doc["bands"]["moist"] == {"low": 67, "high": 76}
     assert doc["drought_profiles"]["Level 3 - Critical"]["end_anchor"] == "dawn"
+
+
+def test_zone_gets_owned_exclude_boolean():
+    from custom_components.geodrops_rachio.config_writer import generate_config
+    import yaml
+    data = {
+        "bindings": {},
+        "zones": [{"key": "Front Slope", "rachio_switch": "switch.x",
+                   "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
+                   "quality_sensors": [], "target_range": "moist",
+                   "runtime_minutes": 20, "refill_depth_mm": 10}],
+        "self_calibration_enabled": False, "advanced_overrides": "",
+    }
+    raw = yaml.safe_load(generate_config(data))
+    zone = raw["zones"]["Front Slope"]
+    assert zone["exclude_boolean"] == "switch.geodrops_rachio_front_slope_exclude"
+
+
+def test_existing_exclude_boolean_is_preserved():
+    from custom_components.geodrops_rachio.config_writer import generate_config
+    import yaml
+    data = {"bindings": {}, "zones": [{"key": "z", "exclude_boolean": "input_boolean.custom"}],
+            "self_calibration_enabled": False, "advanced_overrides": ""}
+    raw = yaml.safe_load(generate_config(data))
+    assert raw["zones"]["z"]["exclude_boolean"] == "input_boolean.custom"
