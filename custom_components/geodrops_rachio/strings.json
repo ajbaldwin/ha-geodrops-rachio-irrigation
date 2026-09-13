@@ -1,0 +1,70 @@
+{
+  "config": {
+    "abort": {
+      "missing_prerequisites": "Install and set up pyscript and the Rachio integration first, then add this integration."
+    },
+    "step": {
+      "bindings": {
+        "title": "Core bindings",
+        "description": "Point the scheduler at your notification, calendar, Rachio and forecast entities.",
+        "data": {
+          "notify_service": "Notify service",
+          "calendar_entity": "Calendar",
+          "rachio_device_name": "Rachio device name",
+          "rachio_api_key_secret": "Rachio API key secret name",
+          "standby_switch": "Standby switch (Rachio controller)",
+          "forecast_entity": "Weather forecast entity"
+        }
+      },
+      "weather": {
+        "title": "Weather station",
+        "description": "Local weather sensors and the sensor-name prefixes for per-zone precipitation forecasts.",
+        "data": {
+          "weather_temperature": "Temperature sensor",
+          "weather_humidity": "Humidity sensor",
+          "weather_wind": "Wind speed sensor",
+          "weather_rain_last_hour": "Rain (last hour) sensor",
+          "weather_precip_type": "Precipitation type sensor",
+          "precipitation_chance_prefix": "Precipitation chance sensor prefix",
+          "precipitation_amount_prefix": "Precipitation amount sensor prefix"
+        }
+      },
+      "zone_gate": {
+        "title": "Zones",
+        "description": "Your existing zones are kept as-is unless you choose to add or replace one."
+      },
+      "zone": {
+        "title": "Add a zone",
+        "description": "One Rachio zone and its moisture sensors."
+      },
+      "advanced": {
+        "title": "Advanced",
+        "description": "Active Watering Calibration is Beta and off by default."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "bindings": {
+        "title": "Core bindings",
+        "description": "Point the scheduler at your notification, calendar, Rachio and forecast entities."
+      },
+      "weather": {
+        "title": "Weather station",
+        "description": "Local weather sensors and the sensor-name prefixes for per-zone precipitation forecasts."
+      },
+      "zone_gate": {
+        "title": "Zones",
+        "description": "Your existing zones are kept as-is unless you choose to add or replace one."
+      },
+      "zone": {
+        "title": "Add a zone",
+        "description": "One Rachio zone and its moisture sensors."
+      },
+      "advanced": {
+        "title": "Advanced",
+        "description": "Active Watering Calibration is Beta and off by default."
+      }
+    }
+  }
+}
