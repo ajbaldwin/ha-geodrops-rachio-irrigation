@@ -48,6 +48,16 @@ DELIVERED_STATE_PREFIX = "pyscript.geodrops_rachio_"
 CANONICAL_TASK_KEY = 'task.unique("irrigation_run")'
 DELIVERED_TASK_KEY = 'task.unique("geodrops_rachio_run")'
 
+# last_nightly and calibration are published via `state.set("pyscript." + name)`
+# and persisted as `<STATE_DIR>/<name>.json`, so their entity/state names are
+# assembled from a bare `"irrigation_<x>"` literal that the pyscript.irrigation_
+# prefix rewrite can't see. Rewrite those bare literals too, or the entities
+# still land at pyscript.irrigation_* and collide with the standalone scheduler.
+PERSISTED_NAME_LITERALS = (
+    '"irrigation_last_nightly"',
+    '"irrigation_calibration"',
+)
+
 
 class TransformError(Exception):
     pass
@@ -109,6 +119,11 @@ def transform_app_to_script(source: str, *, stop_entity: str) -> str:
     out = _require_replace(
         out, CANONICAL_TASK_KEY, DELIVERED_TASK_KEY, what="run task uniqueness key"
     )
+    # Namespace the bare persisted-entity name literals (assembled into
+    # pyscript.<name> / <name>.json at runtime). Tolerant: a future refactor may
+    # drop one, and the prefix rule already fail-louds on the main pattern.
+    for literal in PERSISTED_NAME_LITERALS:
+        out = out.replace(literal, literal.replace("irrigation_", "geodrops_rachio_"))
     # Rename the imported lib package so the delivered top-level script imports
     # geodrops_rachio_lib (delivered to modules/) rather than the shared
     # irrigation_lib the standalone scheduler also uses.
