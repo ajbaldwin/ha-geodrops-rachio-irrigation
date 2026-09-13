@@ -16,7 +16,6 @@ from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
 
-_OBSERVED_WINDOW = dt.timedelta(hours=12)
 _FORECAST_INTERVAL = dt.timedelta(hours=1)
 # (key suffix, forecast field, unit)
 _FIELDS = [("temp", "temperature", "°F"), ("humidity", "humidity", "%"),
@@ -64,10 +63,12 @@ class ObservedOvernightSensor(SensorEntity):
             return
         now = dt.datetime.now(dt.timezone.utc)
         self._samples.append((now, val))
-        cutoff = now - _OBSERVED_WINDOW
-        self._samples = [(t, v) for t, v in self._samples if t >= cutoff]
-        self._attr_native_value = weather_derive.overnight_mean(
-            [v for _, v in self._samples])
+        # Retain only samples from the current overnight window onward, then
+        # average that window (the true 20:00→06:00 span, not a rolling 12h).
+        start, _end = weather_derive.observed_overnight_window(now)
+        self._samples = [(t, v) for t, v in self._samples if t >= start]
+        self._attr_native_value = weather_derive.observed_overnight_mean(
+            self._samples, now)
         self.async_write_ha_state()
 
 
