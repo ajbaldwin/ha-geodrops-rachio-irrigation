@@ -30,8 +30,10 @@ def overnight_forecast_mean(periods: list[dict], field: str,
         if ts is None or p.get(field) is None:
             continue
         t = dt.datetime.fromisoformat(ts)
-        if t.tzinfo is None and now.tzinfo is not None:
-            t = t.replace(tzinfo=now.tzinfo)
+        if t.tzinfo is None and start.tzinfo is not None:
+            t = t.replace(tzinfo=start.tzinfo)
+        elif t.tzinfo is not None and start.tzinfo is None:
+            t = t.replace(tzinfo=None)
         if start <= t < end:
             vals.append(float(p[field]))
     return overnight_mean(vals)
