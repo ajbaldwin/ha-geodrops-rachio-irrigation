@@ -51,7 +51,7 @@ STATE_DIR = "/config/pyscript/geodrops_rachio_state"
 # Only records whose value is HISTORICAL. `irrigation_last_run` is "what just
 # happened" and `irrigation_status` is live, both of which the next run or the
 # startup handler re-establishes correctly.
-PERSISTED = ("irrigation_last_nightly", "irrigation_calibration")
+PERSISTED = ("geodrops_rachio_last_nightly", "geodrops_rachio_calibration")
 # A planned nightly that is WAITING for its pre-dawn window holds its whole plan
 # in memory across a task.sleep of several hours. A restart during that sleep
 # loses it silently: nothing has watered, so the startup safety-stop finds no
@@ -1619,7 +1619,7 @@ def _publish_last_run(stamp, trigger, ctx=None, result=None, outcome=None,
     if trigger == "nightly" or trigger == "startup-heal":
         nightly = dict(attributes)
         nightly["friendly_name"] = "Irrigation Last Nightly Run"
-        _publish_record("irrigation_last_nightly", value, nightly)
+        _publish_record("geodrops_rachio_last_nightly", value, nightly)
 
 
 def _rain_skip_check(ctx):
@@ -2141,7 +2141,7 @@ def irrigation_calibrate():
     agreement = weather.pressure_agreement(forecast_pb, observed_pb)
     stamp = dt.datetime.now().isoformat(timespec="seconds")
     _publish_record(
-        "irrigation_calibration",
+        "geodrops_rachio_calibration",
         len(agreement["mismatches"]),
         {
             "friendly_name": "Irrigation Forecast Calibration",
