@@ -24,6 +24,21 @@ DELIVERED_STATE_DIR = 'STATE_DIR = "/config/pyscript/geodrops_rachio_state"'
 CANONICAL_RUN_ACTIVE_CALL = 'service.call("input_boolean", "turn_on" if on else "turn_off",'
 DELIVERED_RUN_ACTIVE_CALL = 'service.call("switch", "turn_on" if on else "turn_off",'
 
+# The canonical app registers pyscript services named `irrigation_*` and writes
+# `pyscript.irrigation_*` state entities, and coordinates its run task under the
+# global key "irrigation_run". The standalone scheduler uses the SAME names, so
+# both installed on one HA box would collide (shared service, state, and
+# task-uniqueness namespaces). Namespace the vendored copy to `geodrops_rachio_*`
+# so this integration coexists with — and is testable alongside — the standalone.
+# Only these three collide in a shared namespace; external helpers the user owns
+# (e.g. input_boolean.irrigation_standby) and internal @time_trigger functions
+# are left untouched.
+NAMESPACED_SERVICES = ("run_now", "preview", "stop", "reset", "refresh_runtimes")
+CANONICAL_STATE_PREFIX = "pyscript.irrigation_"
+DELIVERED_STATE_PREFIX = "pyscript.geodrops_rachio_"
+CANONICAL_TASK_KEY = 'task.unique("irrigation_run")'
+DELIVERED_TASK_KEY = 'task.unique("geodrops_rachio_run")'
+
 
 class TransformError(Exception):
     pass
@@ -62,6 +77,28 @@ def transform_app_to_script(source: str, *, stop_entity: str) -> str:
         CANONICAL_RUN_ACTIVE_CALL,
         DELIVERED_RUN_ACTIVE_CALL,
         what="run_active service call",
+    )
+    # Namespace the colliding service defs so this integration coexists with
+    # the standalone scheduler on the same HA box.
+    for name in NAMESPACED_SERVICES:
+        out = _require_replace(
+            out,
+            f"def irrigation_{name}(",
+            f"def geodrops_rachio_{name}(",
+            what=f"service def irrigation_{name}",
+        )
+    # Namespace all pyscript.irrigation_* state entities (and any doc references
+    # to them) in one shot so reads and writes stay consistent.
+    out = _require_replace(
+        out,
+        CANONICAL_STATE_PREFIX,
+        DELIVERED_STATE_PREFIX,
+        what="pyscript state entity prefix",
+    )
+    # Namespace the run-task uniqueness key so our run and the standalone's do
+    # not cross-cancel each other.
+    out = _require_replace(
+        out, CANONICAL_TASK_KEY, DELIVERED_TASK_KEY, what="run task uniqueness key"
     )
     return out
 

@@ -65,7 +65,7 @@ LOGBOOK_NAME = "Irrigation"
 # FILTERED instead of scrolled. Run-level events land here; per-zone events land
 # on the zone's own switch, putting a zone's watering history in its own
 # more-info -> Logbook alongside its Rachio on/off events.
-STATUS_ENTITY = "pyscript.irrigation_status"
+STATUS_ENTITY = "pyscript.geodrops_rachio_status"
 CHECK_INTERVAL_S = 30
 # Consecutive polls showing nothing running before a block is called externally
 # stopped. Rachio steps between zones inside a block on its own, and HA's view of
@@ -1527,7 +1527,7 @@ def _publish_last_run(stamp, trigger, ctx=None, result=None, outcome=None,
     """Full, untruncated record of what the nightly run actually did.
 
     The run used to leave behind one Logbook line and a recap; everything
-    diagnostic lived in `pyscript.irrigation_preview`, written only by the
+    diagnostic lived in `pyscript.geodrops_rachio_preview`, written only by the
     preview service. So answering "did last night work?" meant cross-reading the
     Logbook, the recap, the system log and the Rachio app — and two open items
     (threshold calibration, quantized-vs-planned minutes) were simply
@@ -1609,7 +1609,7 @@ def _publish_last_run(stamp, trigger, ctx=None, result=None, outcome=None,
     attributes["rachio_calls"] = api_calls
     attributes["state_polls"] = state_polls
     value = len(result.watered) if result is not None else 0
-    state.set("pyscript.irrigation_last_run", value=value,
+    state.set("pyscript.geodrops_rachio_last_run", value=value,
               new_attributes=attributes)
     # The unattended run keeps its OWN copy. `last_run` is literally the last
     # one, so a manual re-run overwrites it — which is exactly what happened
@@ -1871,7 +1871,7 @@ def _preview():
     Three surfaces (title 'Irrigation preview' on the notification carries the
     label, so message bodies never repeat it):
       - notify + Logbook: short human summary (Logbook truncates long text);
-      - pyscript.irrigation_preview state (Developer Tools -> States): the FULL,
+      - pyscript.geodrops_rachio_preview state (Developer Tools -> States): the FULL,
         untruncated breakdown incl. the dynamic-window characteristics.
     """
     global _current_cfg, _current_bindings
@@ -1892,7 +1892,7 @@ def _preview():
         _notify(msg, "Irrigation Preview")
         _activity("Preview: " + msg)
         state.set(
-            "pyscript.irrigation_preview", value="standby",
+            "pyscript.geodrops_rachio_preview", value="standby",
             new_attributes={"updated": stamp, "standby": True, "message": msg},
         )
         return
@@ -1979,7 +1979,7 @@ def _preview():
 
     # Full, untruncated breakdown — Developer Tools -> States.
     state.set(
-        "pyscript.irrigation_preview",
+        "pyscript.geodrops_rachio_preview",
         value=len(the_plan.watered),
         new_attributes={
             "updated": stamp,
@@ -2128,7 +2128,7 @@ def irrigation_calibrate():
         )
         return
     try:
-        forecast_pb = state.getattr("pyscript.irrigation_last_nightly").get(
+        forecast_pb = state.getattr("pyscript.geodrops_rachio_last_nightly").get(
             "pressure_forecast"
         )
     except NameError:
@@ -2173,13 +2173,13 @@ def irrigation_calibrate():
         f"{agreement['observed_count']}/3 — {detail} "
         f"(RH {observed_wx.rh_pct}, wind {observed_wx.wind_mph}, "
         f"temp {observed_wx.temp_f})",
-        entity_id="pyscript.irrigation_calibration",
+        entity_id="pyscript.geodrops_rachio_calibration",
     )
 
 
 @time_trigger("cron(0 23 * * *)")
 def irrigation_nightly():
-    task.unique("irrigation_run")
+    task.unique("geodrops_rachio_run")
     _plan_and_run(wait=True, trigger="nightly")
 
 
@@ -2354,7 +2354,7 @@ def _on_startup():
             "Startup safety: an interrupted collapsed run was detected (marker "
             "set); stopped the Rachio schedule and re-planning from live moisture"
         )
-        task.unique("irrigation_run")
+        task.unique("geodrops_rachio_run")
         _plan_and_run(wait=True, trigger="startup-heal")
         return
 
@@ -2375,7 +2375,7 @@ def _on_startup():
                 "Startup: a nightly run was waiting for its pre-dawn window when "
                 "HA restarted; re-planning from live moisture"
             )
-            task.unique("irrigation_run")
+            task.unique("geodrops_rachio_run")
             _plan_and_run(wait=True, trigger="startup-heal")
         elif action == recovery.MISSED:
             # Came back after the window closed: nothing to water. Record the
@@ -2407,25 +2407,25 @@ def _on_startup():
     # finish whatever still needs water in the time left before dawn (the cap is
     # clamped to the remaining window in _plan_context).
     _activity("Startup: re-planning the interrupted run from live moisture")
-    task.unique("irrigation_run")
+    task.unique("geodrops_rachio_run")
     _plan_and_run(wait=True, trigger="startup-heal")
 
 
 @service
-def irrigation_run_now():
+def geodrops_rachio_run_now():
     """Run the full plan immediately (no pre-dawn wait). Waters for real."""
-    task.unique("irrigation_run")
+    task.unique("geodrops_rachio_run")
     _plan_and_run(wait=False, trigger="run_now")
 
 
 @service
-def irrigation_preview():
+def geodrops_rachio_preview():
     """Dry run: report the plan that would execute, without watering."""
     _preview()
 
 
 @service
-def irrigation_stop():
+def geodrops_rachio_stop():
     """Manually stop the run in progress: aborts the plan and closes any open zones."""
     global _manual_stop
     _manual_stop = True
@@ -2433,7 +2433,7 @@ def irrigation_stop():
 
 
 @service
-def irrigation_reset():
+def geodrops_rachio_reset():
     """Cancel a planned or in-progress run and reset the system to idle.
 
     irrigation_stop only raises the manual-stop flag, which the in-run watch
@@ -2444,7 +2444,7 @@ def irrigation_reset():
     idle. Safe to call in any state.
     """
     global _manual_stop
-    task.unique("irrigation_run")  # terminate the waiting or watering run task now
+    task.unique("geodrops_rachio_run")  # terminate the waiting or watering run task now
     _manual_stop = False
     stop_device()  # stop any running/paused Rachio schedule (self-guarding)
     try:
@@ -2461,11 +2461,11 @@ def irrigation_reset():
 
 
 @service
-def irrigation_refresh_runtimes():
+def geodrops_rachio_refresh_runtimes():
     """Force a live Rachio runtime fetch and record the result in the HA Logbook
     (activity log) plus a status state — checkable without the system log:
       1. Logbook entry named "Irrigation" (Settings -> Logbook / activity log);
-      2. state  pyscript.irrigation_runtimes  (Developer Tools -> States) — value
+      2. state  pyscript.geodrops_rachio_runtimes  (Developer Tools -> States) — value
          is the zone count; source/live/updated/runtimes_minutes are attributes.
     A live pull yields a non-empty dict keyed by rachio_zone_id; an empty dict
     means the fetch failed and the scheduler is on static config.yaml runtimes.
@@ -2490,7 +2490,7 @@ def irrigation_refresh_runtimes():
     stamp = dt.datetime.now().isoformat(timespec="seconds")
 
     state.set(
-        "pyscript.irrigation_runtimes",
+        "pyscript.geodrops_rachio_runtimes",
         value=len(runtimes),
         new_attributes={
             "source": source,
