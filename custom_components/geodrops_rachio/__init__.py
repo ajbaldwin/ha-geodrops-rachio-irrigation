@@ -3,8 +3,10 @@ import pathlib
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, PLATFORMS
+from .util import slug
 from . import delivery, updater
 
 
@@ -26,7 +28,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(updater.async_register_update_listener(hass, entry))
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
+    _purge_orphan_zone_devices(hass, entry)
     return True
+
+
+def _purge_orphan_zone_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    reg = dr.async_get(hass)
+    keep = {f"{entry.entry_id}:zone:{slug(z['key'])}"
+            for z in entry.data.get("zones", [])}
+    for device in dr.async_entries_for_config_entry(reg, entry.entry_id):
+        for domain, ident in device.identifiers:
+            if domain == DOMAIN and ":zone:" in ident and ident not in keep:
+                reg.async_remove_device(device.id)
+                break
 
 
 async def _reload_on_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
