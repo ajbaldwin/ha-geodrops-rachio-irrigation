@@ -17,7 +17,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except ValueError as err:  # invalid advanced_overrides
         raise ConfigEntryNotReady(str(err)) from err
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = dict(entry.data)
+    from .coordinator import ZoneStateCoordinator
+    coordinator = ZoneStateCoordinator(hass, entry)
+    await coordinator.async_start()
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+        "data": dict(entry.data), "coordinator": coordinator}
+    entry.async_on_unload(coordinator.async_stop)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(updater.async_register_update_listener(hass, entry))
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
