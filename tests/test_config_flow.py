@@ -1,11 +1,20 @@
 import contextlib
 from unittest.mock import patch
 
+import pytest
 import voluptuous as vol
 from homeassistant import config_entries, data_entry_flow
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.geodrops_rachio.const import DOMAIN
+
+
+@pytest.fixture(autouse=True)
+def _notify_service(hass):
+    """The wizard validates notify_service against registered notify.* services;
+    register the one the test inputs use so the bindings step accepts them."""
+    hass.services.async_register("notify", "phone", lambda call: None)
+    yield
 
 CONNECT_INPUT = {"rachio_api_key_secret": "rachio_api_key"}
 
@@ -242,6 +251,20 @@ async def test_switch_match_normalizes_spaces_and_underscores(
         switch_field = next(
             f for f in result["data_schema"].schema if f == "rachio_switch")
         assert switch_field.default() == "switch.zone_ctrl"
+
+
+async def test_invalid_notify_service_shows_error(hass, enable_pyscript_and_rachio):
+    # Picking a notify entity the scheduler can't call as a service is rejected.
+    with _patch_poll(key=None):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        bad = dict(BINDINGS_INPUT, notify_service="notify.not_a_service")
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], bad)
+    assert result["step_id"] == "bindings"
+    assert result["errors"] == {"notify_service": "invalid_notify_service"}
 
 
 async def test_no_key_free_text_device_and_manual_zone(
