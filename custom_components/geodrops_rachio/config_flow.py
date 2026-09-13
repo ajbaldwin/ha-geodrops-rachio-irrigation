@@ -28,6 +28,7 @@ from .rachio_client import (
     async_fetch_devices,
     resolve_secret,
 )
+from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,10 +102,7 @@ def _zone_label(zone: dict) -> str:
 
 def _slug(name: str) -> str:
     """A config-key-friendly slug from a Rachio zone name (editable default)."""
-    out = "".join(c if c.isalnum() else "_" for c in name.lower())
-    while "__" in out:
-        out = out.replace("__", "_")
-    return out.strip("_")
+    return slug(name)
 
 
 def _optional_number(name: str, default):
@@ -325,8 +323,8 @@ class _BindingsWizardSteps:
             self._data["bindings"] = _assemble_bindings(self._core, user_input)
             if self._data["zones"]:
                 # Options flow re-entering with existing zones already seeded:
-                # don't force adding another one, let the admin opt in.
-                return await self.async_step_zone_gate()
+                # let the admin add/edit/remove zones or leave them as-is.
+                return await self.async_step_manage_zones()
             return await self.async_step_zone()
 
         existing = self._existing_bindings()
@@ -371,21 +369,56 @@ class _BindingsWizardSteps:
         })
         return self.async_show_form(step_id="weather", data_schema=schema)
 
-    async def async_step_zone_gate(self, user_input=None):
+    async def async_step_manage_zones(self, user_input=None):
         """Only reached by the options flow when zones already exist.
 
-        Lets the admin keep the existing zones untouched instead of being
-        forced to add another one every time they open options.
+        Lets the admin add, edit, or remove zones, or leave them as-is and
+        move on to the advanced step.
         """
-        if user_input is not None:
-            if user_input["add_or_edit_zones"]:
-                return await self.async_step_zone()
-            return await self.async_step_advanced()
+        return self.async_show_menu(
+            step_id="manage_zones",
+            menu_options=["add_zone", "edit_zone", "remove_zone", "finish"])
 
-        schema = vol.Schema({
-            vol.Optional("add_or_edit_zones", default=False): bool,
-        })
-        return self.async_show_form(step_id="zone_gate", data_schema=schema)
+    async def async_step_add_zone(self, user_input=None):
+        self._editing_key = None
+        return await self.async_step_zone()
+
+    async def async_step_finish(self, user_input=None):
+        return await self.async_step_advanced()
+
+    async def async_step_edit_zone(self, user_input=None):
+        self._removing = False
+        return await self.async_step_pick_zone()
+
+    async def async_step_remove_zone(self, user_input=None):
+        self._removing = True
+        return await self.async_step_pick_zone()
+
+    async def async_step_pick_zone(self, user_input=None):
+        keys = [z["key"] for z in self._data["zones"]]
+        if user_input is not None:
+            self._selected_key = user_input["zone"]
+            if self._removing:
+                return await self.async_step_confirm_remove()
+            self._editing_key = self._selected_key
+            self._picked_zone = None
+            return await self.async_step_zone_details()
+        schema = vol.Schema({vol.Required("zone"): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=keys,
+                                          mode=selector.SelectSelectorMode.DROPDOWN))})
+        return self.async_show_form(step_id="pick_zone", data_schema=schema)
+
+    async def async_step_confirm_remove(self, user_input=None):
+        if user_input is not None:
+            if user_input.get("confirm"):
+                self._data["zones"] = [
+                    z for z in self._data["zones"] if z["key"] != self._selected_key]
+            return await self.async_step_manage_zones()
+        schema = vol.Schema({vol.Required("confirm", default=False): bool})
+        return self.async_show_form(step_id="confirm_remove", data_schema=schema)
+
+    def _stored_zone(self, key):
+        return next((z for z in self._data["zones"] if z["key"] == key), {})
 
     def _rachio_switch_selector(self):
         """Switch picker constrained to the Rachio integration's entities."""
@@ -483,50 +516,94 @@ class _BindingsWizardSteps:
 
     async def async_step_zone_details(self, user_input=None):
         """Collect a zone's entities, with runtime/refill/key pre-filled from
-        the picked Rachio zone (all still editable)."""
-        if user_input is not None:
-            zid = self._picked_zone["id"] if self._picked_zone else ""
-            self._append_zone(user_input, rachio_zone_id=zid)
-            if user_input.get("add_another_zone"):
-                return await self.async_step_zone()
-            return await self.async_step_advanced()
+        the picked Rachio zone (all still editable).
 
+        When editing an existing zone (`self._editing_key` set), every field
+        instead pre-fills from the stored zone, the key stays immutable (no
+        key field is shown), and submit replaces that zone in place.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if self._editing_key:
+                stored = self._stored_zone(self._editing_key)
+                zid = (
+                    self._picked_zone["id"] if self._picked_zone
+                    else stored.get("rachio_zone_id", ""))
+                self._data["zones"] = [
+                    z for z in self._data["zones"] if z["key"] != self._editing_key]
+                self._append_zone(dict(user_input, key=self._editing_key),
+                                  rachio_zone_id=zid)
+                self._editing_key = None
+                return await self.async_step_manage_zones()
+            if any(slug(user_input["key"]) == slug(z["key"])
+                   for z in self._data["zones"]):
+                errors["key"] = "duplicate_zone_key"
+            else:
+                zid = self._picked_zone["id"] if self._picked_zone else ""
+                self._append_zone(user_input, rachio_zone_id=zid)
+                if user_input.get("add_another_zone"):
+                    return await self.async_step_zone()
+                return await self.async_step_advanced()
+
+        editing = bool(self._editing_key)
+        stored = self._stored_zone(self._editing_key) if editing else {}
         pz = self._picked_zone or {}
-        existing_keys = [z["key"] for z in self._data["zones"]]
-        runtime = pz.get("runtime_minutes")
-        refill = pz.get("refill_depth_mm")
-        switch_guess = self._guess_switch(pz.get("name", ""))
+        existing_keys = [z["key"] for z in self._data["zones"]
+                         if z["key"] != self._editing_key]
+        runtime = stored.get("runtime_minutes") if editing else pz.get("runtime_minutes")
+        refill = stored.get("refill_depth_mm") if editing else pz.get("refill_depth_mm")
+        switch_guess = (
+            stored.get("rachio_switch") if editing
+            else self._guess_switch(pz.get("name", "")))
         switch_key = (
             vol.Optional("rachio_switch", default=switch_guess) if switch_guess
             else vol.Required("rachio_switch"))
-        schema = vol.Schema({
-            vol.Required("key", default=_slug(pz.get("name", ""))): str,
-            switch_key: self._rachio_switch_selector(),
-            vol.Required("dominant_sensor"): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")),
-            vol.Required("state_sensor"): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")),
-            vol.Required("quality_sensors"): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", multiple=True)),
-            vol.Required("target_range", default="moist"):
-                self._target_range_selector(),
-            vol.Optional("geography", default=""): str,
-            vol.Optional("adjacency", default=[]): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=existing_keys, multiple=True, custom_value=True)),
-            _optional_number("runtime_minutes", runtime): vol.Coerce(float),
-            _optional_number("refill_depth_mm", refill): vol.Coerce(float),
-            vol.Optional("spray", default=False): bool,
-            vol.Optional("add_another_zone", default=False): bool,
-        })
-        return self.async_show_form(step_id="zone_details", data_schema=schema)
+        schema_dict: dict = {}
+        if not editing:
+            schema_dict[vol.Required("key", default=_slug(pz.get("name", "")))] = str
+        schema_dict[switch_key] = self._rachio_switch_selector()
+        schema_dict[
+            vol.Required("dominant_sensor", default=stored.get("dominant_sensor"))
+            if editing else vol.Required("dominant_sensor")
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+        schema_dict[
+            vol.Required("state_sensor", default=stored.get("state_sensor"))
+            if editing else vol.Required("state_sensor")
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+        schema_dict[
+            vol.Required("quality_sensors", default=stored.get("quality_sensors"))
+            if editing else vol.Required("quality_sensors")
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", multiple=True))
+        schema_dict[vol.Required(
+            "target_range", default=stored.get("target_range", "moist"))
+        ] = self._target_range_selector()
+        schema_dict[vol.Optional(
+            "geography", default=stored.get("geography", ""))] = str
+        schema_dict[vol.Optional(
+            "adjacency", default=stored.get("adjacency", []))
+        ] = selector.SelectSelector(selector.SelectSelectorConfig(
+            options=existing_keys, multiple=True, custom_value=True))
+        schema_dict[_optional_number("runtime_minutes", runtime)] = vol.Coerce(float)
+        schema_dict[_optional_number("refill_depth_mm", refill)] = vol.Coerce(float)
+        schema_dict[vol.Optional("spray", default=stored.get("spray", False))] = bool
+        if not editing:
+            schema_dict[vol.Optional("add_another_zone", default=False)] = bool
+        return self.async_show_form(
+            step_id="zone_details", data_schema=vol.Schema(schema_dict),
+            errors=errors)
 
     async def _async_step_zone_manual(self, user_input=None):
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._append_zone(user_input)
-            if user_input.get("add_another_zone"):
-                return await self.async_step_zone()
-            return await self.async_step_advanced()
+            if any(slug(user_input["key"]) == slug(z["key"])
+                   for z in self._data["zones"]):
+                errors["key"] = "duplicate_zone_key"
+            else:
+                self._append_zone(user_input)
+                if user_input.get("add_another_zone"):
+                    return await self.async_step_zone()
+                return await self.async_step_advanced()
 
         existing_keys = [z["key"] for z in self._data["zones"]]
         schema = vol.Schema({
@@ -549,7 +626,8 @@ class _BindingsWizardSteps:
             vol.Optional("spray", default=False): bool,
             vol.Optional("add_another_zone", default=False): bool,
         })
-        return self.async_show_form(step_id="zone", data_schema=schema)
+        return self.async_show_form(
+            step_id="zone", data_schema=schema, errors=errors)
 
     async def async_step_advanced(self, user_input=None):
         if user_input is not None:
@@ -585,6 +663,9 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
         self._devices: list[dict] = []
         self._api_key: str | None = None
         self._secret_name: str = DEFAULT_RACHIO_API_KEY_SECRET
+        self._editing_key: str | None = None
+        self._selected_key: str | None = None
+        self._removing: bool = False
 
     async def async_step_user(self, user_input=None):
         if self._async_current_entries():
@@ -617,6 +698,9 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         self._devices: list[dict] = []
         self._api_key: str | None = None
         self._secret_name: str = DEFAULT_RACHIO_API_KEY_SECRET
+        self._editing_key: str | None = None
+        self._selected_key: str | None = None
+        self._removing: bool = False
 
     async def async_step_init(self, user_input=None):
         self._existing = dict(self.config_entry.data)

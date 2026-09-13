@@ -49,13 +49,6 @@
           "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour."
         }
       },
-      "zone_gate": {
-        "title": "Zones",
-        "description": "Your existing zones are kept as-is. Choose whether to add another zone.",
-        "data": {
-          "add_or_edit_zones": "Add another zone"
-        }
-      },
       "zone": {
         "title": "Add a Zone",
         "description": "Pick a Rachio zone to auto-fill its runtime and refill depth, or enter one manually.",
@@ -130,7 +123,8 @@
       }
     },
     "error": {
-      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity."
+      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity.",
+      "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name."
     }
   },
   "options": {
@@ -179,11 +173,25 @@
           "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour."
         }
       },
-      "zone_gate": {
-        "title": "Zones",
-        "description": "Your existing zones are kept as-is. Choose whether to add another zone.",
+      "manage_zones": {
+        "title": "Manage Zones",
+        "menu_options": {
+          "add_zone": "Add a zone",
+          "edit_zone": "Edit a zone",
+          "remove_zone": "Remove a zone",
+          "finish": "Done"
+        }
+      },
+      "pick_zone": {
+        "title": "Choose a Zone",
         "data": {
-          "add_or_edit_zones": "Add another zone"
+          "zone": "Zone"
+        }
+      },
+      "confirm_remove": {
+        "title": "Remove Zone",
+        "data": {
+          "confirm": "Yes, remove this zone"
         }
       },
       "zone": {
@@ -260,7 +268,8 @@
       }
     },
     "error": {
-      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity."
+      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity.",
+      "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name."
     }
   }
 }
