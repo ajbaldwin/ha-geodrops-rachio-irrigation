@@ -21,6 +21,7 @@ _FIELDS = [("temp", "temperature", "°F"), ("humidity", "humidity", "%"),
 
 class ObservedOvernightSensor(SensorEntity):
     _attr_should_poll = False
+    _attr_suggested_display_precision = 1
 
     def __init__(self, entry, key, source, unit) -> None:
         self._attr_unique_id = f"{entry.entry_id}_observed_overnight_{key}"
@@ -57,6 +58,7 @@ class ObservedOvernightSensor(SensorEntity):
 
 class ForecastOvernightSensor(SensorEntity):
     _attr_should_poll = False
+    _attr_suggested_display_precision = 1
 
     def __init__(self, entry, key, field, source, unit) -> None:
         self._attr_unique_id = f"{entry.entry_id}_forecast_overnight_{key}"
