@@ -19,6 +19,21 @@ RACHIO_BASE = "https://api.rach.io/1/public/"
 _HTTP_TIMEOUT_S = 15
 
 
+def parse_devices(devices_json: list) -> list[dict]:
+    """Map the account's Rachio devices to ``{id, name}`` for the picker.
+
+    Devices without an `id` are skipped so a partial payload degrades to fewer
+    entries rather than raising.
+    """
+    out: list[dict] = []
+    for device in devices_json:
+        device_id = device.get("id")
+        if not device_id:
+            continue
+        out.append({"id": device_id, "name": device.get("name", "")})
+    return out
+
+
 def parse_zones(zones_json: list) -> list[dict]:
     """Map a Rachio device `zones` array to the fields the wizard needs.
 
@@ -92,24 +107,30 @@ async def resolve_secret(hass, name: str) -> str | None:
     return resolve_secret_text(text, name)
 
 
-async def async_fetch_zones(session, key: str) -> list[dict]:
-    """Fetch all zones across the account's devices, parsed for the wizard.
-
-    Three hops (person/info -> person/{id} -> device/{id}), mirroring the
-    scheduler's runtime pull. Raises on transport/HTTP/JSON errors; the caller
-    treats any failure as "no live data" and falls back to the manual form.
-    """
+async def _get_json(session, url, key):
     headers = {"Authorization": "Bearer " + key}
+    async with session.get(url, headers=headers, timeout=_HTTP_TIMEOUT_S) as resp:
+        resp.raise_for_status()
+        return await resp.json()
 
-    async def _get_json(url):
-        async with session.get(url, headers=headers, timeout=_HTTP_TIMEOUT_S) as resp:
-            resp.raise_for_status()
-            return await resp.json()
 
-    person = await _get_json(RACHIO_BASE + "person/info")
-    devices = (await _get_json(RACHIO_BASE + "person/" + person["id"])).get("devices", [])
-    zones: list = []
-    for device in devices:
-        payload = await _get_json(RACHIO_BASE + "device/" + device["id"])
-        zones.extend(payload.get("zones", []))
-    return parse_zones(zones)
+async def async_fetch_devices(session, key: str) -> list[dict]:
+    """Fetch the account's Rachio controllers as ``[{id, name}]``.
+
+    Two hops (person/info -> person/{id}). Raises on transport/HTTP/JSON errors;
+    the caller treats any failure as "no live data" and falls back to a
+    free-text device-name field.
+    """
+    person = await _get_json(session, RACHIO_BASE + "person/info", key)
+    payload = await _get_json(session, RACHIO_BASE + "person/" + person["id"], key)
+    return parse_devices(payload.get("devices", []))
+
+
+async def async_fetch_device_zones(session, key: str, device_id: str) -> list[dict]:
+    """Fetch one device's zones, parsed for the wizard (device/{id}).
+
+    Raises on transport/HTTP/JSON errors; the caller falls back to the manual
+    zone form.
+    """
+    payload = await _get_json(session, RACHIO_BASE + "device/" + device_id, key)
+    return parse_zones(payload.get("zones", []))

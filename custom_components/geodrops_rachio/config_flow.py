@@ -23,7 +23,11 @@ from homeassistant.core import callback
 from homeassistant.helpers import aiohttp_client, selector
 
 from .const import DOMAIN
-from .rachio_client import async_fetch_zones, resolve_secret
+from .rachio_client import (
+    async_fetch_device_zones,
+    async_fetch_devices,
+    resolve_secret,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,19 +157,105 @@ class _BindingsWizardSteps:
     def _existing_bindings(self) -> dict[str, Any]:
         return dict(self._existing.get("bindings", {}))
 
+    async def _connect_rachio(self, secret_name: str) -> None:
+        """Resolve the API key and fetch the account's controllers.
+
+        Best-effort: any failure (no key, unreachable API) leaves `_devices`
+        empty and `_api_key` None, so the device-name field falls back to free
+        text and, later, zones fall back to manual entry.
+        """
+        self._devices = []
+        self._api_key = None
+        if not secret_name:
+            return
+        key = await resolve_secret(self.hass, secret_name)
+        if not key:
+            return
+        self._api_key = key
+        session = aiohttp_client.async_get_clientsession(self.hass)
+        try:
+            self._devices = await async_fetch_devices(session, key)
+        except Exception:  # noqa: BLE001 - degrade to a free-text device name
+            _LOGGER.debug(
+                "Rachio device fetch failed; using a free-text device name",
+                exc_info=True,
+            )
+            self._devices = []
+
+    async def async_step_connect(self, user_input=None):
+        """Collect the Rachio API key (secret name) and poll the account.
+
+        Runs first so the device-name field can be a live dropdown of the user's
+        controllers and the zone step can pre-fill from Rachio. Everything
+        downstream degrades gracefully when this poll finds nothing.
+        """
+        if user_input is not None:
+            self._secret_name = user_input["rachio_api_key_secret"]
+            await self._connect_rachio(self._secret_name)
+            return await self.async_step_bindings()
+
+        existing = self._existing_bindings()
+        schema = vol.Schema({
+            vol.Required(
+                "rachio_api_key_secret",
+                default=existing.get(
+                    "rachio_api_key_secret", DEFAULT_RACHIO_API_KEY_SECRET),
+            ): str,
+        })
+        return self.async_show_form(step_id="connect", data_schema=schema)
+
+    def _device_name_field(self, default):
+        """(key, selector) for device name: a dropdown of fetched controllers,
+        or a free-text field when none were fetched."""
+        if self._devices:
+            names = [d["name"] for d in self._devices if d.get("name")]
+            if default not in names and names:
+                default = names[0]
+            return (
+                vol.Required("rachio_device_name", default=default),
+                selector.SelectSelector(selector.SelectSelectorConfig(
+                    options=names, mode=selector.SelectSelectorMode.DROPDOWN,
+                    custom_value=True)),
+            )
+        return (vol.Required("rachio_device_name", default=default or ""), str)
+
+    async def _fetch_zones_for_device(self, device_name: str) -> None:
+        """Fetch the chosen controller's zones for the picker; empty on any
+        failure so the zone step falls back to the manual form."""
+        self._live_zones = []
+        if not self._api_key:
+            return
+        device = next(
+            (d for d in self._devices if d.get("name") == device_name), None)
+        if not device:
+            return
+        session = aiohttp_client.async_get_clientsession(self.hass)
+        try:
+            self._live_zones = await async_fetch_device_zones(
+                session, self._api_key, device["id"])
+        except Exception:  # noqa: BLE001 - degrade to manual zone entry
+            _LOGGER.debug(
+                "Rachio zone fetch failed; using manual zone entry",
+                exc_info=True,
+            )
+            self._live_zones = []
+
     async def async_step_bindings(self, user_input=None):
         if user_input is not None:
             self._core = {
                 "notify_service": user_input["notify_service"],
                 "calendar_entity": user_input["calendar_entity"],
                 "rachio_device_name": user_input["rachio_device_name"],
-                "rachio_api_key_secret": user_input["rachio_api_key_secret"],
+                "rachio_api_key_secret": self._secret_name,
                 "standby_switch": user_input["standby_switch"],
                 "forecast_entity": user_input["forecast_entity"],
             }
+            await self._fetch_zones_for_device(user_input["rachio_device_name"])
             return await self.async_step_weather()
 
         existing = self._existing_bindings()
+        device_key, device_selector = self._device_name_field(
+            existing.get("rachio_device_name", ""))
         schema = vol.Schema({
             vol.Required(
                 "notify_service", default=existing.get("notify_service")
@@ -173,14 +263,7 @@ class _BindingsWizardSteps:
             vol.Required(
                 "calendar_entity", default=existing.get("calendar_entity")
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="calendar")),
-            vol.Required(
-                "rachio_device_name", default=existing.get("rachio_device_name", "")
-            ): str,
-            vol.Required(
-                "rachio_api_key_secret",
-                default=existing.get(
-                    "rachio_api_key_secret", DEFAULT_RACHIO_API_KEY_SECRET),
-            ): str,
+            device_key: device_selector,
             vol.Optional(
                 "standby_switch",
                 default=existing.get("standby_switch", DEFAULT_STANDBY_SWITCH),
@@ -191,35 +274,9 @@ class _BindingsWizardSteps:
         })
         return self.async_show_form(step_id="bindings", data_schema=schema)
 
-    async def _maybe_fetch_live_zones(self) -> None:
-        """Best-effort poll of the Rachio API to auto-populate zone runtimes.
-
-        Resolves the collected secret name against secrets.yaml and fetches the
-        account's zones. Any failure (no key, unreachable API, empty result)
-        leaves `_live_zones` empty, and the zone step falls back to the manual
-        form — the wizard never blocks on Rachio.
-        """
-        self._live_zones = []
-        secret_name = self._core.get("rachio_api_key_secret")
-        if not secret_name:
-            return
-        key = await resolve_secret(self.hass, secret_name)
-        if not key:
-            return
-        session = aiohttp_client.async_get_clientsession(self.hass)
-        try:
-            self._live_zones = await async_fetch_zones(session, key)
-        except Exception:  # noqa: BLE001 - any failure degrades to manual entry
-            _LOGGER.debug(
-                "Rachio zone auto-poll failed; using manual zone entry",
-                exc_info=True,
-            )
-            self._live_zones = []
-
     async def async_step_weather(self, user_input=None):
         if user_input is not None:
             self._data["bindings"] = _assemble_bindings(self._core, user_input)
-            await self._maybe_fetch_live_zones()
             if self._data["zones"]:
                 # Options flow re-entering with existing zones already seeded:
                 # don't force adding another one, let the admin opt in.
@@ -446,13 +503,16 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
         self._existing: dict[str, Any] = {}
         self._live_zones: list[dict] = []
         self._picked_zone: dict | None = None
+        self._devices: list[dict] = []
+        self._api_key: str | None = None
+        self._secret_name: str = DEFAULT_RACHIO_API_KEY_SECRET
 
     async def async_step_user(self, user_input=None):
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
         if not _prereqs_met(self.hass):
             return self.async_abort(reason="missing_prerequisites")
-        return await self.async_step_bindings()
+        return await self.async_step_connect()
 
     async def _async_finish(self):
         return self.async_create_entry(
@@ -475,12 +535,15 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         self._existing: dict[str, Any] = {}
         self._live_zones: list[dict] = []
         self._picked_zone: dict | None = None
+        self._devices: list[dict] = []
+        self._api_key: str | None = None
+        self._secret_name: str = DEFAULT_RACHIO_API_KEY_SECRET
 
     async def async_step_init(self, user_input=None):
         self._existing = dict(self.config_entry.data)
         # Seed with the existing zones so declining to add more preserves them.
         self._data["zones"] = list(self._existing.get("zones", []))
-        return await self.async_step_bindings()
+        return await self.async_step_connect()
 
     async def _async_finish(self):
         self.hass.config_entries.async_update_entry(self.config_entry, data=self._data)

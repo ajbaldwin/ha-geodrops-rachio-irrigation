@@ -2,9 +2,25 @@
 resolution. The async HTTP fetch is exercised through the config-flow tests
 (with a mocked session), not here."""
 from custom_components.geodrops_rachio.rachio_client import (
+    parse_devices,
     parse_zones,
     resolve_secret_text,
 )
+
+
+def test_parse_devices_maps_id_and_name():
+    devices = [
+        {"id": "dev-1", "name": "Main House", "status": "ONLINE"},
+        {"id": "dev-2", "name": "Back Forty"},
+    ]
+    assert parse_devices(devices) == [
+        {"id": "dev-1", "name": "Main House"},
+        {"id": "dev-2", "name": "Back Forty"},
+    ]
+
+
+def test_parse_devices_skips_device_without_id():
+    assert parse_devices([{"name": "No Id"}]) == []
 
 
 def test_parse_zones_maps_runtime_and_depth():
