@@ -35,6 +35,7 @@ async def test_async_deliver_writes_files_and_reloads(hass, tmp_path, monkeypatc
     # monkeypatch (auto-reverted at teardown) — same effect, since Mock
     # objects aren't descriptors and won't get bound like a real method.
     monkeypatch.setattr(type(hass.services), "async_call", AsyncMock())
+    hass.services.async_register("pyscript", "reload", lambda call: None)
     entry_data = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
                   "advanced_overrides": ""}
 
@@ -69,6 +70,7 @@ async def test_redelivers_when_code_changes_with_same_version(
     pyscript_dir = tmp_path / "pyscript"
     pyscript_dir.mkdir()
     monkeypatch.setattr(type(hass.services), "async_call", AsyncMock())
+    hass.services.async_register("pyscript", "reload", lambda call: None)
     ed = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
           "advanced_overrides": ""}
 
@@ -86,6 +88,30 @@ async def test_redelivers_when_code_changes_with_same_version(
     hass.services.async_call.assert_awaited_with("pyscript", "reload", blocking=True)
 
 
+async def test_async_deliver_skips_reload_when_service_absent(hass, tmp_path):
+    """On restart the integration can set up before pyscript registers its
+    reload service. Delivery must not crash — it writes the files (pyscript
+    loads them on its own startup) and skips the reload."""
+    bundled = tmp_path / "bundled_app"
+    (bundled / "geodrops_rachio_lib").mkdir(parents=True)
+    (bundled / "geodrops_rachio.py").write_text("# script\n")
+    (bundled / "geodrops_rachio_lib" / "__init__.py").write_text("")
+    (bundled / "VERSION").write_text("0.8.0\n")
+    pyscript_dir = tmp_path / "pyscript"
+    pyscript_dir.mkdir()
+    ed = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
+          "advanced_overrides": ""}
+
+    # No pyscript.reload service registered, async_call NOT patched: a real
+    # call would raise ServiceNotFound.
+    changed = await delivery.async_deliver(
+        hass, ed, pyscript_dir=pyscript_dir, bundled_dir=bundled)
+
+    assert changed is True
+    assert (pyscript_dir / "geodrops_rachio.py").exists()
+    assert (pyscript_dir / "modules" / "geodrops_rachio_lib" / "__init__.py").exists()
+
+
 async def test_async_deliver_reloads_when_only_config_changes(hass, tmp_path, monkeypatch):
     bundled = tmp_path / "bundled_app"
     (bundled / "geodrops_rachio_lib").mkdir(parents=True)
@@ -97,6 +123,7 @@ async def test_async_deliver_reloads_when_only_config_changes(hass, tmp_path, mo
     pyscript_dir.mkdir()
 
     monkeypatch.setattr(type(hass.services), "async_call", AsyncMock())
+    hass.services.async_register("pyscript", "reload", lambda call: None)
     entry_data = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
                   "advanced_overrides": ""}
 
