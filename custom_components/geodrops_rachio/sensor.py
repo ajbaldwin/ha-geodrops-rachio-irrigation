@@ -1,14 +1,18 @@
 from __future__ import annotations
 import datetime as dt
 import logging
-from homeassistant.components.sensor import SensorEntity, ENTITY_ID_FORMAT
+from homeassistant.components.sensor import (
+    SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
     async_track_state_change_event, async_track_time_interval)
+from homeassistant.util import dt as dt_util
 from . import weather_derive
-from .entity_base import device_info
+from .const import DOMAIN
+from .entity_base import device_info, zone_device_info
+from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,6 +21,17 @@ _FORECAST_INTERVAL = dt.timedelta(hours=1)
 # (key suffix, forecast field, unit)
 _FIELDS = [("temp", "temperature", "°F"), ("humidity", "humidity", "%"),
            ("wind", "wind_speed", "mph")]
+
+# (suffix, coordinator-key, device_class, unit)
+_ZONE_FIELDS = [
+    ("planned_runtime", "planned_runtime", SensorDeviceClass.DURATION, "min"),
+    ("last_delivered_runtime", "last_delivered_runtime",
+     SensorDeviceClass.DURATION, "min"),
+    ("last_watered", "last_watered", SensorDeviceClass.TIMESTAMP, None),
+    ("efficacy", "efficacy", None, None),
+    # No device_class: avoids HA's enum-options validation churn.
+    ("calibration_state", "calibration_state", None, None),
+]
 
 
 class ObservedOvernightSensor(SensorEntity):
@@ -94,6 +109,63 @@ class ForecastOvernightSensor(SensorEntity):
         self.async_write_ha_state()
 
 
+class ZoneCoordinatorSensor(SensorEntity):
+    """Mirrors one field of the coordinator's per-zone state dict."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+
+    def __init__(self, entry, key, coordinator, suffix, ckey,
+                 device_class, unit) -> None:
+        s = slug(key)
+        self._key, self._coord, self._ckey = key, coordinator, ckey
+        self._attr_unique_id = f"{entry.entry_id}_zone_{s}_{suffix}"
+        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{s}_{suffix}")
+        self._attr_name = suffix.replace("_", " ").capitalize()
+        self._attr_device_class = device_class
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_info = zone_device_info(entry, key)
+
+    async def async_added_to_hass(self) -> None:
+        self._coord.add_listener(self._update)
+        self._update()
+
+    @callback
+    def _update(self) -> None:
+        value = self._coord.data_for(self._key).get(self._ckey)
+        if self._attr_device_class == SensorDeviceClass.TIMESTAMP and value:
+            value = dt_util.parse_datetime(value)
+        self._attr_native_value = value
+        if self.hass:
+            self.async_write_ha_state()
+
+
+class ZoneMoistureSensor(SensorEntity):
+    """Live mirror of the zone's own GeoDrops dominant sensor."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_name = "Soil moisture"
+
+    def __init__(self, entry, key, source) -> None:
+        s = slug(key)
+        self._source = source
+        self._attr_unique_id = f"{entry.entry_id}_zone_{s}_soil_moisture"
+        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{s}_soil_moisture")
+        self._attr_device_info = zone_device_info(entry, key)
+
+    async def async_added_to_hass(self) -> None:
+        @callback
+        def _mirror(event=None) -> None:
+            st = self.hass.states.get(self._source) if self._source else None
+            self._attr_native_value = st.state if st else None
+            self.async_write_ha_state()
+        if self._source:
+            self.async_on_remove(async_track_state_change_event(
+                self.hass, [self._source], _mirror))
+        _mirror()
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     weather = entry.data.get("bindings", {}).get("weather", {})
@@ -104,4 +176,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
             entry, key, weather.get(field if field != "wind_speed" else "wind"), unit))
         entities.append(ForecastOvernightSensor(
             entry, key, field, forecast_entity, unit))
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    for z in entry.data.get("zones", []):
+        entities.append(ZoneMoistureSensor(entry, z["key"], z.get("dominant_sensor")))
+        for suffix, ckey, dc, unit in _ZONE_FIELDS:
+            entities.append(ZoneCoordinatorSensor(
+                entry, z["key"], coordinator, suffix, ckey, dc, unit))
+
     async_add_entities(entities)
