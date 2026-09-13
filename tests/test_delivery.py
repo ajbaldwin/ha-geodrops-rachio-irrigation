@@ -45,7 +45,8 @@ async def test_async_deliver_writes_files_and_reloads(hass, tmp_path, monkeypatc
     assert (pyscript_dir / "geodrops_rachio.py").exists()
     assert (pyscript_dir / "modules" / "irrigation_lib" / "__init__.py").exists()
     assert (pyscript_dir / "geodrops_rachio_config.yaml").exists()
-    assert delivery.read_stamp(pyscript_dir / delivery.INSTALLED_STAMP) == "2.0.0"
+    assert delivery.read_stamp(pyscript_dir / delivery.INSTALLED_STAMP) == (
+        delivery.bundle_fingerprint(bundled))
     hass.services.async_call.assert_awaited_with("pyscript", "reload", blocking=True)
 
     # Second call is a no-op (stamp matches)
@@ -54,6 +55,35 @@ async def test_async_deliver_writes_files_and_reloads(hass, tmp_path, monkeypatc
         hass, entry_data, pyscript_dir=pyscript_dir, bundled_dir=bundled)
     assert changed2 is False
     hass.services.async_call.assert_not_awaited()
+
+
+async def test_redelivers_when_code_changes_with_same_version(
+        hass, tmp_path, monkeypatch):
+    """The load-bearing regression: identical VERSION string but different code
+    must still redeliver. Delivery gates on the bundle's content, not VERSION."""
+    bundled = tmp_path / "bundled_app"
+    (bundled / "irrigation_lib").mkdir(parents=True)
+    (bundled / "geodrops_rachio.py").write_text("# v1\n")
+    (bundled / "irrigation_lib" / "__init__.py").write_text("")
+    (bundled / "VERSION").write_text("0.8.0\n")
+    pyscript_dir = tmp_path / "pyscript"
+    pyscript_dir.mkdir()
+    monkeypatch.setattr(type(hass.services), "async_call", AsyncMock())
+    ed = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
+          "advanced_overrides": ""}
+
+    assert await delivery.async_deliver(
+        hass, ed, pyscript_dir=pyscript_dir, bundled_dir=bundled) is True
+
+    # Change ONLY the code; keep VERSION identical.
+    (bundled / "geodrops_rachio.py").write_text("# v2 CHANGED\n")
+    hass.services.async_call.reset_mock()
+    changed2 = await delivery.async_deliver(
+        hass, ed, pyscript_dir=pyscript_dir, bundled_dir=bundled)
+
+    assert changed2 is True
+    assert (pyscript_dir / "geodrops_rachio.py").read_text() == "# v2 CHANGED\n"
+    hass.services.async_call.assert_awaited_with("pyscript", "reload", blocking=True)
 
 
 async def test_async_deliver_reloads_when_only_config_changes(hass, tmp_path, monkeypatch):

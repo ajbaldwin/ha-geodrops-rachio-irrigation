@@ -116,9 +116,29 @@ def vendor(scheduler_repo: str, dest_pkg: str) -> None:
         import shutil; shutil.rmtree(lib_dst)
     import shutil
     shutil.copytree(lib_src, lib_dst, ignore=shutil.ignore_patterns("__pycache__"))
-    version = (src_root / "VERSION").read_text().strip() if (src_root / "VERSION").exists() else "unknown"
+    version = _scheduler_version(src_root)
     (dest / "VERSION").write_text(version + "\n", encoding="utf-8")
     print(f"vendored scheduler {version} -> {dest}")
+
+
+def _scheduler_version(src_root: pathlib.Path) -> str:
+    """Version to stamp: the source VERSION file, else its git tag, else 'unknown'.
+
+    Delivery gates on a content hash, so this string is informational — but a
+    real value (e.g. the scheduler's release tag) makes the bundle identifiable.
+    """
+    version_file = src_root / "VERSION"
+    if version_file.exists():
+        return version_file.read_text(encoding="utf-8").strip()
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(src_root), "describe", "--tags", "--always"],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        return out.stdout.strip().lstrip("v") or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
 
 
 if __name__ == "__main__":
