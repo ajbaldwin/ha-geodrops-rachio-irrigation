@@ -7,12 +7,12 @@
     "step": {
       "connect": {
         "title": "Connect to Rachio",
-        "description": "Enter the secrets.yaml key NAME that holds your Rachio API key. If it resolves, the wizard reads your controllers and zones to pre-fill the rest of setup.",
+        "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you.\n\nHome Assistant keeps API keys in **`config/secrets.yaml`**. Below, enter the **name** of the entry in that file that holds your Rachio API key — not the key itself. If you haven't added it yet, add a line to `secrets.yaml` first, then come back.\n\nIf the name can't be read, you can still complete setup by entering everything manually on the next screens.",
         "data": {
           "rachio_api_key_secret": "Rachio API Key — Secret Name"
         },
         "data_description": {
-          "rachio_api_key_secret": "The key NAME in secrets.yaml that holds your Rachio API key — not the key value itself."
+          "rachio_api_key_secret": "The key NAME in secrets.yaml (default `rachio_api_key`), not the key value.\n\nExample `secrets.yaml` line:\n`rachio_api_key: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`\n\nGet your API key from app.rach.io → Account Settings → Get API Key."
         }
       },
       "bindings": {
@@ -129,12 +129,12 @@
     "step": {
       "connect": {
         "title": "Connect to Rachio",
-        "description": "Enter the secrets.yaml key NAME that holds your Rachio API key. If it resolves, the wizard reads your controllers and zones to pre-fill the rest of setup.",
+        "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you.\n\nHome Assistant keeps API keys in **`config/secrets.yaml`**. Below, enter the **name** of the entry in that file that holds your Rachio API key — not the key itself. If you haven't added it yet, add a line to `secrets.yaml` first, then come back.\n\nIf the name can't be read, you can still complete setup by entering everything manually on the next screens.",
         "data": {
           "rachio_api_key_secret": "Rachio API Key — Secret Name"
         },
         "data_description": {
-          "rachio_api_key_secret": "The key NAME in secrets.yaml that holds your Rachio API key — not the key value itself."
+          "rachio_api_key_secret": "The key NAME in secrets.yaml (default `rachio_api_key`), not the key value.\n\nExample `secrets.yaml` line:\n`rachio_api_key: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`\n\nGet your API key from app.rach.io → Account Settings → Get API Key."
         }
       },
       "bindings": {
