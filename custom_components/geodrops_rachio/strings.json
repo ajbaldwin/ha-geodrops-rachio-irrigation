@@ -115,7 +115,7 @@
         },
         "data_description": {
           "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs. Pre-filled from the Rachio zone name — edit if you like.",
-          "rachio_switch": "The Home Assistant switch that turns THIS zone's water on (created by the Rachio integration, e.g. switch.front_yard). This is separate from the Rachio zone you picked: the zone gave us calibration data, but the scheduler needs the HA switch entity to actually run watering.",
+          "rachio_switch": "The Home Assistant switch that turns THIS zone's water on (created by the Rachio integration, e.g. switch.front_yard). We pre-fill it with the switch whose name matches the Rachio zone you picked — confirm it's correct and change it if the guess is wrong. It's separate from the Rachio zone itself: the zone gave us calibration data, but the scheduler needs this HA switch to actually run watering.",
           "dominant_sensor": "The GeoDrops sensor for this zone's dominant soil-moisture reading (the value the scheduler waters toward).",
           "state_sensor": "The GeoDrops sensor reporting this zone's moisture state/health.",
           "quality_sensors": "One or more GeoDrops quality/telemetry sensors for this zone (used to validate readings).",
@@ -241,7 +241,7 @@
         },
         "data_description": {
           "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs. Pre-filled from the Rachio zone name — edit if you like.",
-          "rachio_switch": "The Home Assistant switch that turns THIS zone's water on (created by the Rachio integration, e.g. switch.front_yard). This is separate from the Rachio zone you picked: the zone gave us calibration data, but the scheduler needs the HA switch entity to actually run watering.",
+          "rachio_switch": "The Home Assistant switch that turns THIS zone's water on (created by the Rachio integration, e.g. switch.front_yard). We pre-fill it with the switch whose name matches the Rachio zone you picked — confirm it's correct and change it if the guess is wrong. It's separate from the Rachio zone itself: the zone gave us calibration data, but the scheduler needs this HA switch to actually run watering.",
           "dominant_sensor": "The GeoDrops sensor for this zone's dominant soil-moisture reading (the value the scheduler waters toward).",
           "state_sensor": "The GeoDrops sensor reporting this zone's moisture state/health.",
           "quality_sensors": "One or more GeoDrops quality/telemetry sensors for this zone (used to validate readings).",

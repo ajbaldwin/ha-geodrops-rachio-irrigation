@@ -1,6 +1,7 @@
 import contextlib
 from unittest.mock import patch
 
+import voluptuous as vol
 from homeassistant import config_entries, data_entry_flow
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -174,6 +175,48 @@ async def test_device_name_dropdown_and_live_zone_prefill(
     zone = result["result"].data["zones"][0]
     assert zone["rachio_zone_id"] == "z-uuid-1"
     assert zone["runtime_minutes"] == 30.0
+
+
+async def test_zone_details_prefills_matching_switch(
+        hass, enable_pyscript_and_rachio):
+    # A HA switch whose friendly name matches the Rachio zone -> pre-selected.
+    hass.states.async_set(
+        "switch.front_yard", "off", {"friendly_name": "Front Yard"})
+    with _patch_poll(key="KEY", devices=DEVICES, zones=LIVE_ZONES):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], WEATHER_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"rachio_zone": "z-uuid-1"})
+        assert result["step_id"] == "zone_details"
+        switch_field = next(
+            f for f in result["data_schema"].schema if f == "rachio_switch")
+        assert switch_field.default() == "switch.front_yard"
+
+
+async def test_zone_details_no_switch_match_requires_pick(
+        hass, enable_pyscript_and_rachio):
+    # No matching switch -> field has no default (user must pick).
+    with _patch_poll(key="KEY", devices=DEVICES, zones=LIVE_ZONES):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], WEATHER_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"rachio_zone": "z-uuid-1"})
+        switch_field = next(
+            f for f in result["data_schema"].schema if f == "rachio_switch")
+        # vol.Required with no default -> default is the UNDEFINED marker
+        assert switch_field.default is vol.UNDEFINED
 
 
 async def test_no_key_free_text_device_and_manual_zone(

@@ -404,6 +404,32 @@ class _BindingsWizardSteps:
         })
         return self.async_show_form(step_id="zone", data_schema=schema)
 
+    def _guess_switch(self, zone_name: str):
+        """Best-guess HA switch entity for a Rachio zone, matched by name.
+
+        The Rachio integration names its zone switches after the zone (e.g.
+        "Front Yard" -> switch.front_yard). Prefer a friendly-name match, then
+        an exact object-id match, then an object-id containing the slug. Returns
+        None when nothing plausible exists, so the field then requires a pick.
+        """
+        if not zone_name:
+            return None
+        want = zone_name.strip().lower()
+        slug = _slug(zone_name)
+        states = self.hass.states.async_all("switch")
+        for st in states:
+            friendly = st.attributes.get("friendly_name")
+            if friendly and friendly.strip().lower() == want:
+                return st.entity_id
+        ids = [st.entity_id for st in states]
+        exact = f"switch.{slug}"
+        if exact in ids:
+            return exact
+        for eid in ids:
+            if slug and slug in eid.split(".", 1)[1]:
+                return eid
+        return None
+
     async def async_step_zone_details(self, user_input=None):
         """Collect a zone's entities, with runtime/refill/key pre-filled from
         the picked Rachio zone (all still editable)."""
@@ -418,9 +444,13 @@ class _BindingsWizardSteps:
         existing_keys = [z["key"] for z in self._data["zones"]]
         runtime = pz.get("runtime_minutes")
         refill = pz.get("refill_depth_mm")
+        switch_guess = self._guess_switch(pz.get("name", ""))
+        switch_key = (
+            vol.Optional("rachio_switch", default=switch_guess) if switch_guess
+            else vol.Required("rachio_switch"))
         schema = vol.Schema({
             vol.Required("key", default=_slug(pz.get("name", ""))): str,
-            vol.Required("rachio_switch"): selector.EntitySelector(
+            switch_key: selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")),
             vol.Required("dominant_sensor"): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")),
