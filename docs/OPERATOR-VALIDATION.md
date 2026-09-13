@@ -113,10 +113,14 @@ toggles during a run.
   so future *code-only* scheduler updates won't auto-redeliver (the installed-vs-bundled
   version compare sees no change). First install is unaffected. Fix: stamp a real version
   (or commit SHA) in the scheduler repo, or have the vendor step derive one.
-- **HACS update entity id unverified** — `updater.HACS_UPDATE_ENTITY = "update.geodrops_rachio_update"`
-  is a guess. Confirm the actual id HACS assigns (Developer Tools → States, filter `update.`)
-  once the repo is tracked in HACS; if different, fix the constant (or resolve it dynamically).
-  Until then, T10 step 6's automatic path may not fire.
+- **HACS update entity id — corrected, one live confirm pending.** `updater.HACS_UPDATE_ENTITY`
+  is now `update.geodrops_rachio_irrigation_update` (HACS names it `update.<slug>_update` from the
+  hacs.json display name "GeoDrops + Rachio Irrigation" → `geodrops_rachio_irrigation`); the old
+  `update.geodrops_rachio_update` was wrong, so the no-restart brain-update watcher was silently
+  inert. The setup now logs (debug) whether that entity is present, so a still-wrong id shows in the
+  log instead of failing silently. **Confirm once on a live HACS install:** Developer Tools → States,
+  filter `update.` — if the real id differs, change the constant. (A manual config-entry reload
+  re-delivers regardless, so this only affects the *automatic* apply.)
 - **Service-name collision / coexistence — RESOLVED (2026-09-13):** the vendor transform now
   namespaces the colliding identifiers to `geodrops_rachio_*` — the five `@service` functions
   (`pyscript.geodrops_rachio_{run_now,preview,stop,reset,refresh_runtimes}`), every
