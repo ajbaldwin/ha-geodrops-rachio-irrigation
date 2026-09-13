@@ -1,0 +1,164 @@
+from __future__ import annotations
+
+import pathlib
+import sys
+
+CANONICAL_STOP_TRIGGER = '@state_trigger("input_button.irrigation_stop")'
+STOP_ENTITY = "button.geodrops_rachio_stop"
+
+# The canonical app hardcodes its config/state locations under
+# apps/irrigation/, but delivery.py drops the vendored files at the top level
+# of <config>/pyscript/. Rewrite the constants to match delivery so the running
+# script reads the config it was actually handed and writes state where the
+# integration expects it.
+CANONICAL_CONFIG_PATH = 'CONFIG_PATH = "/config/pyscript/apps/irrigation/config.yaml"'
+DELIVERED_CONFIG_PATH = 'CONFIG_PATH = "/config/pyscript/geodrops_rachio_config.yaml"'
+CANONICAL_STATE_DIR = 'STATE_DIR = "/config/pyscript/apps/irrigation/state"'
+DELIVERED_STATE_DIR = 'STATE_DIR = "/config/pyscript/geodrops_rachio_state"'
+
+# run_active_boolean is now a switch (switch.geodrops_rachio_run_active), not an
+# input_boolean. input_boolean.turn_on/turn_off no-op on a switch entity, so
+# crash recovery would never re-arm. Rewrite the run_active service call to the
+# switch domain. Matched as a single line (the only service.call on
+# input_boolean in the canonical app).
+CANONICAL_RUN_ACTIVE_CALL = 'service.call("input_boolean", "turn_on" if on else "turn_off",'
+DELIVERED_RUN_ACTIVE_CALL = 'service.call("switch", "turn_on" if on else "turn_off",'
+
+# The canonical app registers pyscript services named `irrigation_*` and writes
+# `pyscript.irrigation_*` state entities, and coordinates its run task under the
+# global key "irrigation_run". The standalone scheduler uses the SAME names, so
+# both installed on one HA box would collide (shared service, state, and
+# task-uniqueness namespaces). Namespace the vendored copy to `geodrops_rachio_*`
+# so this integration coexists with — and is testable alongside — the standalone.
+# Only these three collide in a shared namespace; external helpers the user owns
+# (e.g. input_boolean.irrigation_standby) and internal @time_trigger functions
+# are left untouched.
+# The scheduler's pure-logic package is named `irrigation_lib` and is delivered
+# to the SHARED /config/pyscript/modules/ dir. The standalone scheduler uses the
+# same package name there, so a shared name means our delivery clobbers the
+# operator's lib (and vice versa). Rename the package to `geodrops_rachio_lib`
+# in the script's imports and in the lib's own cross-imports, and deliver it
+# under that name, so the two never touch each other's files.
+CANONICAL_LIB = "irrigation_lib"
+DELIVERED_LIB = "geodrops_rachio_lib"
+
+NAMESPACED_SERVICES = ("run_now", "preview", "stop", "reset", "refresh_runtimes")
+CANONICAL_STATE_PREFIX = "pyscript.irrigation_"
+DELIVERED_STATE_PREFIX = "pyscript.geodrops_rachio_"
+CANONICAL_TASK_KEY = 'task.unique("irrigation_run")'
+DELIVERED_TASK_KEY = 'task.unique("geodrops_rachio_run")'
+
+
+class TransformError(Exception):
+    pass
+
+
+def _require_replace(source: str, expected: str, replacement: str, *, what: str) -> str:
+    """Replace ``expected`` with ``replacement``, raising if it is absent.
+
+    Every rewrite the transform performs must fail loudly when the canonical
+    source string it targets is missing — a silent no-op would ship a vendored
+    script that reads the wrong path or drives the wrong service domain.
+    """
+    if expected not in source:
+        raise TransformError(
+            f"expected {what} {expected!r} not found; "
+            "the canonical app layout changed — update the transform."
+        )
+    return source.replace(expected, replacement)
+
+
+def transform_app_to_script(source: str, *, stop_entity: str) -> str:
+    out = _require_replace(
+        source,
+        CANONICAL_STOP_TRIGGER,
+        f'@state_trigger("{stop_entity}")',
+        what="stop trigger",
+    )
+    out = _require_replace(
+        out, CANONICAL_CONFIG_PATH, DELIVERED_CONFIG_PATH, what="config path constant"
+    )
+    out = _require_replace(
+        out, CANONICAL_STATE_DIR, DELIVERED_STATE_DIR, what="state dir constant"
+    )
+    out = _require_replace(
+        out,
+        CANONICAL_RUN_ACTIVE_CALL,
+        DELIVERED_RUN_ACTIVE_CALL,
+        what="run_active service call",
+    )
+    # Namespace the colliding service defs so this integration coexists with
+    # the standalone scheduler on the same HA box.
+    for name in NAMESPACED_SERVICES:
+        out = _require_replace(
+            out,
+            f"def irrigation_{name}(",
+            f"def geodrops_rachio_{name}(",
+            what=f"service def irrigation_{name}",
+        )
+    # Namespace all pyscript.irrigation_* state entities (and any doc references
+    # to them) in one shot so reads and writes stay consistent.
+    out = _require_replace(
+        out,
+        CANONICAL_STATE_PREFIX,
+        DELIVERED_STATE_PREFIX,
+        what="pyscript state entity prefix",
+    )
+    # Namespace the run-task uniqueness key so our run and the standalone's do
+    # not cross-cancel each other.
+    out = _require_replace(
+        out, CANONICAL_TASK_KEY, DELIVERED_TASK_KEY, what="run task uniqueness key"
+    )
+    # Rename the imported lib package so the delivered top-level script imports
+    # geodrops_rachio_lib (delivered to modules/) rather than the shared
+    # irrigation_lib the standalone scheduler also uses.
+    out = out.replace(CANONICAL_LIB, DELIVERED_LIB)
+    return out
+
+
+def vendor(scheduler_repo: str, dest_pkg: str) -> None:
+    src_root = pathlib.Path(scheduler_repo)
+    dest = pathlib.Path(dest_pkg) / "bundled_app"
+    app = (src_root / "irrigation/__init__.py").read_text(encoding="utf-8")
+    script = transform_app_to_script(app, stop_entity=STOP_ENTITY)
+    (dest).mkdir(parents=True, exist_ok=True)
+    (dest / "geodrops_rachio.py").write_text(script, encoding="utf-8")
+    lib_src = src_root / CANONICAL_LIB
+    lib_dst = dest / DELIVERED_LIB
+    import shutil
+    if lib_dst.exists():
+        shutil.rmtree(lib_dst)
+    shutil.copytree(lib_src, lib_dst, ignore=shutil.ignore_patterns("__pycache__"))
+    # Rewrite the lib's own cross-imports (from irrigation_lib.x import ...) to
+    # the delivered package name so the renamed package resolves internally.
+    for py in lib_dst.rglob("*.py"):
+        text = py.read_text(encoding="utf-8")
+        if CANONICAL_LIB in text:
+            py.write_text(text.replace(CANONICAL_LIB, DELIVERED_LIB), encoding="utf-8")
+    version = _scheduler_version(src_root)
+    (dest / "VERSION").write_text(version + "\n", encoding="utf-8")
+    print(f"vendored scheduler {version} -> {dest}")
+
+
+def _scheduler_version(src_root: pathlib.Path) -> str:
+    """Version to stamp: the source VERSION file, else its git tag, else 'unknown'.
+
+    Delivery gates on a content hash, so this string is informational — but a
+    real value (e.g. the scheduler's release tag) makes the bundle identifiable.
+    """
+    version_file = src_root / "VERSION"
+    if version_file.exists():
+        return version_file.read_text(encoding="utf-8").strip()
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(src_root), "describe", "--tags", "--always"],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        return out.stdout.strip().lstrip("v") or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+if __name__ == "__main__":
+    vendor(sys.argv[1], sys.argv[2])

@@ -1,0 +1,266 @@
+{
+  "config": {
+    "abort": {
+      "missing_prerequisites": "Install and set up pyscript and the Rachio integration first, then add this integration.",
+      "single_instance_allowed": "GeoDrops + Rachio Irrigation is already configured."
+    },
+    "step": {
+      "connect": {
+        "title": "Connect Your Rachio Account",
+        "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you.\n\nHome Assistant keeps API keys in **`config/secrets.yaml`**. Below, enter the **name** of the entry in that file that holds your Rachio API key — not the key itself. If you haven't added it yet, add a line to `secrets.yaml` first, then come back.\n\nIf the name can't be read, you can still complete setup by entering everything manually on the next screens.",
+        "data": {
+          "rachio_api_key_secret": "Rachio API Key — Secret Name"
+        },
+        "data_description": {
+          "rachio_api_key_secret": "The key NAME in secrets.yaml (default `rachio_api_key`), not the key value.\n\nExample `secrets.yaml` line:\n`rachio_api_key: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`\n\nGet your API key from app.rach.io → Account Settings → Get API Key."
+        }
+      },
+      "bindings": {
+        "title": "Core Setup",
+        "description": "Point the scheduler at your notification, calendar, Rachio controller, and forecast entities.",
+        "data": {
+          "notify_service": "Notification Service",
+          "calendar_entity": "Irrigation Log Calendar",
+          "rachio_device_name": "Rachio Controller",
+          "standby_switch": "Rachio Standby Switch",
+          "forecast_entity": "Weather Forecast Entity"
+        },
+        "data_description": {
+          "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
+          "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
+          "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
+          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
+        }
+      },
+      "weather": {
+        "title": "Weather Station",
+        "description": "Your local weather-station sensors, plus the sensor-name prefixes for hourly precipitation forecasts.",
+        "data": {
+          "weather_temperature": "Outdoor Temperature Sensor",
+          "weather_humidity": "Outdoor Humidity Sensor",
+          "weather_wind": "Wind Speed Sensor",
+          "weather_rain_last_hour": "Rain (Last Hour) Sensor",
+          "weather_precip_type": "Precipitation Type Sensor",
+          "precipitation_chance_prefix": "Precipitation-Chance Sensor Prefix",
+          "precipitation_amount_prefix": "Precipitation-Amount Sensor Prefix"
+        },
+        "data_description": {
+          "precipitation_chance_prefix": "Prefix of your hourly forecast precip-chance sensors; the scheduler appends an hour count, e.g. sensor.precipitation_chance_3_hour.",
+          "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour."
+        }
+      },
+      "zone_gate": {
+        "title": "Zones",
+        "description": "Your existing zones are kept as-is. Choose whether to add another zone.",
+        "data": {
+          "add_or_edit_zones": "Add another zone"
+        }
+      },
+      "zone": {
+        "title": "Add a Zone",
+        "description": "Pick a Rachio zone to auto-fill its runtime and refill depth, or enter one manually.",
+        "data": {
+          "key": "Zone Name",
+          "rachio_switch": "Rachio Zone Switch",
+          "dominant_sensor": "GeoDrops Dominant Moisture Sensor",
+          "state_sensor": "GeoDrops Moisture State Sensor",
+          "quality_sensors": "GeoDrops Quality Sensors",
+          "target_range": "GeoDrops Target Moisture Level",
+          "geography": "Zone Grouping (optional)",
+          "adjacency": "Adjacent Zones (optional)",
+          "runtime_minutes": "Full-Refill Runtime (minutes)",
+          "refill_depth_mm": "Full-Refill Depth (mm)",
+          "spray": "Spray Zone",
+          "add_another_zone": "Add another zone after this one",
+          "rachio_zone": "Rachio Zone"
+        },
+        "data_description": {
+          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs.",
+          "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
+          "geography": "A free-text label to group zones for your own organization (e.g. front, back). Not used by the scheduler's logic.",
+          "adjacency": "Other zones physically next to this one; the scheduler avoids watering neighbors back-to-back to limit runoff.",
+          "runtime_minutes": "Minutes for a full refill of this zone — use the Rachio app's computed zone runtime.",
+          "refill_depth_mm": "Full-refill depth in mm — Rachio's depthOfWater (inches) × 25.4.",
+          "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running.",
+          "rachio_zone": "Pick your zone from the live list pulled from Rachio — its runtime and refill depth are pre-filled on the next screen. Choose \"Enter manually\" for a zone that isn't in Rachio."
+        }
+      },
+      "advanced": {
+        "title": "Advanced",
+        "description": "Active Watering Calibration is Beta and off by default.",
+        "data": {
+          "self_calibration_enabled": "Enable Active Watering Calibration (Beta)",
+          "advanced_overrides": "Advanced tunable overrides (YAML)"
+        },
+        "data_description": {
+          "self_calibration_enabled": "When on, each zone learns its own dosing from soil-moisture response. Beta — leave off until you've watched it run.",
+          "advanced_overrides": "Optional YAML mapping merged into tunables for advanced tuning. Leave blank unless you know what you're changing."
+        }
+      },
+      "zone_details": {
+        "title": "Set Up This Zone",
+        "description": "You picked a Rachio zone — now link it to the Home Assistant entities that track and control it. **Full-refill runtime and depth are pre-filled from Rachio**; change them only if you have better numbers.",
+        "data": {
+          "key": "Zone Name",
+          "rachio_switch": "Rachio Zone Switch",
+          "dominant_sensor": "GeoDrops Dominant Moisture Sensor",
+          "state_sensor": "GeoDrops Moisture State Sensor",
+          "quality_sensors": "GeoDrops Quality Sensors",
+          "target_range": "GeoDrops Target Moisture Level",
+          "geography": "Zone Grouping (optional)",
+          "adjacency": "Adjacent Zones (optional)",
+          "runtime_minutes": "Full-Refill Runtime (minutes)",
+          "refill_depth_mm": "Full-Refill Depth (mm)",
+          "spray": "Spray Zone",
+          "add_another_zone": "Add another zone after this one"
+        },
+        "data_description": {
+          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs. Pre-filled from the Rachio zone name — edit if you like.",
+          "rachio_switch": "The Home Assistant switch that turns THIS zone's water on (created by the Rachio integration, e.g. switch.front_yard). We pre-fill it with the switch whose name matches the Rachio zone you picked — confirm it's correct and change it if the guess is wrong. It's separate from the Rachio zone itself: the zone gave us calibration data, but the scheduler needs this HA switch to actually run watering.",
+          "dominant_sensor": "The GeoDrops sensor for this zone's dominant soil-moisture reading (the value the scheduler waters toward).",
+          "state_sensor": "The GeoDrops sensor reporting this zone's moisture state/health.",
+          "quality_sensors": "One or more GeoDrops quality/telemetry sensors for this zone (used to validate readings).",
+          "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
+          "geography": "Optional free-text group label to organize zones your way (e.g. \"front\", \"back\"). Purely cosmetic — the scheduler's logic ignores it.",
+          "adjacency": "Optional. Other zones physically next to this one. The scheduler avoids watering neighbors back-to-back to limit runoff and pressure drop.",
+          "runtime_minutes": "Minutes for a full refill — pre-filled from Rachio's computed zone runtime when available.",
+          "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
+          "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
+        }
+      }
+    },
+    "error": {
+      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity."
+    }
+  },
+  "options": {
+    "step": {
+      "connect": {
+        "title": "Connect Your Rachio Account",
+        "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you.\n\nHome Assistant keeps API keys in **`config/secrets.yaml`**. Below, enter the **name** of the entry in that file that holds your Rachio API key — not the key itself. If you haven't added it yet, add a line to `secrets.yaml` first, then come back.\n\nIf the name can't be read, you can still complete setup by entering everything manually on the next screens.",
+        "data": {
+          "rachio_api_key_secret": "Rachio API Key — Secret Name"
+        },
+        "data_description": {
+          "rachio_api_key_secret": "The key NAME in secrets.yaml (default `rachio_api_key`), not the key value.\n\nExample `secrets.yaml` line:\n`rachio_api_key: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`\n\nGet your API key from app.rach.io → Account Settings → Get API Key."
+        }
+      },
+      "bindings": {
+        "title": "Core Setup",
+        "description": "Point the scheduler at your notification, calendar, Rachio controller, and forecast entities.",
+        "data": {
+          "notify_service": "Notification Service",
+          "calendar_entity": "Irrigation Log Calendar",
+          "rachio_device_name": "Rachio Controller",
+          "standby_switch": "Rachio Standby Switch",
+          "forecast_entity": "Weather Forecast Entity"
+        },
+        "data_description": {
+          "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
+          "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
+          "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
+          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
+        }
+      },
+      "weather": {
+        "title": "Weather Station",
+        "description": "Your local weather-station sensors, plus the sensor-name prefixes for hourly precipitation forecasts.",
+        "data": {
+          "weather_temperature": "Outdoor Temperature Sensor",
+          "weather_humidity": "Outdoor Humidity Sensor",
+          "weather_wind": "Wind Speed Sensor",
+          "weather_rain_last_hour": "Rain (Last Hour) Sensor",
+          "weather_precip_type": "Precipitation Type Sensor",
+          "precipitation_chance_prefix": "Precipitation-Chance Sensor Prefix",
+          "precipitation_amount_prefix": "Precipitation-Amount Sensor Prefix"
+        },
+        "data_description": {
+          "precipitation_chance_prefix": "Prefix of your hourly forecast precip-chance sensors; the scheduler appends an hour count, e.g. sensor.precipitation_chance_3_hour.",
+          "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour."
+        }
+      },
+      "zone_gate": {
+        "title": "Zones",
+        "description": "Your existing zones are kept as-is. Choose whether to add another zone.",
+        "data": {
+          "add_or_edit_zones": "Add another zone"
+        }
+      },
+      "zone": {
+        "title": "Add a Zone",
+        "description": "Pick a Rachio zone to auto-fill its runtime and refill depth, or enter one manually.",
+        "data": {
+          "key": "Zone Name",
+          "rachio_switch": "Rachio Zone Switch",
+          "dominant_sensor": "GeoDrops Dominant Moisture Sensor",
+          "state_sensor": "GeoDrops Moisture State Sensor",
+          "quality_sensors": "GeoDrops Quality Sensors",
+          "target_range": "GeoDrops Target Moisture Level",
+          "geography": "Zone Grouping (optional)",
+          "adjacency": "Adjacent Zones (optional)",
+          "runtime_minutes": "Full-Refill Runtime (minutes)",
+          "refill_depth_mm": "Full-Refill Depth (mm)",
+          "spray": "Spray Zone",
+          "add_another_zone": "Add another zone after this one",
+          "rachio_zone": "Rachio Zone"
+        },
+        "data_description": {
+          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs.",
+          "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
+          "geography": "A free-text label to group zones for your own organization (e.g. front, back). Not used by the scheduler's logic.",
+          "adjacency": "Other zones physically next to this one; the scheduler avoids watering neighbors back-to-back to limit runoff.",
+          "runtime_minutes": "Minutes for a full refill of this zone — use the Rachio app's computed zone runtime.",
+          "refill_depth_mm": "Full-refill depth in mm — Rachio's depthOfWater (inches) × 25.4.",
+          "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running.",
+          "rachio_zone": "Pick your zone from the live list pulled from Rachio — its runtime and refill depth are pre-filled on the next screen. Choose \"Enter manually\" for a zone that isn't in Rachio."
+        }
+      },
+      "advanced": {
+        "title": "Advanced",
+        "description": "Active Watering Calibration is Beta and off by default.",
+        "data": {
+          "self_calibration_enabled": "Enable Active Watering Calibration (Beta)",
+          "advanced_overrides": "Advanced tunable overrides (YAML)"
+        },
+        "data_description": {
+          "self_calibration_enabled": "When on, each zone learns its own dosing from soil-moisture response. Beta — leave off until you've watched it run.",
+          "advanced_overrides": "Optional YAML mapping merged into tunables for advanced tuning. Leave blank unless you know what you're changing."
+        }
+      },
+      "zone_details": {
+        "title": "Set Up This Zone",
+        "description": "You picked a Rachio zone — now link it to the Home Assistant entities that track and control it. **Full-refill runtime and depth are pre-filled from Rachio**; change them only if you have better numbers.",
+        "data": {
+          "key": "Zone Name",
+          "rachio_switch": "Rachio Zone Switch",
+          "dominant_sensor": "GeoDrops Dominant Moisture Sensor",
+          "state_sensor": "GeoDrops Moisture State Sensor",
+          "quality_sensors": "GeoDrops Quality Sensors",
+          "target_range": "GeoDrops Target Moisture Level",
+          "geography": "Zone Grouping (optional)",
+          "adjacency": "Adjacent Zones (optional)",
+          "runtime_minutes": "Full-Refill Runtime (minutes)",
+          "refill_depth_mm": "Full-Refill Depth (mm)",
+          "spray": "Spray Zone",
+          "add_another_zone": "Add another zone after this one"
+        },
+        "data_description": {
+          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs. Pre-filled from the Rachio zone name — edit if you like.",
+          "rachio_switch": "The Home Assistant switch that turns THIS zone's water on (created by the Rachio integration, e.g. switch.front_yard). We pre-fill it with the switch whose name matches the Rachio zone you picked — confirm it's correct and change it if the guess is wrong. It's separate from the Rachio zone itself: the zone gave us calibration data, but the scheduler needs this HA switch to actually run watering.",
+          "dominant_sensor": "The GeoDrops sensor for this zone's dominant soil-moisture reading (the value the scheduler waters toward).",
+          "state_sensor": "The GeoDrops sensor reporting this zone's moisture state/health.",
+          "quality_sensors": "One or more GeoDrops quality/telemetry sensors for this zone (used to validate readings).",
+          "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
+          "geography": "Optional free-text group label to organize zones your way (e.g. \"front\", \"back\"). Purely cosmetic — the scheduler's logic ignores it.",
+          "adjacency": "Optional. Other zones physically next to this one. The scheduler avoids watering neighbors back-to-back to limit runoff and pressure drop.",
+          "runtime_minutes": "Minutes for a full refill — pre-filled from Rachio's computed zone runtime when available.",
+          "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
+          "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
+        }
+      }
+    },
+    "error": {
+      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity."
+    }
+  }
+}
