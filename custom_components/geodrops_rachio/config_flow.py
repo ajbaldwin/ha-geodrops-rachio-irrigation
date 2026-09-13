@@ -254,7 +254,18 @@ class _BindingsWizardSteps:
                 selector.EntitySelectorConfig(domain="sensor")),
             vol.Required("quality_sensors"): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor", multiple=True)),
-            vol.Required("target_range", default="moist"): str,
+            vol.Required("target_range", default="moist"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        {"value": "dry", "label": "Dry"},
+                        {"value": "dry_plus", "label": "Dry+"},
+                        {"value": "moist", "label": "Moist"},
+                        {"value": "moist_plus", "label": "Moist+"},
+                        {"value": "wet", "label": "Wet"},
+                        {"value": "wet_plus", "label": "Wet+"},
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )),
             vol.Optional("geography", default=""): str,
             vol.Optional("adjacency", default=[]): selector.SelectSelector(
                 selector.SelectSelectorConfig(
