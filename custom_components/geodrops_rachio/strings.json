@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "missing_prerequisites": "Install and set up pyscript and the Rachio integration first, then add this integration."
+      "missing_prerequisites": "Install and set up pyscript and the Rachio integration first, then add this integration.",
+      "single_instance_allowed": "GeoDrops + Rachio Irrigation is already configured."
     },
     "step": {
       "bindings": {

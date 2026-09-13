@@ -297,6 +297,8 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
         self._existing: dict[str, Any] = {}
 
     async def async_step_user(self, user_input=None):
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
         if not _prereqs_met(self.hass):
             return self.async_abort(reason="missing_prerequisites")
         return await self.async_step_bindings()
