@@ -45,6 +45,23 @@ async def test_flag_switches_created_and_toggle(hass, enable_pyscript_and_rachio
     assert hass.states.get("switch.geodrops_rachio_run_active").state == "on"
 
 
+async def test_zone_exclude_switch_created_per_zone(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"weather": {}, "forecast_entity": "weather.home"},
+        "zones": [{"key": "Front Slope", "rachio_switch": "switch.x",
+                   "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
+                   "quality_sensors": [], "target_range": "moist",
+                   "runtime_minutes": 20, "refill_depth_mm": 10}],
+        "self_calibration_enabled": False, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("switch.geodrops_rachio_front_slope_exclude")
+    assert state is not None
+    assert state.state == "off"
+
+
 async def test_observed_sensor_buffers_and_averages(hass, enable_pyscript_and_rachio):
     data = {**ENTRY_DATA, "bindings": {
         "weather": {"temperature": "sensor.station_temp"}}}
