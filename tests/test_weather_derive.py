@@ -32,3 +32,14 @@ def test_overnight_forecast_mean_filters_window():
         {"datetime": "2026-09-13T07:00:00", "temperature": 100.0},  # after
     ]
     assert weather_derive.overnight_forecast_mean(periods, "temperature", now) == 15.0
+
+
+def test_overnight_forecast_mean_handles_aware_datetimes():
+    now = dt.datetime(2026, 9, 12, 19, 0, tzinfo=dt.timezone.utc)
+    periods = [
+        {"datetime": "2026-09-12T18:00:00+00:00", "temperature": 100.0},  # before window
+        {"datetime": "2026-09-12T21:00:00+00:00", "temperature": 10.0},   # in
+        {"datetime": "2026-09-13T03:00:00+00:00", "temperature": 20.0},   # in
+        {"datetime": "2026-09-13T07:00:00+00:00", "temperature": 100.0},  # after
+    ]
+    assert weather_derive.overnight_forecast_mean(periods, "temperature", now) == 15.0

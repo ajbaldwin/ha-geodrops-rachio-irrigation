@@ -1,5 +1,6 @@
 from __future__ import annotations
 import datetime as dt
+import logging
 from homeassistant.components.sensor import SensorEntity, ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -8,6 +9,8 @@ from homeassistant.helpers.event import (
     async_track_state_change_event, async_track_time_interval)
 from . import weather_derive
 from .entity_base import device_info
+
+_LOGGER = logging.getLogger(__name__)
 
 _OBSERVED_WINDOW = dt.timedelta(hours=12)
 _FORECAST_INTERVAL = dt.timedelta(hours=1)
@@ -72,13 +75,20 @@ class ForecastOvernightSensor(SensorEntity):
             await self._refresh(None)
 
     async def _refresh(self, _now) -> None:
-        resp = await self.hass.services.async_call(
-            "weather", "get_forecasts",
-            {"entity_id": self._source, "type": "hourly"},
-            blocking=True, return_response=True)
-        periods = (resp or {}).get(self._source, {}).get("forecast", [])
-        self._attr_native_value = weather_derive.overnight_forecast_mean(
-            periods, self._field, dt.datetime.now())
+        try:
+            resp = await self.hass.services.async_call(
+                "weather", "get_forecasts",
+                {"entity_id": self._source, "type": "hourly"},
+                blocking=True, return_response=True)
+            periods = (resp or {}).get(self._source, {}).get("forecast", [])
+            value = weather_derive.overnight_forecast_mean(
+                periods, self._field, dt.datetime.now(dt.timezone.utc))
+        except Exception:
+            _LOGGER.warning(
+                "Failed to refresh forecast overnight sensor for %s",
+                self._source, exc_info=True)
+            return
+        self._attr_native_value = value
         self.async_write_ha_state()
 
 
