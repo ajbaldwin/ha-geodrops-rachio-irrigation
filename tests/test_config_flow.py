@@ -452,3 +452,47 @@ async def test_options_edit_zone_in_place(hass, enable_pyscript_and_rachio):
     assert len(entry.data["zones"]) == 1
     assert entry.data["zones"][0]["key"] == "front"
     assert entry.data["zones"][0]["runtime_minutes"] == 60
+
+
+async def test_options_edit_zone_preserves_rachio_zone_id(hass, enable_pyscript_and_rachio):
+    # A zone originally added via the live Rachio picker carries a
+    # rachio_zone_id; editing it (which never re-picks from Rachio) must not
+    # silently drop that id, or the scheduler loses its live-runtime binding.
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"notify_service": "notify.phone", "rachio_device_name": "Main House"},
+        "zones": [dict(ZONE_INPUT, rachio_zone_id="z-uuid-1")],
+        "self_calibration_enabled": False,
+        "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    with _patch_poll(key=None):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], WEATHER_INPUT)
+        assert result["step_id"] == "manage_zones"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "edit_zone"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"zone": "front"})
+        assert result["step_id"] == "zone_details"
+
+        updated = dict(ZONE_INPUT)
+        del updated["key"]
+        del updated["add_another_zone"]
+        updated["runtime_minutes"] = 60
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], updated)
+        assert result["step_id"] == "manage_zones"
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "finish"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"self_calibration_enabled": False})
+
+    assert len(entry.data["zones"]) == 1
+    assert entry.data["zones"][0]["key"] == "front"
+    assert entry.data["zones"][0]["runtime_minutes"] == 60
+    assert entry.data["zones"][0]["rachio_zone_id"] == "z-uuid-1"
