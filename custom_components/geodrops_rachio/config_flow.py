@@ -156,6 +156,10 @@ class _BindingsWizardSteps:
     _data: dict[str, Any]
     _core: dict[str, Any]
     _existing: dict[str, Any]
+    # The options flow has the manage-zones menu as its hub; the first-install
+    # config flow does not. Adding a zone returns to that menu in the options
+    # flow, and uses the add-another/advanced path in the config flow.
+    _is_options: bool = False
 
     def _existing_bindings(self) -> dict[str, Any]:
         return dict(self._existing.get("bindings", {}))
@@ -375,9 +379,17 @@ class _BindingsWizardSteps:
         Lets the admin add, edit, or remove zones, or leave them as-is and
         move on to the advanced step.
         """
+        # Inline labels (dict) so the menu never renders blank when the
+        # frontend hasn't loaded this integration's translations yet — a
+        # list here would rely on a translation lookup for each label.
         return self.async_show_menu(
             step_id="manage_zones",
-            menu_options=["add_zone", "edit_zone", "remove_zone", "finish"])
+            menu_options={
+                "add_zone": "Add a zone",
+                "edit_zone": "Edit a zone",
+                "remove_zone": "Remove a zone",
+                "finish": "Done",
+            })
 
     async def async_step_add_zone(self, user_input=None):
         self._editing_key = None
@@ -541,6 +553,10 @@ class _BindingsWizardSteps:
             else:
                 zid = self._picked_zone["id"] if self._picked_zone else ""
                 self._append_zone(user_input, rachio_zone_id=zid)
+                if self._is_options:
+                    # The menu is the hub: adding returns there so the new zone
+                    # is saved via "Done" and the user can add/edit/remove more.
+                    return await self.async_step_manage_zones()
                 if user_input.get("add_another_zone"):
                     return await self.async_step_zone()
                 return await self.async_step_advanced()
@@ -587,7 +603,7 @@ class _BindingsWizardSteps:
         schema_dict[_optional_number("runtime_minutes", runtime)] = vol.Coerce(float)
         schema_dict[_optional_number("refill_depth_mm", refill)] = vol.Coerce(float)
         schema_dict[vol.Optional("spray", default=stored.get("spray", False))] = bool
-        if not editing:
+        if not editing and not self._is_options:
             schema_dict[vol.Optional("add_another_zone", default=False)] = bool
         return self.async_show_form(
             step_id="zone_details", data_schema=vol.Schema(schema_dict),
@@ -601,12 +617,14 @@ class _BindingsWizardSteps:
                 errors["key"] = "duplicate_zone_key"
             else:
                 self._append_zone(user_input)
+                if self._is_options:
+                    return await self.async_step_manage_zones()
                 if user_input.get("add_another_zone"):
                     return await self.async_step_zone()
                 return await self.async_step_advanced()
 
         existing_keys = [z["key"] for z in self._data["zones"]]
-        schema = vol.Schema({
+        schema = {
             vol.Required("key"): str,
             vol.Required("rachio_switch"): self._rachio_switch_selector(),
             vol.Required("dominant_sensor"): selector.EntitySelector(
@@ -624,10 +642,11 @@ class _BindingsWizardSteps:
             vol.Required("runtime_minutes"): vol.Coerce(float),
             vol.Required("refill_depth_mm"): vol.Coerce(float),
             vol.Optional("spray", default=False): bool,
-            vol.Optional("add_another_zone", default=False): bool,
-        })
+        }
+        if not self._is_options:
+            schema[vol.Optional("add_another_zone", default=False)] = bool
         return self.async_show_form(
-            step_id="zone", data_schema=schema, errors=errors)
+            step_id="zone", data_schema=vol.Schema(schema), errors=errors)
 
     async def async_step_advanced(self, user_input=None):
         if user_input is not None:
@@ -688,6 +707,8 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
 
 class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps):
     """Re-runs the wizard's steps, pre-filled from the existing entry."""
+
+    _is_options = True
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {"zones": []}

@@ -476,18 +476,18 @@ async def test_options_add_zone_duplicate_key_rejected(hass, enable_pyscript_and
             result["flow_id"], {"next_step_id": "add_zone"})
         assert result["step_id"] == "zone"
 
-        dup = dict(ZONE_INPUT, key="Front", rachio_switch="switch.front2")
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], dup)
+            result["flow_id"], _zone("Front", "switch.front2"))
         assert result["step_id"] == "zone"
         assert result["errors"] == {"key": "duplicate_zone_key"}
 
         # Recovering with a non-colliding key must still work, and only that
         # zone gets added -- the duplicate attempt left no trace.
-        ok = dict(ZONE_INPUT, key="back", rachio_switch="switch.back")
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], ok)
-        assert result["step_id"] == "advanced"
+            result["flow_id"], _zone("back", "switch.back"))
+        assert result["step_id"] == "manage_zones"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "finish"})
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"self_calibration_enabled": False})
 
@@ -537,3 +537,59 @@ async def test_options_edit_zone_preserves_rachio_zone_id(hass, enable_pyscript_
     assert entry.data["zones"][0]["key"] == "front"
     assert entry.data["zones"][0]["runtime_minutes"] == 60
     assert entry.data["zones"][0]["rachio_zone_id"] == "z-uuid-1"
+
+
+def _zone(key, switch):
+    # The options add form hides add_another_zone, so don't submit it there.
+    d = dict(ZONE_INPUT, key=key, rachio_switch=switch)
+    d.pop("add_another_zone", None)
+    return d
+
+
+async def test_options_add_zone_returns_to_menu_and_persists(hass, enable_pyscript_and_rachio):
+    """Adding a zone in the options flow returns to the manage-zones menu (no
+    forced advanced step, no add-another checkbox), and 'Done' saves it."""
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"notify_service": "notify.phone", "rachio_device_name": "Main House"},
+        "zones": [dict(ZONE_INPUT)], "self_calibration_enabled": False,
+        "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    with _patch_poll(key=None):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], WEATHER_INPUT)
+        assert result["step_id"] == "manage_zones"
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_zone"})
+        assert result["step_id"] == "zone"
+        # No add_another_zone field in the options add form.
+        assert "add_another_zone" not in {str(f) for f in result["data_schema"].schema}
+        result = await hass.config_entries.options.async_configure(result["flow_id"], _zone("back", "switch.back"))
+        # Add returns to the menu, not the advanced step.
+        assert result["step_id"] == "manage_zones", f"got {result['step_id']}"
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "finish"})
+        assert result["step_id"] == "advanced"
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"self_calibration_enabled": False})
+        assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert [z["key"] for z in entry.data["zones"]] == ["front", "back"]
+
+
+async def test_options_add_two_zones_via_menu(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"notify_service": "notify.phone", "rachio_device_name": "Main House"},
+        "zones": [dict(ZONE_INPUT)], "self_calibration_enabled": False,
+        "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    with _patch_poll(key=None):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], WEATHER_INPUT)
+        for key, sw in (("back", "switch.back"), ("side", "switch.side")):
+            result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_zone"})
+            result = await hass.config_entries.options.async_configure(result["flow_id"], _zone(key, sw))
+            assert result["step_id"] == "manage_zones"
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "finish"})
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"self_calibration_enabled": False})
+        assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert [z["key"] for z in entry.data["zones"]] == ["front", "back", "side"]
