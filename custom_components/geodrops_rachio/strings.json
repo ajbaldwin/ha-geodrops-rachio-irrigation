@@ -97,8 +97,8 @@
         }
       },
       "zone_details": {
-        "title": "Zone Details",
-        "description": "Confirm this zone's switch and GeoDrops sensors. Runtime and refill depth are pre-filled from Rachio when available — edit if needed.",
+        "title": "Set Up This Zone",
+        "description": "You picked a Rachio zone — now link it to the Home Assistant entities that track and control it. **Full-refill runtime and depth are pre-filled from Rachio**; change them only if you have better numbers.",
         "data": {
           "key": "Zone Name",
           "rachio_switch": "Rachio Zone Switch",
@@ -114,13 +114,17 @@
           "add_another_zone": "Add another zone after this one"
         },
         "data_description": {
-          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs.",
+          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs. Pre-filled from the Rachio zone name — edit if you like.",
+          "rachio_switch": "The Home Assistant switch that turns THIS zone's water on (created by the Rachio integration, e.g. switch.front_yard). This is separate from the Rachio zone you picked: the zone gave us calibration data, but the scheduler needs the HA switch entity to actually run watering.",
+          "dominant_sensor": "The GeoDrops sensor for this zone's dominant soil-moisture reading (the value the scheduler waters toward).",
+          "state_sensor": "The GeoDrops sensor reporting this zone's moisture state/health.",
+          "quality_sensors": "One or more GeoDrops quality/telemetry sensors for this zone (used to validate readings).",
           "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
-          "geography": "A free-text label to group zones for your own organization (e.g. front, back). Not used by the scheduler's logic.",
-          "adjacency": "Other zones physically next to this one; the scheduler avoids watering neighbors back-to-back to limit runoff.",
+          "geography": "Optional free-text group label to organize zones your way (e.g. \"front\", \"back\"). Purely cosmetic — the scheduler's logic ignores it.",
+          "adjacency": "Optional. Other zones physically next to this one. The scheduler avoids watering neighbors back-to-back to limit runoff and pressure drop.",
           "runtime_minutes": "Minutes for a full refill — pre-filled from Rachio's computed zone runtime when available.",
           "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
-          "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running."
+          "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
         }
       }
     }
@@ -219,8 +223,8 @@
         }
       },
       "zone_details": {
-        "title": "Zone Details",
-        "description": "Confirm this zone's switch and GeoDrops sensors. Runtime and refill depth are pre-filled from Rachio when available — edit if needed.",
+        "title": "Set Up This Zone",
+        "description": "You picked a Rachio zone — now link it to the Home Assistant entities that track and control it. **Full-refill runtime and depth are pre-filled from Rachio**; change them only if you have better numbers.",
         "data": {
           "key": "Zone Name",
           "rachio_switch": "Rachio Zone Switch",
@@ -236,13 +240,17 @@
           "add_another_zone": "Add another zone after this one"
         },
         "data_description": {
-          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs.",
+          "key": "A short identifier for this zone, e.g. front_lawn. Used as the zone's config key and shown in logs. Pre-filled from the Rachio zone name — edit if you like.",
+          "rachio_switch": "The Home Assistant switch that turns THIS zone's water on (created by the Rachio integration, e.g. switch.front_yard). This is separate from the Rachio zone you picked: the zone gave us calibration data, but the scheduler needs the HA switch entity to actually run watering.",
+          "dominant_sensor": "The GeoDrops sensor for this zone's dominant soil-moisture reading (the value the scheduler waters toward).",
+          "state_sensor": "The GeoDrops sensor reporting this zone's moisture state/health.",
+          "quality_sensors": "One or more GeoDrops quality/telemetry sensors for this zone (used to validate readings).",
           "target_range": "The GeoDrops moisture band the scheduler keeps this zone at.",
-          "geography": "A free-text label to group zones for your own organization (e.g. front, back). Not used by the scheduler's logic.",
-          "adjacency": "Other zones physically next to this one; the scheduler avoids watering neighbors back-to-back to limit runoff.",
+          "geography": "Optional free-text group label to organize zones your way (e.g. \"front\", \"back\"). Purely cosmetic — the scheduler's logic ignores it.",
+          "adjacency": "Optional. Other zones physically next to this one. The scheduler avoids watering neighbors back-to-back to limit runoff and pressure drop.",
           "runtime_minutes": "Minutes for a full refill — pre-filled from Rachio's computed zone runtime when available.",
           "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
-          "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running."
+          "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
         }
       }
     }
