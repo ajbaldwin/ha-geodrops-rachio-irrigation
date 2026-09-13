@@ -75,3 +75,26 @@ async def test_observed_sensor_buffers_and_averages(hass, enable_pyscript_and_ra
     await hass.async_block_till_done()
     s = hass.states.get("sensor.geodrops_rachio_observed_overnight_temp")
     assert s is not None and float(s.state) == 20.0
+
+
+async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from custom_components.geodrops_rachio.const import DOMAIN
+    hass.states.async_set("sensor.d", "71.5")  # the zone's dominant_sensor
+    hass.states.async_set(
+        "pyscript.geodrops_rachio_last_nightly", "1",
+        {"delivered_minutes": {"front": 42.0}, "watered": ["front"],
+         "end": "2026-09-13T06:00:00+00:00"})
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"weather": {}, "forecast_entity": "weather.home"},
+        "zones": [{"key": "front", "rachio_switch": "switch.x",
+                   "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
+                   "quality_sensors": [], "target_range": "moist",
+                   "runtime_minutes": 20, "refill_depth_mm": 10}],
+        "self_calibration_enabled": False, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.geodrops_rachio_front_soil_moisture").state == "71.5"
+    assert hass.states.get("sensor.geodrops_rachio_front_last_delivered_runtime").state == "42.0"
