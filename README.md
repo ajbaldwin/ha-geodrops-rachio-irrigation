@@ -60,7 +60,20 @@ missing.
      dominant moisture sensor, state sensor, quality sensors, target
      moisture range, runtime, and refill depth.
    - **Advanced** — optional YAML tunable overrides, and the Active Watering
-     Calibration toggle (see below).
+     Calibration toggle (see below). The override YAML is a mapping merged over
+     the scheduler defaults: top-level keys set `tunables`, and a
+     `drought_profiles:` key deep-merges per drought level (each level keeps the
+     defaults you do not mention). For example, to end the watering window later
+     into the morning at wetter drought levels:
+
+     ```yaml
+     cycle_minutes: 12
+     humid_rh_pct: 90
+     drought_profiles:
+       "Level 0 - Normal": {end_offset_minutes: -60}
+       "Level 1 - Mild": {end_offset_minutes: -30}
+       "Level 2 - Significant": {end_offset_minutes: -15}
+     ```
 
 There is **no YAML file to hand-edit and no Home Assistant restart required**
 to complete installation. The wizard's answers are written straight into a
