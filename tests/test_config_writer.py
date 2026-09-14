@@ -88,9 +88,54 @@ def test_advanced_overrides_do_not_touch_bands_or_profiles():
     data = {**BASE, "advanced_overrides": "cycle_minutes: 7"}
     doc = yaml.safe_load(generate_config(data))
     assert doc["tunables"]["cycle_minutes"] == 7
-    # bands/drought_profiles come from the defaults regardless of overrides.
+    # bands come from the defaults regardless of overrides; drought_profiles are
+    # untouched unless a `drought_profiles:` override key is provided.
     assert doc["bands"]["moist"] == {"low": 67, "high": 76}
     assert doc["drought_profiles"]["Level 3 - Critical"]["end_anchor"] == "dawn"
+
+
+def test_drought_profile_override_merges_per_level_keeping_defaults():
+    # A partial per-level override adds/overrides only the given keys and leaves
+    # the rest of that level's defaults intact.
+    data = {**BASE, "advanced_overrides": (
+        "drought_profiles:\n"
+        '  "Level 0 - Normal": {end_offset_minutes: -60}\n'
+        '  "Level 1 - Mild": {end_offset_minutes: -30}\n'
+        '  "Level 2 - Significant": {end_offset_minutes: -15}\n'
+    )}
+    doc = yaml.safe_load(generate_config(data))
+    profiles = doc["drought_profiles"]
+    assert profiles["Level 0 - Normal"]["end_offset_minutes"] == -60
+    assert profiles["Level 1 - Mild"]["end_offset_minutes"] == -30
+    assert profiles["Level 2 - Significant"]["end_offset_minutes"] == -15
+    # untouched defaults on an overridden level survive
+    assert profiles["Level 0 - Normal"]["end_anchor"] == "sunrise"
+    assert profiles["Level 0 - Normal"]["runtime_scale"] == 1.0
+    # a level not mentioned in the override is unchanged
+    assert profiles["Level 3 - Critical"] == {
+        "target_offset": -1, "trigger_margin": 6, "runtime_scale": 0.7,
+        "rain_skip_horizon_hours": 24, "end_anchor": "dawn",
+    }
+
+
+def test_drought_profile_override_does_not_leak_into_tunables():
+    data = {**BASE, "advanced_overrides": (
+        "cycle_minutes: 12\n"
+        "drought_profiles:\n"
+        '  "Level 0 - Normal": {end_offset_minutes: -60}\n'
+    )}
+    doc = yaml.safe_load(generate_config(data))
+    # the drought_profiles override goes to drought_profiles, not tunables
+    assert "drought_profiles" not in doc["tunables"]
+    assert doc["tunables"]["cycle_minutes"] == 12
+    assert doc["drought_profiles"]["Level 0 - Normal"]["end_offset_minutes"] == -60
+
+
+def test_drought_profile_override_non_mapping_raises():
+    import pytest
+    data = {**BASE, "advanced_overrides": "drought_profiles: not-a-mapping"}
+    with pytest.raises(ValueError):
+        generate_config(data)
 
 
 def test_zone_gets_owned_exclude_boolean():
