@@ -32,6 +32,30 @@ async def test_control_entities_created(hass, enable_pyscript_and_rachio):
     assert hass.states.get("button.geodrops_rachio_stop") is not None
 
 
+async def test_action_buttons_created(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    for key in ("run_now", "preview", "reset", "refresh_runtimes"):
+        assert hass.states.get(f"button.geodrops_rachio_{key}") is not None
+
+
+async def test_action_button_calls_pyscript_service(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    called = []
+    hass.services.async_register(
+        "pyscript", "geodrops_rachio_run_now", lambda call: called.append(call))
+    await hass.services.async_call(
+        "button", "press",
+        {"entity_id": "button.geodrops_rachio_run_now"}, blocking=True)
+    await hass.async_block_till_done()
+    assert len(called) == 1
+
+
 async def test_flag_switches_created_and_toggle(hass, enable_pyscript_and_rachio):
     entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
     entry.add_to_hass(hass)
