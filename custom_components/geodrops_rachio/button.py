@@ -1,9 +1,12 @@
 from __future__ import annotations
+import logging
 from homeassistant.components.button import ButtonEntity, ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .entity_base import device_info
+
+_LOGGER = logging.getLogger(__name__)
 
 # Buttons that forward to the scheduler's pyscript @service actions
 # (pyscript.geodrops_rachio_<key>). (key, friendly name, icon).
@@ -45,6 +48,16 @@ class ActionButton(ButtonEntity):
         self._service = f"geodrops_rachio_{key}"
 
     async def async_press(self) -> None:
+        # The pyscript action is registered by the delivered scheduler script;
+        # it can be absent on startup before pyscript loads, if the pyscript
+        # add-on is down, or if delivery failed. Guard rather than raise a bare
+        # ServiceNotFound on press (same pattern as delivery.py's reload call).
+        if not self.hass.services.has_service("pyscript", self._service):
+            _LOGGER.warning(
+                "%s: pyscript.%s is not registered yet — pyscript may not be "
+                "loaded or the scheduler script has not been delivered",
+                self.entity_id, self._service)
+            return
         # Fire-and-forget: the pyscript action runs in its own task; a run/preview
         # can be long, and the button press should not block on it.
         await self.hass.services.async_call(

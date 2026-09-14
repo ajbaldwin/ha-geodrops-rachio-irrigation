@@ -56,6 +56,20 @@ async def test_action_button_calls_pyscript_service(hass, enable_pyscript_and_ra
     assert len(called) == 1
 
 
+async def test_action_button_no_raise_when_service_absent(hass, enable_pyscript_and_rachio):
+    """Pressing before the pyscript action is registered (pyscript not ready or
+    the script not delivered yet) must not raise, only warn."""
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    # No pyscript.geodrops_rachio_preview service registered -> must be a no-op.
+    await hass.services.async_call(
+        "button", "press",
+        {"entity_id": "button.geodrops_rachio_preview"}, blocking=True)
+    await hass.async_block_till_done()
+
+
 async def test_flag_switches_created_and_toggle(hass, enable_pyscript_and_rachio):
     entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
     entry.add_to_hass(hass)
