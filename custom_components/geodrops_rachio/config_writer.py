@@ -77,6 +77,7 @@ def _deep_merge(base: dict, overlay: dict) -> dict:
 def generate_config(data: dict) -> str:
     tunables = dict(_DEFAULT_TUNABLES)
     tunables["self_calibration_enabled"] = bool(data.get("self_calibration_enabled"))
+    drought_profiles = _copy_drought_profiles()
 
     overrides_raw = (data.get("advanced_overrides") or "").strip()
     if overrides_raw:
@@ -87,6 +88,17 @@ def generate_config(data: dict) -> str:
         if parsed is not None:
             if not isinstance(parsed, dict):
                 raise ValueError("advanced_overrides must be a YAML mapping of tunables")
+            # A `drought_profiles:` key deep-merges into the drought profiles
+            # (e.g. per-level end_offset_minutes), keeping each level's other
+            # defaults; everything else is a tunables override. Pop it out so it
+            # does not also land in tunables.
+            profile_overrides = parsed.pop("drought_profiles", None)
+            if profile_overrides is not None:
+                if not isinstance(profile_overrides, dict):
+                    raise ValueError(
+                        "advanced_overrides 'drought_profiles' must be a YAML "
+                        "mapping of level name -> settings")
+                drought_profiles = _deep_merge(drought_profiles, profile_overrides)
             tunables = _deep_merge(tunables, parsed)
 
     zones = {}
@@ -101,7 +113,7 @@ def generate_config(data: dict) -> str:
         "homeassistant": dict(data.get("bindings", {})),
         "tunables": tunables,
         "bands": _copy_bands(),
-        "drought_profiles": _copy_drought_profiles(),
+        "drought_profiles": drought_profiles,
         "zones": zones,
     }
     return GENERATED_HEADER + yaml.safe_dump(doc, sort_keys=False, default_flow_style=False)
