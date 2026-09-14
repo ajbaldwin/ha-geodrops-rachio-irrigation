@@ -66,10 +66,33 @@ async def test_zone_exclude_switch_created_per_zone(hass, enable_pyscript_and_ra
 async def test_observed_sensor_buffers_and_averages(hass, enable_pyscript_and_rachio):
     data = {**ENTRY_DATA, "bindings": {
         "weather": {"temperature": "sensor.station_temp"}}}
-    # Pin the clock inside the 20:00->06:00 overnight window so the samples set
-    # below land in it regardless of when the suite runs (the sensor stamps and
-    # windows samples against the current time). 23:00 UTC is inside the window.
+    # The sensor stamps and windows samples against local time, so pin both the
+    # timezone and the clock: 23:00 in UTC is inside the 20:00->06:00 window.
+    await hass.config.async_set_time_zone("UTC")
     with freeze_time("2026-06-15 23:00:00"):
+        entry = MockConfigEntry(domain=DOMAIN, data=data)
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        hass.states.async_set("sensor.station_temp", "10.0")
+        await hass.async_block_till_done()
+        hass.states.async_set("sensor.station_temp", "30.0")
+        await hass.async_block_till_done()
+        s = hass.states.get("sensor.geodrops_rachio_observed_overnight_temp")
+        assert s is not None and float(s.state) == 20.0
+
+
+async def test_observed_window_is_local_not_utc(hass, enable_pyscript_and_rachio):
+    """The overnight window follows the home's timezone, not UTC. Pinned at a
+    moment that is inside local overnight (05:00 US-Eastern) but OUTSIDE the
+    UTC overnight window (10:00 UTC) — a UTC-based window would drop the samples
+    and read 'unknown'."""
+    data = {**ENTRY_DATA, "bindings": {
+        "weather": {"temperature": "sensor.station_temp"}}}
+    await hass.config.async_set_time_zone("America/New_York")
+    # 2026-01-15 10:00 UTC == 05:00 EST (winter, UTC-5): inside 20:00->06:00
+    # local, outside 20:00->06:00 UTC.
+    with freeze_time("2026-01-15 10:00:00"):
         entry = MockConfigEntry(domain=DOMAIN, data=data)
         entry.add_to_hass(hass)
         assert await hass.config_entries.async_setup(entry.entry_id)
