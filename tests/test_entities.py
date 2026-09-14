@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from freezegun import freeze_time
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.geodrops_rachio.const import DOMAIN
@@ -65,16 +66,20 @@ async def test_zone_exclude_switch_created_per_zone(hass, enable_pyscript_and_ra
 async def test_observed_sensor_buffers_and_averages(hass, enable_pyscript_and_rachio):
     data = {**ENTRY_DATA, "bindings": {
         "weather": {"temperature": "sensor.station_temp"}}}
-    entry = MockConfigEntry(domain=DOMAIN, data=data)
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    hass.states.async_set("sensor.station_temp", "10.0")
-    await hass.async_block_till_done()
-    hass.states.async_set("sensor.station_temp", "30.0")
-    await hass.async_block_till_done()
-    s = hass.states.get("sensor.geodrops_rachio_observed_overnight_temp")
-    assert s is not None and float(s.state) == 20.0
+    # Pin the clock inside the 20:00->06:00 overnight window so the samples set
+    # below land in it regardless of when the suite runs (the sensor stamps and
+    # windows samples against the current time). 23:00 UTC is inside the window.
+    with freeze_time("2026-06-15 23:00:00"):
+        entry = MockConfigEntry(domain=DOMAIN, data=data)
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        hass.states.async_set("sensor.station_temp", "10.0")
+        await hass.async_block_till_done()
+        hass.states.async_set("sensor.station_temp", "30.0")
+        await hass.async_block_till_done()
+        s = hass.states.get("sensor.geodrops_rachio_observed_overnight_temp")
+        assert s is not None and float(s.state) == 20.0
 
 
 async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
