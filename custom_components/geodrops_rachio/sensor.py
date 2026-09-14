@@ -61,7 +61,10 @@ class ObservedOvernightSensor(SensorEntity):
             val = float(new.state)
         except (ValueError, TypeError):
             return
-        now = dt.datetime.now(dt.timezone.utc)
+        # Local time: "overnight" is 20:00→06:00 in the home's timezone (the
+        # scheduler calibrates at 06:00 local), not UTC — a UTC window would be
+        # offset by hours for any non-UTC install.
+        now = dt_util.now()
         self._samples.append((now, val))
         # Retain only samples from the current overnight window onward, then
         # average that window (the true 20:00→06:00 span, not a rolling 12h).
@@ -100,7 +103,7 @@ class ForecastOvernightSensor(SensorEntity):
                 blocking=True, return_response=True)
             periods = (resp or {}).get(self._source, {}).get("forecast", [])
             value = weather_derive.overnight_forecast_mean(
-                periods, self._field, dt.datetime.now(dt.timezone.utc))
+                periods, self._field, dt_util.now())
         except Exception:
             _LOGGER.warning(
                 "Failed to refresh forecast overnight sensor for %s",
