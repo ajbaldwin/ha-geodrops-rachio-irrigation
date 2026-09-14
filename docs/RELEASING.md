@@ -98,17 +98,27 @@ itself trigger anything in `delivery.py`; that logic only looks at
    (Add any other changed files from this release to the same commit as
    appropriate.)
 
-5. **Tag and release.**
+5. **Write the release notes.** HACS shows the GitHub release **body** as the
+   changelog for that version, so it is how users see what a pending update
+   contains before they install it — always write real notes, never
+   `--generate-notes` (a raw commit list). Keep them short and user-facing:
+   what changed, what got fixed, and whether it needs a restart (see the
+   sanity check below). Add the same summary as a new top section in
+   `CHANGELOG.md` so the history lives in the repo too.
+
+6. **Tag and release** from `main`.
 
    ```bash
    git tag vX.Y.Z
-   git push origin build/integration vX.Y.Z   # or your default branch, once this lands there
-   gh release create vX.Y.Z --title vX.Y.Z --generate-notes
+   git push origin main vX.Y.Z
+   gh release create vX.Y.Z --title vX.Y.Z --notes-file <notes.md>
    ```
 
-   HACS installs updates from GitHub releases/tags, so the tag and release
-   are what make the new version visible to users' HACS instances — the
-   `manifest.json` bump alone does not distribute anything.
+   (Or pass `--notes "..."` inline.) HACS installs updates from GitHub
+   releases, so the release is what makes the new version — and its notes —
+   visible to users' HACS instances; the `manifest.json` bump alone does not
+   distribute anything. Because `hacs.json` sets `hide_default_branch`, HACS
+   only ever offers tagged releases, not raw `main`.
 
 ## Sanity check before tagging
 
