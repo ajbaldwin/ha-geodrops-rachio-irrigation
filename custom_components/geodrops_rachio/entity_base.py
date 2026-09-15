@@ -2,7 +2,7 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 from .const import DOMAIN
-from .util import slug
+from .util import slug, titleize
 
 
 def device_info(entry: ConfigEntry) -> DeviceInfo:
@@ -16,7 +16,7 @@ def device_info(entry: ConfigEntry) -> DeviceInfo:
 def zone_device_info(entry, key: str) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, f"{entry.entry_id}:zone:{slug(key)}")},
-        name=str(key),
+        name=titleize(key),
         manufacturer="GeoDrops",
         model="Irrigation zone",
         via_device=(DOMAIN, entry.entry_id),

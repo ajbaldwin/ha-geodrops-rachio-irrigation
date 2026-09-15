@@ -3,6 +3,7 @@ import datetime as dt
 import logging
 from homeassistant.components.sensor import (
     SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
+from homeassistant.const import PERCENTAGE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -27,7 +28,9 @@ _ZONE_FIELDS = [
     ("last_delivered_runtime", "last_delivered_runtime",
      SensorDeviceClass.DURATION, "min"),
     ("last_watered", "last_watered", SensorDeviceClass.TIMESTAMP, None),
-    ("efficacy", "efficacy", None, None),
+    # Efficacy = moisture-points gained per minute of watering; no HA device
+    # class fits, so just carry a unit for reader context.
+    ("efficacy", "efficacy", None, f"{PERCENTAGE}/min"),
     # No device_class: avoids HA's enum-options validation churn.
     ("calibration_state", "calibration_state", None, None),
 ]
@@ -151,6 +154,11 @@ class ZoneMoistureSensor(SensorEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_name = "Soil moisture"
+    # GeoDrops dominant moisture is a 0-100 percentage; label it so readers see
+    # "75.6 %" with a moisture icon instead of a bare number.
+    _attr_device_class = SensorDeviceClass.MOISTURE
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 1
 
     def __init__(self, entry, key, source) -> None:
         s = slug(key)
@@ -163,7 +171,13 @@ class ZoneMoistureSensor(SensorEntity):
         @callback
         def _mirror(event=None) -> None:
             st = self.hass.states.get(self._source) if self._source else None
-            self._attr_native_value = st.state if st else None
+            # A moisture device_class must be numeric, so coerce and let
+            # unknown/unavailable/missing sources read as no value rather than
+            # pushing a non-numeric state HA would reject.
+            try:
+                self._attr_native_value = float(st.state) if st else None
+            except (TypeError, ValueError):
+                self._attr_native_value = None
             self.async_write_ha_state()
         if self._source:
             self.async_on_remove(async_track_state_change_event(
