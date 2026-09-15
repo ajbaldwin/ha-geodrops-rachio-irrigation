@@ -8,7 +8,7 @@ from .util import slug
 def device_info(entry: ConfigEntry) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
-        name="GeoDrops + Rachio Irrigation",
+        name="Irrigation Controls",
         manufacturer="GeoDrops",
     )
 
