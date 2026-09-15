@@ -162,5 +162,45 @@ async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert hass.states.get("sensor.geodrops_rachio_front_soil_moisture").state == "71.5"
+    moisture = hass.states.get("sensor.geodrops_rachio_front_soil_moisture")
+    assert moisture.state == "71.5"
+    assert moisture.attributes["unit_of_measurement"] == "%"
+    assert moisture.attributes["device_class"] == "moisture"
     assert hass.states.get("sensor.geodrops_rachio_front_last_delivered_runtime").state == "42.0"
+    efficacy = hass.states.get("sensor.geodrops_rachio_front_efficacy")
+    assert efficacy.attributes["unit_of_measurement"] == "%/min"
+
+
+async def test_zone_soil_moisture_non_numeric_source_reads_none(hass, enable_pyscript_and_rachio):
+    """A moisture device_class must be numeric — an unavailable dominant sensor
+    must read as no value, not push HA a non-numeric state."""
+    hass.states.async_set("sensor.d", "unavailable")
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"weather": {}, "forecast_entity": "weather.home"},
+        "zones": [{"key": "front", "rachio_switch": "switch.x",
+                   "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
+                   "quality_sensors": [], "target_range": "moist",
+                   "runtime_minutes": 20, "refill_depth_mm": 10}],
+        "self_calibration_enabled": False, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.geodrops_rachio_front_soil_moisture").state == "unknown"
+
+
+async def test_zone_device_uses_friendly_name(hass, enable_pyscript_and_rachio):
+    """Zone devices are named from a title-cased key, not the raw slug."""
+    from homeassistant.helpers import device_registry as dr
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"weather": {}, "forecast_entity": "weather.home"},
+        "zones": [{"key": "front_slope", "rachio_switch": "switch.x",
+                   "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
+                   "quality_sensors": [], "target_range": "moist",
+                   "runtime_minutes": 20, "refill_depth_mm": 10}],
+        "self_calibration_enabled": False, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    device = dr.async_get(hass).async_get_device(
+        identifiers={(DOMAIN, f"{entry.entry_id}:zone:front_slope")})
+    assert device is not None and device.name == "Front Slope"
