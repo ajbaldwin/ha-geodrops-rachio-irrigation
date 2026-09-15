@@ -46,8 +46,10 @@ missing.
 ## Installing
 
 1. In HACS, add this repository as a **custom repository** (category:
-   *Integration*).
-2. Install **GeoDrops + Rachio Irrigation** from HACS.
+   *Integration*): HACS → ⋮ → *Custom repositories* → paste
+   `https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation`.
+2. Install **GeoDrops + Rachio Irrigation** from HACS, then restart Home
+   Assistant.
 3. Go to **Settings → Devices & Services → Add Integration**, search for
    **"GeoDrops + Rachio Irrigation"**, and complete the setup wizard:
    - **Core bindings** — your notification service, calendar, Rachio device
@@ -87,6 +89,35 @@ Only one instance of this integration may be configured at a time; adding a
 second one is blocked. To change bindings, weather sensors, zones, or the
 advanced settings later, use the integration's **Configure** option — it
 re-runs the same wizard, pre-filled with your current settings.
+
+## Controls and entities
+
+Setup creates one main **GeoDrops + Rachio Irrigation** device plus a device
+per zone, with these entities (all prefixed `geodrops_rachio_`):
+
+**Controls (main device)**
+
+- **Buttons** — *Run irrigation now*, *Preview irrigation plan*, *Stop
+  irrigation*, *Reset irrigation*, *Refresh Rachio runtimes*. Each triggers the
+  scheduler's matching action; *Preview* plans without watering.
+- **Drought level** (`select`) — the active drought rating (Level 0 Normal →
+  Level 4 Emergency); drives target offsets, runtime scaling and rain-skip
+  behavior.
+- **Switches** — *Run active* (the scheduler's own run flag), *Standby* (pause
+  scheduling), *Dew formed* (overnight-dew signal).
+
+**Per-zone (one device each)**
+
+- **Exclude** (`switch`) — when on, the zone is skipped from both the nightly
+  plan and calibration probing.
+- **Status sensors** — soil moisture (mirrors the zone's dominant sensor),
+  planned runtime, last-delivered runtime, last watered, efficacy, and
+  calibration state.
+
+**Weather (main device)**
+
+- **Observed** and **forecast overnight** sensors for temperature, humidity and
+  wind — averaged over the local 20:00→06:00 overnight window.
 
 ## Active Watering Calibration (Beta)
 
