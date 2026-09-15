@@ -4,6 +4,19 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.1 — Friendlier zone names and sensor units
+
+### Changes
+- Zone devices now show a readable name (e.g. **Front Slope**) instead of the
+  raw zone key (`front_slope`). Entity IDs are unchanged, and a device you
+  renamed in the UI keeps your name.
+- The per-zone **Soil moisture** sensor now reports a percentage with a
+  moisture icon (e.g. **75.6 %**) instead of a bare number, and the
+  **Efficacy** sensor carries a `%/min` unit (moisture gained per watering
+  minute).
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.9.0 — Clearer device name; version aligned with the scheduler line
 
 The version jumps from 0.5.0 to 0.9.0 so the integration's releases continue
