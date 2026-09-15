@@ -27,16 +27,26 @@ set up and working in Home Assistant:
   pyscript for you — it delivers the scheduler as a pyscript app and asks
   the already-running pyscript integration to reload, via the
   `pyscript.reload` service. If pyscript isn't set up first, setup aborts.
-- The **Rachio** integration, configured with your Rachio controller and
-  zones.
+- The **[Rachio](https://www.home-assistant.io/integrations/rachio/)**
+  integration, configured with your Rachio controller and zones.
 - **GeoDrops soil-moisture sensors** already flowing into Home Assistant as
   entities (one dominant sensor and quality/agreement sensors per zone you
-  want to schedule).
-- A local weather station — a **Tempest** station or equivalent — exposing
+  want to schedule). One way to get these into Home Assistant is
+  **[ha-geodrops-integration](https://github.com/ajbaldwin/ha-geodrops-integration)**,
+  which syncs GeoDrops readings to Home Assistant over MQTT.
+- Weather inputs for the five observed conditions the wizard binds:
   temperature, humidity, wind speed, rain-in-the-last-hour, and
-  precipitation-type sensors.
+  precipitation-type. A **local weather station (a Tempest or equivalent) is
+  strongly recommended** — it reads your yard's own microclimate at minute
+  resolution and exposes all five natively. **Without a local station you can
+  still run at reduced accuracy** by binding these to a public weather
+  integration's sensors (e.g. OpenWeatherMap, Pirate Weather) or templating
+  them from a `weather.*` entity's attributes. Rain-in-the-last-hour and
+  precipitation-type are the fields public providers are least likely to
+  expose cleanly, so they may need a template sensor.
 - A forecast `weather.*` entity (any HA weather platform that provides
-  forecasts), used for rain-skip and drought-level decisions.
+  forecasts, including free public ones such as Met.no), used for rain-skip
+  and drought-level decisions.
 - Home Assistant **2026.3.0** or newer (the Python 3.14 era of HA core).
 
 Setup checks for pyscript and Rachio being loaded and will abort with
