@@ -4,6 +4,22 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.0 — Clearer device name; version aligned with the scheduler line
+
+The version jumps from 0.5.0 to 0.9.0 so the integration's releases continue
+the line of the standalone GeoDrops + Rachio scheduler it succeeds — that
+scheduler is now vendored inside this integration rather than installed
+separately, so there is a single release stream going forward.
+
+### Changes
+- The integration's site-level device is now named **Irrigation Controls**
+  instead of "GeoDrops + Rachio Irrigation", which duplicated the integration's
+  own name and looked like two identical entries. Zone devices are unchanged,
+  and no entity IDs change. If you already renamed this device yourself, your
+  name is kept.
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.5.0 — Initial public release
 
 First public, HACS-installable release. Wraps the GeoDrops + Rachio pyscript
