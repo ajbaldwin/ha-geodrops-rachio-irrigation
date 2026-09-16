@@ -174,8 +174,9 @@ async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
     # Last watered comes from the record's full ISO `updated`, not time-only `end`.
     lw = hass.states.get("sensor.geodrops_rachio_front_last_watered")
     assert lw.state not in ("unknown", "unavailable")
-    # Calibration state comes from the nightly `calibration` attr, not the file.
-    assert hass.states.get("sensor.geodrops_rachio_front_calibration_state").state == "calibrating"
+    # Calibration state comes from the nightly `calibration` attr, not the file,
+    # and is title-cased for display ("calibrating" -> "Calibrating").
+    assert hass.states.get("sensor.geodrops_rachio_front_calibration_state").state == "Calibrating"
 
 
 async def test_scheduler_status_sensor_mirrors_pyscript(hass, enable_pyscript_and_rachio):
@@ -188,8 +189,21 @@ async def test_scheduler_status_sensor_mirrors_pyscript(hass, enable_pyscript_an
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     s = hass.states.get("sensor.geodrops_rachio_status")
-    assert s is not None and s.state == "waiting"
+    assert s is not None and s.state == "Waiting"  # title-cased for display
     assert s.attributes["detail"] == "watering starts 01:44"
+
+
+def test_pretty_status_titlecases_tokens_and_preserves_sentinels():
+    from custom_components.geodrops_rachio.sensor import _pretty_status
+    assert _pretty_status("calibrating") == "Calibrating"
+    assert _pretty_status("watering") == "Watering"
+    assert _pretty_status("no_rise") == "No Rise"          # underscore -> space
+    assert _pretty_status("recalibrating") == "Recalibrating"
+    # HA sentinels and non-strings pass through untouched.
+    assert _pretty_status("unknown") == "unknown"
+    assert _pretty_status("unavailable") == "unavailable"
+    assert _pretty_status(None) is None
+    assert _pretty_status("") == ""
 
 
 async def test_zone_soil_moisture_non_numeric_source_reads_none(hass, enable_pyscript_and_rachio):

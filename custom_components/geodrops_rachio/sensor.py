@@ -3,7 +3,8 @@ import datetime as dt
 import logging
 from homeassistant.components.sensor import (
     SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import (
+    PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -34,6 +35,26 @@ _ZONE_FIELDS = [
     # No device_class: avoids HA's enum-options validation churn.
     ("calibration_state", "calibration_state", None, None),
 ]
+
+
+def _pretty_status(value):
+    """Title-case a scheduler status/state word for display.
+
+    The scheduler emits lowercase, underscore-joined tokens ("watering",
+    "no_rise", "recalibrating"); shown raw they read as "calibrating", not
+    "Calibrating". Title-case with underscores turned to spaces so both single
+    words and multi-word tokens read cleanly, and pass non-strings through
+    unchanged. Nothing consumes the lowercase form (the config dashboards read
+    the pyscript.* source entities, not these sensors), so this only affects how
+    the state is displayed.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    # Leave HA's sentinel states alone: title-casing "unknown"/"unavailable"
+    # would turn the special state into an ordinary string the UI mishandles.
+    if value in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+        return value
+    return value.replace("_", " ").title()
 
 
 class ObservedOvernightSensor(SensorEntity):
@@ -148,6 +169,9 @@ class ZoneCoordinatorSensor(SensorEntity):
             if parsed is not None and parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
             value = parsed
+        elif self._ckey == "calibration_state":
+            # Display "Calibrating"/"Converged"/"No Rise", not the raw token.
+            value = _pretty_status(value)
         self._attr_native_value = value
         if self.hass:
             self.async_write_ha_state()
@@ -212,7 +236,8 @@ class SchedulerStatusSensor(SensorEntity):
         @callback
         def _mirror(event=None) -> None:
             st = self.hass.states.get(STATUS_ENTITY)
-            self._attr_native_value = st.state if st else None
+            # "Idle"/"Watering"/"Waiting" rather than the raw lowercase token.
+            self._attr_native_value = _pretty_status(st.state) if st else None
             self._attr_extra_state_attributes = {
                 "detail": st.attributes.get("detail") if st else None,
                 "updated": st.attributes.get("updated") if st else None,
