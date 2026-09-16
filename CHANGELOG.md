@@ -4,6 +4,20 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.3 — Accurate Last Watered time, and Preview works before dawn
+
+### Fixes
+- **Last Watered** now shows the real time watering finished (valve close),
+  not the time the nightly plan was published. The bundled scheduler now
+  records a full timestamp for the end of watering, and this integration reads
+  it.
+- **Preview** now works while a night is *planned and waiting* for its pre-dawn
+  window — previously it returned "skipped, run in progress" for the hours
+  between planning and watering. Preview is still declined while valves are
+  actually watering.
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.9.2 — Run status, calibration state, and last-watered fixes
 
 ### Changes
