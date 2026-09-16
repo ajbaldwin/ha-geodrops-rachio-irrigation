@@ -1,5 +1,20 @@
 from custom_components.geodrops_rachio.coordinator import (
-    parse_last_nightly, parse_efficacy, parse_nightly_calibration)
+    parse_last_nightly, parse_efficacy, parse_nightly_calibration,
+    parse_refill_depth)
+
+
+def test_parse_refill_depth_prefers_live_then_static():
+    attrs = {"refill_depths_mm": {"zone-abc": 17.5}}
+    # Live value for a mapped zone wins over the static config value.
+    assert parse_refill_depth(attrs, "zone-abc", 10.0) == {"refill_depth": 17.5}
+    # Zone not in the live payload -> static config value.
+    assert parse_refill_depth(attrs, "zone-xyz", 10.0) == {"refill_depth": 10.0}
+    # No rachio_zone_id (manual zone) -> static config value.
+    assert parse_refill_depth(attrs, "", 10.0) == {"refill_depth": 10.0}
+    # No runtimes entity / no live payload -> static config value.
+    assert parse_refill_depth({}, "zone-abc", 10.0) == {"refill_depth": 10.0}
+    # Nothing anywhere -> None (sensor reads unknown).
+    assert parse_refill_depth({}, "", None) == {"refill_depth": None}
 
 
 def test_parse_last_nightly_extracts_zone_slice():
