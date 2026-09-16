@@ -20,12 +20,23 @@ _FILE_REFRESH = dt.timedelta(hours=1)
 
 
 def parse_last_nightly(attrs: dict, key: str) -> dict:
-    delivered = (attrs or {}).get("delivered_minutes") or {}
-    watered = (attrs or {}).get("watered") or []
+    attrs = attrs or {}
+    delivered = attrs.get("delivered_minutes") or {}
+    watered = attrs.get("watered") or []
+    # The record's `end` is a time-only string ("06:44") a TIMESTAMP sensor
+    # can't parse; `updated` is the run's full ISO timestamp.
     return {
         "last_delivered_runtime": delivered.get(key),
-        "last_watered": (attrs or {}).get("end") if key in watered else None,
+        "last_watered": attrs.get("updated") if key in watered else None,
     }
+
+
+def parse_nightly_calibration(attrs: dict, key: str) -> dict:
+    """Per-zone calibration published live on the last_nightly record. Only the
+    zones watered that night appear; missing keys fall back to the efficacy
+    file (which lags and carries no `state` for excluded zones)."""
+    cal = ((attrs or {}).get("calibration") or {}).get(key) or {}
+    return {"efficacy": cal.get("efficacy"), "calibration_state": cal.get("state")}
 
 
 def parse_preview(attrs: dict, key: str) -> dict:
@@ -73,6 +84,14 @@ class ZoneStateCoordinator:
         if pv is not None:
             out.update(parse_preview(pv.attributes, key))
         out.update(parse_efficacy(self._efficacy, key))
+        # The live nightly calibration wins over the file where it has a value:
+        # the file carries no `state` for these zones (only excluded_since).
+        if ln is not None:
+            cal = parse_nightly_calibration(ln.attributes, key)
+            if cal["calibration_state"] is not None:
+                out["calibration_state"] = cal["calibration_state"]
+            if cal["efficacy"] is not None:
+                out["efficacy"] = cal["efficacy"]
         return out
 
     async def async_refresh_file(self, _now=None) -> None:

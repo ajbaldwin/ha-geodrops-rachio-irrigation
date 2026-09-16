@@ -1,12 +1,15 @@
 from custom_components.geodrops_rachio.coordinator import (
-    parse_last_nightly, parse_efficacy)
+    parse_last_nightly, parse_efficacy, parse_nightly_calibration)
 
 
 def test_parse_last_nightly_extracts_zone_slice():
     attrs = {
         "delivered_minutes": {"front": 42.0, "back": 10.0},
         "watered": ["front"],
-        "end": "2026-09-13T06:00:00+00:00",
+        # `end` is time-only and unparseable as a timestamp; `updated` carries
+        # the run's full ISO time and is what last_watered uses.
+        "end": "06:00",
+        "updated": "2026-09-13T06:00:00+00:00",
     }
     out = parse_last_nightly(attrs, "front")
     assert out["last_delivered_runtime"] == 42.0
@@ -16,6 +19,17 @@ def test_parse_last_nightly_extracts_zone_slice():
     out_b = parse_last_nightly(attrs, "back")
     assert out_b["last_delivered_runtime"] == 10.0
     assert out_b["last_watered"] is None
+
+
+def test_parse_nightly_calibration_extracts_zone_state():
+    attrs = {"calibration": {"front": {"state": "calibrating", "efficacy": 0.35}}}
+    assert parse_nightly_calibration(attrs, "front") == {
+        "efficacy": 0.35, "calibration_state": "calibrating"}
+    # A zone not in this night's calibration block -> both None.
+    assert parse_nightly_calibration(attrs, "back") == {
+        "efficacy": None, "calibration_state": None}
+    assert parse_nightly_calibration({}, "front") == {
+        "efficacy": None, "calibration_state": None}
 
 
 def test_parse_last_nightly_missing_keys_are_none():
