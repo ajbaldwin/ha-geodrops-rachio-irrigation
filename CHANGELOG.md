@@ -4,6 +4,22 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.2 — Run status, calibration state, and last-watered fixes
+
+### Changes
+- New **Status** sensor on the main (Irrigation Controls) device showing what
+  the scheduler is doing — idle, planning, waiting, watering, standby, skipped,
+  or aborted — with a detail attribute.
+
+### Fixes
+- **Calibration State** now reports the live per-zone state (e.g. *calibrating*)
+  instead of reading *unknown*.
+- **Last Watered** now populates for zones that ran, instead of staying blank.
+  (It reflects the nightly run's timestamp; exact valve-close time is a later
+  change.)
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.9.1 — Friendlier zone names and sensor units
 
 ### Changes
