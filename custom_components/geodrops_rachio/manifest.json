@@ -1,7 +1,7 @@
 {
   "domain": "geodrops_rachio",
   "name": "GeoDrops + Rachio Irrigation",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "config_flow": true,
   "iot_class": "local_polling",
   "dependencies": [],

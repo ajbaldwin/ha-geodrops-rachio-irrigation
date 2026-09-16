@@ -14,6 +14,9 @@ _LOGGER = logging.getLogger(__name__)
 
 LAST_NIGHTLY_ENTITY = "pyscript.geodrops_rachio_last_nightly"
 PREVIEW_ENTITY = "pyscript.geodrops_rachio_preview"
+# Published by the scheduler's refresh_runtimes service (the Refresh Runtimes
+# button): a live Rachio pull, keyed by rachio_zone_id.
+RUNTIMES_ENTITY = "pyscript.geodrops_rachio_runtimes"
 STATE_DIRNAME = "geodrops_rachio_state"
 EFFICACY_STATE_FILE = "irrigation_efficacy.json"
 _FILE_REFRESH = dt.timedelta(hours=1)
@@ -48,6 +51,19 @@ def parse_preview(attrs: dict, key: str) -> dict:
     return {"planned_runtime": planned.get(key)}
 
 
+def parse_refill_depth(runtimes_attrs: dict, rachio_zone_id: str, static_mm) -> dict:
+    """Per-zone refill depth in mm (Rachio's "depth of water" for the zone).
+
+    Prefer the live value Rachio last reported — published on the runtimes
+    entity by a Refresh Runtimes pull, keyed by rachio_zone_id — and fall back
+    to the value captured at wizard time. A manual zone (no rachio_zone_id), or
+    a zone the live pull didn't return, keeps the static config value, so the
+    sensor is never blank."""
+    live = (runtimes_attrs or {}).get("refill_depths_mm") or {}
+    val = live.get(rachio_zone_id) if rachio_zone_id else None
+    return {"refill_depth": val if val is not None else static_mm}
+
+
 def parse_efficacy(store: dict, key: str) -> dict:
     rec = (store or {}).get(key) or {}
     return {"efficacy": rec.get("efficacy"), "calibration_state": rec.get("state")}
@@ -80,10 +96,19 @@ class ZoneStateCoordinator:
 
     def data_for(self, key: str) -> dict:
         out = {"planned_runtime": None, "last_delivered_runtime": None,
-               "last_watered": None, "efficacy": None, "calibration_state": None}
+               "last_watered": None, "efficacy": None, "calibration_state": None,
+               "refill_depth": None}
         ln = self.hass.states.get(LAST_NIGHTLY_ENTITY)
         if ln is not None:
             out.update(parse_last_nightly(ln.attributes, key))
+        # Refill depth: config snapshot from the wizard, overlaid with the live
+        # Rachio value when a refresh has published it.
+        zcfg = next((z for z in self.entry.data.get("zones", [])
+                     if z.get("key") == key), {})
+        rt = self.hass.states.get(RUNTIMES_ENTITY)
+        out.update(parse_refill_depth(
+            rt.attributes if rt is not None else {},
+            zcfg.get("rachio_zone_id", ""), zcfg.get("refill_depth_mm")))
         pv = self.hass.states.get(PREVIEW_ENTITY)
         if pv is not None:
             out.update(parse_preview(pv.attributes, key))
@@ -122,7 +147,8 @@ class ZoneStateCoordinator:
             self.hass.async_create_task(self.async_refresh_file())
 
         self._unsubs.append(async_track_state_change_event(
-            self.hass, [LAST_NIGHTLY_ENTITY, PREVIEW_ENTITY], _on_entity))
+            self.hass, [LAST_NIGHTLY_ENTITY, PREVIEW_ENTITY, RUNTIMES_ENTITY],
+            _on_entity))
         self._unsubs.append(async_track_time_interval(
             self.hass, self.async_refresh_file, _FILE_REFRESH))
 
