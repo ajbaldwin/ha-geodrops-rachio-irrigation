@@ -177,6 +177,35 @@ async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
     # Calibration state comes from the nightly `calibration` attr, not the file,
     # and is title-cased for display ("calibrating" -> "Calibrating").
     assert hass.states.get("sensor.geodrops_rachio_front_calibration_state").state == "Calibrating"
+    # Refill depth: no rachio_zone_id and no live runtimes entity here, so the
+    # sensor shows the static config value (mm) captured at wizard time.
+    refill = hass.states.get("sensor.geodrops_rachio_front_refill_depth")
+    assert float(refill.state) == 10.0
+    assert refill.attributes["unit_of_measurement"] == "mm"
+    assert refill.attributes["device_class"] == "distance"
+
+
+async def test_refill_depth_prefers_live_rachio_value(hass, enable_pyscript_and_rachio):
+    """A zone with a rachio_zone_id shows the live refill depth published on the
+    runtimes entity, overriding the static config value."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from custom_components.geodrops_rachio.const import DOMAIN
+    hass.states.async_set(
+        "pyscript.geodrops_rachio_runtimes", "1",
+        {"refill_depths_mm": {"zone-abc": 17.5}})
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"weather": {}, "forecast_entity": "weather.home"},
+        "zones": [{"key": "front", "rachio_switch": "switch.x",
+                   "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
+                   "quality_sensors": [], "target_range": "moist",
+                   "runtime_minutes": 20, "refill_depth_mm": 10,
+                   "rachio_zone_id": "zone-abc"}],
+        "self_calibration_enabled": False, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    refill = hass.states.get("sensor.geodrops_rachio_front_refill_depth")
+    assert float(refill.state) == 17.5  # live Rachio value, not the static 10
 
 
 async def test_scheduler_status_sensor_mirrors_pyscript(hass, enable_pyscript_and_rachio):
