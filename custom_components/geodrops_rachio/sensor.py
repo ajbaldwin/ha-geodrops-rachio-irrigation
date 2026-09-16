@@ -4,7 +4,7 @@ import logging
 from homeassistant.components.sensor import (
     SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.const import (
-    PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN)
+    PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfLength)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -34,6 +34,11 @@ _ZONE_FIELDS = [
     ("efficacy", "efficacy", None, f"{PERCENTAGE}/min"),
     # No device_class: avoids HA's enum-options validation churn.
     ("calibration_state", "calibration_state", None, None),
+    # Rachio's per-zone "depth of water" (mm) — the refill this zone needs from
+    # depletion back to field capacity. Config snapshot, overlaid with the live
+    # Rachio value after a Refresh Runtimes pull (see coordinator).
+    ("refill_depth", "refill_depth", SensorDeviceClass.DISTANCE,
+     UnitOfLength.MILLIMETERS),
 ]
 
 

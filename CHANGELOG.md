@@ -4,6 +4,16 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.5 — Per-zone refill depth sensor
+
+### Changes
+- Each zone now has a **Refill depth** sensor (mm) — Rachio's "depth of water"
+  for the zone, the amount it needs from depletion back to field capacity. It
+  shows the value captured at setup and updates to Rachio's live value whenever
+  you press **Refresh Runtimes**.
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.9.4 — Readable status labels
 
 ### Changes
