@@ -6,19 +6,31 @@ def test_parse_last_nightly_extracts_zone_slice():
     attrs = {
         "delivered_minutes": {"front": 42.0, "back": 10.0},
         "watered": ["front"],
-        # `end` is time-only and unparseable as a timestamp; `updated` carries
-        # the run's full ISO time and is what last_watered uses.
-        "end": "06:00",
-        "updated": "2026-09-13T06:00:00+00:00",
+        # `end` is time-only and unparseable as a timestamp. `end_iso` is the
+        # real tz-aware valve-close instant and is what last_watered uses;
+        # `updated` (plan-publish time) is only the version-skew fallback.
+        "end": "06:44",
+        "end_iso": "2026-09-13T06:44:03-04:00",
+        "updated": "2026-09-13T06:00:00",
     }
     out = parse_last_nightly(attrs, "front")
     assert out["last_delivered_runtime"] == 42.0
-    assert out["last_watered"] == "2026-09-13T06:00:00+00:00"
+    assert out["last_watered"] == "2026-09-13T06:44:03-04:00"
 
     # A zone that didn't water: delivered unknown, no watered timestamp.
     out_b = parse_last_nightly(attrs, "back")
     assert out_b["last_delivered_runtime"] == 10.0
     assert out_b["last_watered"] is None
+
+
+def test_parse_last_nightly_falls_back_to_updated_without_end_iso():
+    # Version skew: a new wrapper reading a record from a scheduler that predates
+    # end_iso (or a no-water night, end_iso == "") falls back to `updated`.
+    attrs = {"watered": ["front"], "end": "06:44",
+             "updated": "2026-09-13T06:00:00"}
+    assert parse_last_nightly(attrs, "front")["last_watered"] == "2026-09-13T06:00:00"
+    empty = {"watered": ["front"], "end_iso": "", "updated": "2026-09-13T06:00:00"}
+    assert parse_last_nightly(empty, "front")["last_watered"] == "2026-09-13T06:00:00"
 
 
 def test_parse_nightly_calibration_extracts_zone_state():

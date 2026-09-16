@@ -24,10 +24,14 @@ def parse_last_nightly(attrs: dict, key: str) -> dict:
     delivered = attrs.get("delivered_minutes") or {}
     watered = attrs.get("watered") or []
     # The record's `end` is a time-only string ("06:44") a TIMESTAMP sensor
-    # can't parse; `updated` is the run's full ISO timestamp.
+    # can't parse. `end_iso` is the tz-aware valve-close instant (scheduler
+    # >= v0.8.2); fall back to the plan-publish `updated` stamp only for records
+    # from an older delivered brain or a no-water night (end_iso == "").
+    last_watered = (attrs.get("end_iso") or attrs.get("updated")
+                    if key in watered else None)
     return {
         "last_delivered_runtime": delivered.get(key),
-        "last_watered": attrs.get("updated") if key in watered else None,
+        "last_watered": last_watered,
     }
 
 
