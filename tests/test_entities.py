@@ -150,7 +150,8 @@ async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
     hass.states.async_set(
         "pyscript.geodrops_rachio_last_nightly", "1",
         {"delivered_minutes": {"front": 42.0}, "watered": ["front"],
-         "end": "2026-09-13T06:00:00+00:00"})
+         "end": "06:00", "updated": "2026-09-13T06:00:00+00:00",
+         "calibration": {"front": {"state": "calibrating", "efficacy": 0.35}}})
     entry = MockConfigEntry(domain=DOMAIN, data={
         "bindings": {"weather": {}, "forecast_entity": "weather.home"},
         "zones": [{"key": "front", "rachio_switch": "switch.x",
@@ -169,6 +170,26 @@ async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
     assert hass.states.get("sensor.geodrops_rachio_front_last_delivered_runtime").state == "42.0"
     efficacy = hass.states.get("sensor.geodrops_rachio_front_efficacy")
     assert efficacy.attributes["unit_of_measurement"] == "%/min"
+    assert efficacy.state == "0.35"  # from the live nightly calibration
+    # Last watered comes from the record's full ISO `updated`, not time-only `end`.
+    lw = hass.states.get("sensor.geodrops_rachio_front_last_watered")
+    assert lw.state not in ("unknown", "unavailable")
+    # Calibration state comes from the nightly `calibration` attr, not the file.
+    assert hass.states.get("sensor.geodrops_rachio_front_calibration_state").state == "calibrating"
+
+
+async def test_scheduler_status_sensor_mirrors_pyscript(hass, enable_pyscript_and_rachio):
+    """The main device gets a Status sensor mirroring the scheduler's status."""
+    hass.states.async_set(
+        "pyscript.geodrops_rachio_status", "waiting",
+        {"detail": "watering starts 01:44"})
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    s = hass.states.get("sensor.geodrops_rachio_status")
+    assert s is not None and s.state == "waiting"
+    assert s.attributes["detail"] == "watering starts 01:44"
 
 
 async def test_zone_soil_moisture_non_numeric_source_reads_none(hass, enable_pyscript_and_rachio):

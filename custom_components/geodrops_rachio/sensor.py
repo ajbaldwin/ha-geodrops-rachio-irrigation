@@ -142,7 +142,12 @@ class ZoneCoordinatorSensor(SensorEntity):
     def _update(self) -> None:
         value = self._coord.data_for(self._key).get(self._ckey)
         if self._attr_device_class == SensorDeviceClass.TIMESTAMP and value:
-            value = dt_util.parse_datetime(value)
+            parsed = dt_util.parse_datetime(value)
+            # The scheduler stamps a naive local ISO time; a TIMESTAMP sensor
+            # needs a tz-aware value, so localize a naive one.
+            if parsed is not None and parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            value = parsed
         self._attr_native_value = value
         if self.hass:
             self.async_write_ha_state()
@@ -185,11 +190,44 @@ class ZoneMoistureSensor(SensorEntity):
         _mirror()
 
 
+STATUS_ENTITY = "pyscript.geodrops_rachio_status"
+
+
+class SchedulerStatusSensor(SensorEntity):
+    """Surfaces the scheduler's overall status (idle / planning / waiting /
+    watering / standby / skipped / aborted) on the main device, mirroring the
+    scheduler's own pyscript.geodrops_rachio_status entity."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_name = "Status"
+    _attr_icon = "mdi:sprinkler"
+
+    def __init__(self, entry) -> None:
+        self._attr_unique_id = f"{entry.entry_id}_status"
+        self.entity_id = ENTITY_ID_FORMAT.format("geodrops_rachio_status")
+        self._attr_device_info = device_info(entry)
+
+    async def async_added_to_hass(self) -> None:
+        @callback
+        def _mirror(event=None) -> None:
+            st = self.hass.states.get(STATUS_ENTITY)
+            self._attr_native_value = st.state if st else None
+            self._attr_extra_state_attributes = {
+                "detail": st.attributes.get("detail") if st else None,
+                "updated": st.attributes.get("updated") if st else None,
+            }
+            self.async_write_ha_state()
+        self.async_on_remove(async_track_state_change_event(
+            self.hass, [STATUS_ENTITY], _mirror))
+        _mirror()
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     weather = entry.data.get("bindings", {}).get("weather", {})
     forecast_entity = entry.data.get("bindings", {}).get("forecast_entity")
-    entities: list[SensorEntity] = []
+    entities: list[SensorEntity] = [SchedulerStatusSensor(entry)]
     for key, field, unit in _FIELDS:
         entities.append(ObservedOvernightSensor(
             entry, key, weather.get(field if field != "wind_speed" else "wind"), unit))
