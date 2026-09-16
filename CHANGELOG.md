@@ -4,6 +4,15 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.4 — Readable status labels
+
+### Changes
+- The **Status** sensor and per-zone **Calibration State** now display
+  capitalized labels (*Idle*, *Watering*, *Waiting*, *Calibrating*, *Converged*,
+  …) instead of the raw lowercase tokens.
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.9.3 — Accurate Last Watered time, and Preview works before dawn
 
 ### Fixes
