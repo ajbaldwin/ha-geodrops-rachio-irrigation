@@ -21,6 +21,41 @@ STATE_DIRNAME = "geodrops_rachio_state"
 EFFICACY_STATE_FILE = "irrigation_efficacy.json"
 _FILE_REFRESH = dt.timedelta(hours=1)
 
+# Scheduler default `convergence_samples` — the accepted-probe count a zone needs
+# to converge. Only the denominator of a progress hint; a rare advanced override
+# would change it, but the reason phrase (below) carries the important signal.
+_CONVERGENCE_TARGET = 3
+# Why the last probe didn't count, translated for the status label.
+_REJECT_PHRASES = {
+    "no_rise": "probe too small",
+    "saturated": "soil too wet",
+    "rain": "rained out",
+}
+
+
+def format_calibration_status(state, n_obs, last_reject_reason) -> str | None:
+    """One human label folding the raw calibration state together with progress
+    and, when a zone is stuck, why.
+
+      converged                         -> "Converged"
+      calibrating, last probe rejected  -> "Calibrating — soil too wet"
+      calibrating, 2 accepted probes    -> "Calibrating (2/3)"
+      calibrating, no probes yet        -> "Calibrating"
+
+    A reject reason wins over the count: it explains why the count is not
+    growing, which is what someone checking a stuck zone actually needs."""
+    if not state:
+        return state
+    label = state.replace("_", " ").title()
+    if state == "converged":
+        return label
+    phrase = _REJECT_PHRASES.get(last_reject_reason)
+    if phrase:
+        return f"{label} — {phrase}"
+    if n_obs:
+        return f"{label} ({n_obs}/{_CONVERGENCE_TARGET})"
+    return label
+
 
 def parse_last_nightly(attrs: dict, key: str) -> dict:
     attrs = attrs or {}
@@ -43,7 +78,9 @@ def parse_nightly_calibration(attrs: dict, key: str) -> dict:
     zones watered that night appear; missing keys fall back to the efficacy
     file (which lags and carries no `state` for excluded zones)."""
     cal = ((attrs or {}).get("calibration") or {}).get(key) or {}
-    return {"efficacy": cal.get("efficacy"), "calibration_state": cal.get("state")}
+    return {"efficacy": cal.get("efficacy"), "calibration_state": cal.get("state"),
+            "n_obs": cal.get("n_obs", 0),
+            "last_reject_reason": cal.get("last_reject_reason")}
 
 
 def parse_preview(attrs: dict, key: str) -> dict:
@@ -66,7 +103,9 @@ def parse_refill_depth(runtimes_attrs: dict, rachio_zone_id: str, static_mm) -> 
 
 def parse_efficacy(store: dict, key: str) -> dict:
     rec = (store or {}).get(key) or {}
-    return {"efficacy": rec.get("efficacy"), "calibration_state": rec.get("state")}
+    return {"efficacy": rec.get("efficacy"), "calibration_state": rec.get("state"),
+            "n_obs": rec.get("n_obs", 0),
+            "last_reject_reason": rec.get("last_reject_reason")}
 
 
 class ZoneStateCoordinator:
@@ -119,8 +158,16 @@ class ZoneStateCoordinator:
             cal = parse_nightly_calibration(ln.attributes, key)
             if cal["calibration_state"] is not None:
                 out["calibration_state"] = cal["calibration_state"]
+                # Take progress + reject reason from the same source as the state.
+                out["n_obs"] = cal["n_obs"]
+                out["last_reject_reason"] = cal["last_reject_reason"]
             if cal["efficacy"] is not None:
                 out["efficacy"] = cal["efficacy"]
+        # Fold the raw state + progress + why-stuck into one display label; drop
+        # the helper keys so the returned dict keeps its documented shape.
+        out["calibration_state"] = format_calibration_status(
+            out.get("calibration_state"), out.pop("n_obs", 0),
+            out.pop("last_reject_reason", None))
         return out
 
     async def async_refresh_file(self, _now=None) -> None:

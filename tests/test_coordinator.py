@@ -1,6 +1,24 @@
 from custom_components.geodrops_rachio.coordinator import (
     parse_last_nightly, parse_efficacy, parse_nightly_calibration,
-    parse_refill_depth)
+    parse_refill_depth, format_calibration_status)
+
+
+def test_format_calibration_status():
+    # Converged: just the label.
+    assert format_calibration_status("converged", 3, None) == "Converged"
+    # A reject reason wins over the count — it explains why probes aren't adding up.
+    assert format_calibration_status("calibrating", 1, "saturated") == \
+        "Calibrating — soil too wet"
+    assert format_calibration_status("calibrating", 0, "no_rise") == \
+        "Calibrating — probe too small"
+    assert format_calibration_status("recalibrating", 0, "rain") == \
+        "Recalibrating — rained out"
+    # No reject, some accepted probes -> progress out of the convergence target.
+    assert format_calibration_status("calibrating", 2, None) == "Calibrating (2/3)"
+    # No reject, no probes yet -> plain label.
+    assert format_calibration_status("calibrating", 0, None) == "Calibrating"
+    # Missing state passes through.
+    assert format_calibration_status(None, 0, None) is None
 
 
 def test_parse_refill_depth_prefers_live_then_static():
@@ -49,14 +67,18 @@ def test_parse_last_nightly_falls_back_to_updated_without_end_iso():
 
 
 def test_parse_nightly_calibration_extracts_zone_state():
-    attrs = {"calibration": {"front": {"state": "calibrating", "efficacy": 0.35}}}
+    attrs = {"calibration": {"front": {"state": "calibrating", "efficacy": 0.35,
+                                       "n_obs": 2, "last_reject_reason": "no_rise"}}}
     assert parse_nightly_calibration(attrs, "front") == {
-        "efficacy": 0.35, "calibration_state": "calibrating"}
-    # A zone not in this night's calibration block -> both None.
+        "efficacy": 0.35, "calibration_state": "calibrating",
+        "n_obs": 2, "last_reject_reason": "no_rise"}
+    # A zone not in this night's calibration block -> state/efficacy/reason None.
     assert parse_nightly_calibration(attrs, "back") == {
-        "efficacy": None, "calibration_state": None}
+        "efficacy": None, "calibration_state": None,
+        "n_obs": 0, "last_reject_reason": None}
     assert parse_nightly_calibration({}, "front") == {
-        "efficacy": None, "calibration_state": None}
+        "efficacy": None, "calibration_state": None,
+        "n_obs": 0, "last_reject_reason": None}
 
 
 def test_parse_last_nightly_missing_keys_are_none():
@@ -65,11 +87,14 @@ def test_parse_last_nightly_missing_keys_are_none():
 
 
 def test_parse_efficacy_extracts_zone():
-    store = {"front": {"efficacy": 0.42, "state": "converged"}}
+    store = {"front": {"efficacy": 0.42, "state": "converged",
+                       "n_obs": 3, "last_reject_reason": None}}
     assert parse_efficacy(store, "front") == {
-        "efficacy": 0.42, "calibration_state": "converged"}
+        "efficacy": 0.42, "calibration_state": "converged",
+        "n_obs": 3, "last_reject_reason": None}
     assert parse_efficacy(store, "missing") == {
-        "efficacy": None, "calibration_state": None}
+        "efficacy": None, "calibration_state": None,
+        "n_obs": 0, "last_reject_reason": None}
 
 
 def test_remove_listener_stops_callbacks():

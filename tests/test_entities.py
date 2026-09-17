@@ -182,7 +182,40 @@ async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
     refill = hass.states.get("sensor.geodrops_rachio_front_refill_depth")
     assert float(refill.state) == 10.0
     assert refill.attributes["unit_of_measurement"] == "mm"
-    assert refill.attributes["device_class"] == "distance"
+    # No device_class on purpose: DISTANCE would let HA convert mm to the
+    # install's length unit (imperial -> inches, rounding small values to 0).
+    assert "device_class" not in refill.attributes
+
+
+async def test_calibration_state_shows_progress_and_reason(hass, enable_pyscript_and_rachio):
+    """The Calibration State label folds in probe progress and, when stuck, why."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from custom_components.geodrops_rachio.const import DOMAIN
+    hass.states.async_set(
+        "pyscript.geodrops_rachio_last_nightly", "1",
+        {"calibration": {
+            "front": {"state": "calibrating", "n_obs": 2},
+            "side": {"state": "calibrating", "n_obs": 1,
+                     "last_reject_reason": "saturated"}}})
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"weather": {}, "forecast_entity": "weather.home"},
+        "zones": [
+            {"key": "front", "rachio_switch": "switch.x", "dominant_sensor": "s.d",
+             "state_sensor": "s.s", "quality_sensors": [], "target_range": "moist",
+             "runtime_minutes": 20, "refill_depth_mm": 10},
+            {"key": "side", "rachio_switch": "switch.y", "dominant_sensor": "s.e",
+             "state_sensor": "s.f", "quality_sensors": [], "target_range": "moist",
+             "runtime_minutes": 20, "refill_depth_mm": 10}],
+        "self_calibration_enabled": False, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    # Progress toward convergence.
+    assert hass.states.get(
+        "sensor.geodrops_rachio_front_calibration_state").state == "Calibrating (2/3)"
+    # A reject reason wins over the count.
+    assert hass.states.get(
+        "sensor.geodrops_rachio_side_calibration_state").state == "Calibrating — soil too wet"
 
 
 async def test_refill_depth_prefers_live_rachio_value(hass, enable_pyscript_and_rachio):
