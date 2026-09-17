@@ -224,6 +224,54 @@ class ZoneMoistureSensor(SensorEntity):
         _mirror()
 
 
+class ZoneDeficitSensor(SensorEntity):
+    """How far below its need-water target a zone currently is, in moisture
+    points (%). Live: recomputes as the zone's moisture changes and when the
+    scheduler republishes target floors. Value is max(0, target_floor -
+    current) — 0 at/above the target. Reads unknown until both a floor (from
+    the scheduler's targets state) and a numeric moisture reading exist. No
+    device_class: it's a delta, not an absolute moisture, so HA must not unit-
+    convert it."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_name = "Deficit"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, entry, key, coordinator, source) -> None:
+        s = slug(key)
+        self._key, self._coord, self._source = key, coordinator, source
+        self._attr_unique_id = f"{entry.entry_id}_zone_{s}_deficit"
+        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{s}_deficit")
+        self._attr_device_info = zone_device_info(entry, key)
+
+    async def async_added_to_hass(self) -> None:
+        self._coord.add_listener(self._update)
+        self.async_on_remove(lambda: self._coord.remove_listener(self._update))
+        if self._source:
+            self.async_on_remove(async_track_state_change_event(
+                self.hass, [self._source], self._update))
+        self._update()
+
+    @callback
+    def _update(self, event=None) -> None:
+        floor = self._coord.data_for(self._key).get("target_floor")
+        moisture = None
+        st = self.hass.states.get(self._source) if self._source else None
+        if st is not None:
+            try:
+                moisture = float(st.state)
+            except (TypeError, ValueError):
+                moisture = None
+        if floor is None or moisture is None:
+            self._attr_native_value = None
+        else:
+            self._attr_native_value = round(max(0.0, floor - moisture), 1)
+        if self.hass:
+            self.async_write_ha_state()
+
+
 STATUS_ENTITY = "pyscript.geodrops_rachio_status"
 
 
@@ -272,6 +320,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     for z in entry.data.get("zones", []):
         entities.append(ZoneMoistureSensor(entry, z["key"], z.get("dominant_sensor")))
+        entities.append(ZoneDeficitSensor(
+            entry, z["key"], coordinator, z.get("dominant_sensor")))
         for suffix, ckey, dc, unit, precision in _ZONE_FIELDS:
             entities.append(ZoneCoordinatorSensor(
                 entry, z["key"], coordinator, suffix, ckey, dc, unit, precision))
