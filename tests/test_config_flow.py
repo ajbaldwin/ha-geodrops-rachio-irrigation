@@ -267,6 +267,45 @@ async def test_invalid_notify_service_shows_error(hass, enable_pyscript_and_rach
     assert result["errors"] == {"notify_service": "invalid_notify_service"}
 
 
+def _suggested(result, field):
+    """The suggested_value carried on a re-rendered form field, if any."""
+    for key in result["data_schema"].schema:
+        if str(key) == field:
+            return (getattr(key, "description", None) or {}).get("suggested_value")
+    return None
+
+
+async def test_duplicate_zone_key_preserves_typed_fields(
+        hass, enable_pyscript_and_rachio):
+    """A duplicate key re-renders the zone form with an error, keeping the other
+    fields the user already typed instead of clearing them."""
+    with _patch_poll(key=None):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], WEATHER_INPUT)
+        assert result["step_id"] == "zone"
+        # First zone; ask to add another so we return to the zone step.
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**ZONE_INPUT, "add_another_zone": True})
+        assert result["step_id"] == "zone"
+        # Second zone reuses the key but types different sensors.
+        dup = {**ZONE_INPUT, "key": "front",
+               "dominant_sensor": "sensor.other_dom", "add_another_zone": True}
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], dup)
+    assert result["step_id"] == "zone"
+    assert result["errors"] == {"key": "duplicate_zone_key"}
+    # The typed values survive the re-render as suggested values.
+    assert _suggested(result, "dominant_sensor") == "sensor.other_dom"
+    assert _suggested(result, "key") == "front"
+    assert _suggested(result, "runtime_minutes") == 45
+
+
 async def test_no_key_free_text_device_and_manual_zone(
         hass, enable_pyscript_and_rachio):
     with _patch_poll(key=None):
