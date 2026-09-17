@@ -56,6 +56,8 @@ DELIVERED_TASK_KEY = 'task.unique("geodrops_rachio_run")'
 PERSISTED_NAME_LITERALS = (
     '"irrigation_last_nightly"',
     '"irrigation_calibration"',
+    '"irrigation_targets"',
+    '"irrigation_preview"',
 )
 
 

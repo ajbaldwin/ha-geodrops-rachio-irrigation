@@ -17,6 +17,9 @@ PREVIEW_ENTITY = "pyscript.geodrops_rachio_preview"
 # Published by the scheduler's refresh_runtimes service (the Refresh Runtimes
 # button): a live Rachio pull, keyed by rachio_zone_id.
 RUNTIMES_ENTITY = "pyscript.geodrops_rachio_runtimes"
+# Per-zone effective target floors, published by the scheduler at startup and
+# each nightly (persisted, so available right after a restart).
+TARGETS_ENTITY = "pyscript.geodrops_rachio_targets"
 STATE_DIRNAME = "geodrops_rachio_state"
 EFFICACY_STATE_FILE = "irrigation_efficacy.json"
 _FILE_REFRESH = dt.timedelta(hours=1)
@@ -136,10 +139,14 @@ class ZoneStateCoordinator:
     def data_for(self, key: str) -> dict:
         out = {"planned_runtime": None, "last_delivered_runtime": None,
                "last_watered": None, "efficacy": None, "calibration_state": None,
-               "refill_depth": None}
+               "refill_depth": None, "target_floor": None}
         ln = self.hass.states.get(LAST_NIGHTLY_ENTITY)
         if ln is not None:
             out.update(parse_last_nightly(ln.attributes, key))
+        # Effective target floor (need-water line) for the live Deficit sensor.
+        tg = self.hass.states.get(TARGETS_ENTITY)
+        if tg is not None:
+            out["target_floor"] = (tg.attributes.get("target_floors") or {}).get(key)
         # Refill depth: config snapshot from the wizard, overlaid with the live
         # Rachio value when a refresh has published it.
         zcfg = next((z for z in self.entry.data.get("zones", [])
@@ -194,7 +201,8 @@ class ZoneStateCoordinator:
             self.hass.async_create_task(self.async_refresh_file())
 
         self._unsubs.append(async_track_state_change_event(
-            self.hass, [LAST_NIGHTLY_ENTITY, PREVIEW_ENTITY, RUNTIMES_ENTITY],
+            self.hass,
+            [LAST_NIGHTLY_ENTITY, PREVIEW_ENTITY, RUNTIMES_ENTITY, TARGETS_ENTITY],
             _on_entity))
         self._unsubs.append(async_track_time_interval(
             self.hass, self.async_refresh_file, _FILE_REFRESH))

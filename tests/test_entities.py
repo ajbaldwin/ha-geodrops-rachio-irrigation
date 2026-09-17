@@ -238,6 +238,54 @@ async def test_calibration_state_shows_progress_and_reason(hass, enable_pyscript
         "sensor.geodrops_rachio_side_calibration_state").state == "Calibrating — soil too wet"
 
 
+async def test_zone_deficit_sensor(hass, enable_pyscript_and_rachio):
+    """Deficit = max(0, target_floor - current moisture), live and unit-safe."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from custom_components.geodrops_rachio.const import DOMAIN
+    hass.states.async_set("sensor.d", "30.0")  # current dominant moisture
+    hass.states.async_set(
+        "pyscript.geodrops_rachio_targets", "1",
+        {"target_floors": {"front": 45.0}})
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"weather": {}, "forecast_entity": "weather.home"},
+        "zones": [{"key": "front", "rachio_switch": "switch.x",
+                   "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
+                   "quality_sensors": [], "target_range": "moist",
+                   "runtime_minutes": 20, "refill_depth_mm": 10}],
+        "self_calibration_enabled": False, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    d = hass.states.get("sensor.geodrops_rachio_front_deficit")
+    assert float(d.state) == 15.0  # 45 - 30
+    assert d.attributes["unit_of_measurement"] == "%"
+    # A delta, not an absolute moisture — must not be unit-converted.
+    assert "device_class" not in d.attributes
+    # Live: rising moisture at/above the floor drives the deficit to 0.
+    hass.states.async_set("sensor.d", "50.0")
+    await hass.async_block_till_done()
+    assert float(hass.states.get("sensor.geodrops_rachio_front_deficit").state) == 0.0
+
+
+async def test_zone_deficit_unknown_without_target(hass, enable_pyscript_and_rachio):
+    """No published target floor -> deficit reads unknown, not a bogus number."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from custom_components.geodrops_rachio.const import DOMAIN
+    hass.states.async_set("sensor.d", "30.0")
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {"weather": {}, "forecast_entity": "weather.home"},
+        "zones": [{"key": "front", "rachio_switch": "switch.x",
+                   "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
+                   "quality_sensors": [], "target_range": "moist",
+                   "runtime_minutes": 20, "refill_depth_mm": 10}],
+        "self_calibration_enabled": False, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(
+        "sensor.geodrops_rachio_front_deficit").state == "unknown"
+
+
 async def test_refill_depth_prefers_live_rachio_value(hass, enable_pyscript_and_rachio):
     """A zone with a rachio_zone_id shows the live refill depth published on the
     runtimes entity, overriding the static config value."""
