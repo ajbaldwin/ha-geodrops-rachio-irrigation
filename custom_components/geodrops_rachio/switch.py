@@ -36,7 +36,10 @@ class FlagSwitch(RestoreEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
-class ZoneExcludeSwitch(SwitchEntity, RestoreEntity):
+# RestoreEntity first, matching FlagSwitch: its async_added_to_hass sets up the
+# restore-state machinery that async_get_last_state reads, so it must resolve
+# ahead of SwitchEntity in the MRO and be chained via super() below.
+class ZoneExcludeSwitch(RestoreEntity, SwitchEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_name = "Exclude from watering"
@@ -49,6 +52,7 @@ class ZoneExcludeSwitch(SwitchEntity, RestoreEntity):
         self._attr_is_on = False
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last is not None:
             self._attr_is_on = last.state == "on"
