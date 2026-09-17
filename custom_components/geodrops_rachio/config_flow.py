@@ -605,9 +605,13 @@ class _BindingsWizardSteps:
         schema_dict[vol.Optional("spray", default=stored.get("spray", False))] = bool
         if not editing and not self._is_options:
             schema_dict[vol.Optional("add_another_zone", default=False)] = bool
+        schema = vol.Schema(schema_dict)
+        # On a validation re-render (duplicate key), keep everything the user
+        # already typed instead of resetting to the pre-fill defaults.
+        if user_input is not None:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
         return self.async_show_form(
-            step_id="zone_details", data_schema=vol.Schema(schema_dict),
-            errors=errors)
+            step_id="zone_details", data_schema=schema, errors=errors)
 
     async def _async_step_zone_manual(self, user_input=None):
         errors: dict[str, str] = {}
@@ -645,8 +649,13 @@ class _BindingsWizardSteps:
         }
         if not self._is_options:
             schema[vol.Optional("add_another_zone", default=False)] = bool
+        data_schema = vol.Schema(schema)
+        # On a validation re-render (duplicate key), keep the user's typed fields
+        # rather than clearing the form.
+        if user_input is not None:
+            data_schema = self.add_suggested_values_to_schema(data_schema, user_input)
         return self.async_show_form(
-            step_id="zone", data_schema=vol.Schema(schema), errors=errors)
+            step_id="zone", data_schema=data_schema, errors=errors)
 
     async def async_step_advanced(self, user_input=None):
         if user_input is not None:

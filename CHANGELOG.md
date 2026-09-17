@@ -4,6 +4,16 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.7 — Exclude toggle survives restarts; tidier zone editing
+
+### Fixes
+- A zone's **Exclude from watering** toggle now reliably keeps its on/off state
+  across a Home Assistant restart.
+- When adding a zone whose key clashes with an existing one, the form now keeps
+  everything else you already typed instead of clearing the fields.
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.9.6 — Refill in mm, tidier efficacy, richer calibration status
 
 ### Fixes
