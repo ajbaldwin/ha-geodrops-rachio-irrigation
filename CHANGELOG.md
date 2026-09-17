@@ -4,6 +4,21 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.6 — Refill in mm, tidier efficacy, richer calibration status
+
+### Fixes
+- **Refill depth** now reads correctly in millimetres. It was showing **0** on
+  installs using imperial units, because the sensor's distance class made Home
+  Assistant convert the small value to inches and round it to zero.
+
+### Changes
+- **Efficacy** now displays at most 3 decimal places instead of a long number.
+- **Calibration State** now tells you more at a glance: probe progress toward
+  convergence (e.g. *Calibrating (2/3)*) and, when a zone is stuck, why
+  (*Calibrating — soil too wet* / *probe too small* / *rained out*).
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.9.5 — Per-zone refill depth sensor
 
 ### Changes
