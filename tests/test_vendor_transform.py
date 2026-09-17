@@ -60,6 +60,15 @@ def irrigation_reset():
 @service
 def irrigation_refresh_runtimes():
     state.set("pyscript.irrigation_runtimes", value="{}")
+
+
+PERSISTED = ("irrigation_last_nightly", "irrigation_calibration",
+             "irrigation_targets", "irrigation_preview")
+
+
+def _pub():
+    _publish_record("irrigation_targets", 0, {})
+    _publish_record("irrigation_preview", 0, {})
 '''
 
 
@@ -138,6 +147,16 @@ def test_namespaces_pyscript_state_entities():
         assert f"pyscript.geodrops_rachio_{suffix}" in out
     # No colliding pyscript.irrigation_* entity may remain anywhere.
     assert "pyscript.irrigation_" not in out
+
+
+def test_namespaces_bare_persisted_entity_literals():
+    """The bare "irrigation_<x>" literals (PERSISTED tuple + _publish_record
+    args, assembled into pyscript.<x>/<x>.json at runtime) are namespaced too —
+    the pyscript.irrigation_ prefix rule can't see them across the concatenation."""
+    out = transform_app_to_script(SAMPLE, stop_entity="button.geodrops_rachio_stop")
+    for suffix in ("last_nightly", "calibration", "targets", "preview"):
+        assert f'"geodrops_rachio_{suffix}"' in out
+        assert f'"irrigation_{suffix}"' not in out
 
 
 def test_namespaces_task_unique_key():
