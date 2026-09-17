@@ -4,6 +4,19 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.8 — Per-zone Deficit sensor
+
+### Changes
+- Each zone now has a **Deficit** sensor (moisture %) — how far current soil
+  moisture sits below the zone's need-water target. It reads 0 at or above
+  target and updates live as the soil dries. The scheduler now publishes target
+  floors at startup, so the sensor has a value right after a restart rather than
+  only after the first nightly plan.
+- **Planned Runtime** now keeps its value across a restart instead of briefly
+  reading unknown.
+
+Updating requires a Home Assistant restart (the integration ships Python).
+
 ## v0.9.7 — Exclude toggle survives restarts; tidier zone editing
 
 ### Fixes
