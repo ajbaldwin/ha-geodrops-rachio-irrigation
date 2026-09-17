@@ -23,22 +23,25 @@ _FORECAST_INTERVAL = dt.timedelta(hours=1)
 _FIELDS = [("temp", "temperature", "°F"), ("humidity", "humidity", "%"),
            ("wind", "wind_speed", "mph")]
 
-# (suffix, coordinator-key, device_class, unit)
+# (suffix, coordinator-key, device_class, unit, display_precision)
 _ZONE_FIELDS = [
-    ("planned_runtime", "planned_runtime", SensorDeviceClass.DURATION, "min"),
+    ("planned_runtime", "planned_runtime", SensorDeviceClass.DURATION, "min", None),
     ("last_delivered_runtime", "last_delivered_runtime",
-     SensorDeviceClass.DURATION, "min"),
-    ("last_watered", "last_watered", SensorDeviceClass.TIMESTAMP, None),
+     SensorDeviceClass.DURATION, "min", None),
+    ("last_watered", "last_watered", SensorDeviceClass.TIMESTAMP, None, None),
     # Efficacy = moisture-points gained per minute of watering; no HA device
-    # class fits, so just carry a unit for reader context.
-    ("efficacy", "efficacy", None, f"{PERCENTAGE}/min"),
+    # class fits, so just carry a unit for reader context. Raw efficacy is a
+    # long float — cap the DISPLAYED value at 3 decimals (state stays full).
+    ("efficacy", "efficacy", None, f"{PERCENTAGE}/min", 3),
     # No device_class: avoids HA's enum-options validation churn.
-    ("calibration_state", "calibration_state", None, None),
+    ("calibration_state", "calibration_state", None, None, None),
     # Rachio's per-zone "depth of water" (mm) — the refill this zone needs from
     # depletion back to field capacity. Config snapshot, overlaid with the live
-    # Rachio value after a Refresh Runtimes pull (see coordinator).
-    ("refill_depth", "refill_depth", SensorDeviceClass.DISTANCE,
-     UnitOfLength.MILLIMETERS),
+    # Rachio value after a Refresh Runtimes pull (see coordinator). NO
+    # device_class on purpose: SensorDeviceClass.DISTANCE makes HA convert mm to
+    # the install's length unit (on an imperial box, 7 mm -> 0.28 in, which the
+    # card rounds to "0"). Plain mm + a display precision keeps it readable.
+    ("refill_depth", "refill_depth", None, UnitOfLength.MILLIMETERS, 1),
 ]
 
 
@@ -149,7 +152,7 @@ class ZoneCoordinatorSensor(SensorEntity):
     _attr_has_entity_name = True
 
     def __init__(self, entry, key, coordinator, suffix, ckey,
-                 device_class, unit) -> None:
+                 device_class, unit, precision=None) -> None:
         s = slug(key)
         self._key, self._coord, self._ckey = key, coordinator, ckey
         self._attr_unique_id = f"{entry.entry_id}_zone_{s}_{suffix}"
@@ -157,6 +160,8 @@ class ZoneCoordinatorSensor(SensorEntity):
         self._attr_name = suffix.replace("_", " ").capitalize()
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
+        if precision is not None:
+            self._attr_suggested_display_precision = precision
         self._attr_device_info = zone_device_info(entry, key)
 
     async def async_added_to_hass(self) -> None:
@@ -174,9 +179,9 @@ class ZoneCoordinatorSensor(SensorEntity):
             if parsed is not None and parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
             value = parsed
-        elif self._ckey == "calibration_state":
-            # Display "Calibrating"/"Converged"/"No Rise", not the raw token.
-            value = _pretty_status(value)
+        # calibration_state arrives already display-ready from the coordinator
+        # (format_calibration_status), e.g. "Calibrating (2/3)" — no title-casing
+        # here. The Status sensor still uses _pretty_status on its own value.
         self._attr_native_value = value
         if self.hass:
             self.async_write_ha_state()
@@ -267,8 +272,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     for z in entry.data.get("zones", []):
         entities.append(ZoneMoistureSensor(entry, z["key"], z.get("dominant_sensor")))
-        for suffix, ckey, dc, unit in _ZONE_FIELDS:
+        for suffix, ckey, dc, unit, precision in _ZONE_FIELDS:
             entities.append(ZoneCoordinatorSensor(
-                entry, z["key"], coordinator, suffix, ckey, dc, unit))
+                entry, z["key"], coordinator, suffix, ckey, dc, unit, precision))
 
     async_add_entities(entities)
