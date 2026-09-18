@@ -4,6 +4,21 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.9 — Smarter calibration settle timing
+
+### Changes
+- Self-calibration now reads the settled soil moisture on a frequent poll and
+  only accepts a reading once the sensor has genuinely reported *after* the
+  settle time — instead of once at a fixed hour. This stops a late or missed
+  GeoDrops check-in (the sensors report only every few hours, and can skip one)
+  from being mistaken for "no moisture rise" and wrongly rejecting a good
+  calibration probe. If no fresh reading arrives in time, the observation is
+  dropped as inconclusive rather than rejected, so a sensor gap can never
+  corrupt a zone's learned calibration.
+
+Brain-only update (bundled scheduler v0.8.4) — **no Home Assistant restart
+required**; HACS applies it on the next update.
+
 ## v0.9.8 — Per-zone Deficit sensor
 
 ### Changes
