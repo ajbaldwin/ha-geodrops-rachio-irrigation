@@ -4,6 +4,19 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.10 — Calibration learns from the moisture peak
+
+### Changes
+- Self-calibration now learns a zone's watering response from the **peak**
+  moisture rise after a probe, plus a smoothed **retention** factor for how much
+  of that rise lasts — instead of a single reading hours later. A fast-draining
+  zone (whose moisture spikes soon after watering, then settles) can now
+  calibrate reliably rather than reading a corrupt, far-too-low response. Dosing
+  still targets lasting moisture; nothing to configure.
+
+Brain-only update (bundled scheduler v0.8.5) — **no Home Assistant restart
+required**; HACS applies it on the next update.
+
 ## v0.9.9 — Smarter calibration settle timing
 
 ### Changes
