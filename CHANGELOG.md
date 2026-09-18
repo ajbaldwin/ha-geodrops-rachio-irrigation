@@ -14,8 +14,7 @@ section per released version, newest first.
   calibrate reliably rather than reading a corrupt, far-too-low response. Dosing
   still targets lasting moisture; nothing to configure.
 
-Brain-only update (bundled scheduler v0.8.5) — **no Home Assistant restart
-required**; HACS applies it on the next update.
+Brain-only update (bundled scheduler v0.8.5).
 
 ## v0.9.9 — Smarter calibration settle timing
 
@@ -29,8 +28,7 @@ required**; HACS applies it on the next update.
   dropped as inconclusive rather than rejected, so a sensor gap can never
   corrupt a zone's learned calibration.
 
-Brain-only update (bundled scheduler v0.8.4) — **no Home Assistant restart
-required**; HACS applies it on the next update.
+Brain-only update (bundled scheduler v0.8.4).
 
 ## v0.9.8 — Per-zone Deficit sensor
 
