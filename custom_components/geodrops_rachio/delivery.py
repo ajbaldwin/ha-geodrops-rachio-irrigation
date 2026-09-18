@@ -11,9 +11,8 @@ _LOGGER = logging.getLogger(__name__)
 CONFIG_FILENAME = "geodrops_rachio_config.yaml"
 SCRIPT_FILENAME = "geodrops_rachio.py"
 INSTALLED_STAMP = ".geodrops_rachio_version"
-# Namespaced lib package name (see tools/vendor_scheduler.py): delivered to the
-# shared pyscript modules/ dir without colliding with the standalone
-# scheduler's irrigation_lib.
+# Namespaced lib package name: delivered to the shared pyscript modules/ dir
+# under its own name so it never collides with an unrelated irrigation_lib.
 LIB_DIRNAME = "geodrops_rachio_lib"
 
 
