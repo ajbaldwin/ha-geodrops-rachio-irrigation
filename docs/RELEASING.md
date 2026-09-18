@@ -29,6 +29,16 @@ itself (config flow, platforms, `delivery.py`, `updater.py`, etc.) needs a
 integration update — Python modules already imported by HA are not
 re-executed by a config-entry reload, only by a full restart.
 
+**Messaging rule — do not advertise "no restart."** HACS shows a "restart
+Home Assistant" prompt after *every* download, regardless of what changed: it
+replaces the whole integration folder and sees the manifest bump, and cannot
+tell a brain-only vendor from a wrapper-Python change. The brain-only
+auto-apply above is real, but a user still sees the prompt — so a release note
+that claims "no restart needed" only confuses. Never make that claim in
+release notes or the CHANGELOG. Call out a restart **only** when wrapper
+Python changed (then it is genuinely required); for a brain-only release, say
+nothing about restarts.
+
 **Always bump `manifest.json`'s version for every release**, even a
 brain-only vendor bump — HACS uses it (together with the git tag/release) to
 know a new version exists at all. The manifest version bump does not by
@@ -102,9 +112,10 @@ itself trigger anything in `delivery.py`; that logic only looks at
    changelog for that version, so it is how users see what a pending update
    contains before they install it — always write real notes, never
    `--generate-notes` (a raw commit list). Keep them short and user-facing:
-   what changed, what got fixed, and whether it needs a restart (see the
-   sanity check below). Add the same summary as a new top section in
-   `CHANGELOG.md` so the history lives in the repo too.
+   what changed and what got fixed. Mention a restart **only** when wrapper
+   Python changed; never claim a release skips the restart (see the messaging
+   rule above and the sanity check below). Add the same summary as a new top
+   section in `CHANGELOG.md` so the history lives in the repo too.
 
 6. **Tag and release** from `main`.
 
@@ -127,5 +138,6 @@ itself trigger anything in `delivery.py`; that logic only looks at
 - `custom_components/geodrops_rachio/manifest.json`'s `"version"` was bumped.
 - `bash tools/test.sh` passes.
 - If you touched any wrapper `.py` file in this release, mention in the
-  release notes that it requires a Home Assistant restart after updating;
-  if you only re-vendored the brain, mention that no restart is needed.
+  release notes that it requires a Home Assistant restart after updating. For a
+  brain-only re-vendor, say nothing about restarts — do NOT claim it needs no
+  restart (HACS prompts one regardless; see the messaging rule above).
