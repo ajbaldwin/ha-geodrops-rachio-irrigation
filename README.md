@@ -142,7 +142,7 @@ Update this integration through HACS the same way you update any other
 custom integration. What happens next depends on what changed in that
 release:
 
-- If the release only updates the **scheduler brain** (the vendored
+- If the release only updates the **scheduler brain** (the in-tree
   scheduler app and its library), the integration notices the change on its
   own HACS update entity, reloads its config entry, and pushes the new
   scheduler code into pyscript with a live `pyscript.reload` call —
@@ -155,5 +155,6 @@ release:
 
 ## For maintainers
 
-See [`docs/RELEASING.md`](docs/RELEASING.md) for how the scheduler brain is
-vendored into this repo and how to cut a release.
+See [`docs/RELEASING.md`](docs/RELEASING.md) for how the scheduler brain lives
+in this repo (edited directly under `bundled_app/`, tested in `tests_brain/`)
+and how to cut a release.
