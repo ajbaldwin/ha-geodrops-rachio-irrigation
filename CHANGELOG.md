@@ -4,6 +4,18 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.11 — Skip zones the rain already watered
+
+### Changes
+- The nightly plan is built hours before watering starts. If rain falls in
+  between, a zone's soil-moisture sensor may not have caught up by plan time — so
+  the scheduler could water, or run a calibration probe on, a zone the rain had
+  already soaked. It now re-reads each planned zone's live moisture right before
+  watering and drops any that no longer needs it (an all-dropped night simply
+  waters nothing). Less wasted water on rainy nights; nothing to configure.
+
+Brain-only update.
+
 ## v0.9.10 — Calibration learns from the moisture peak
 
 ### Changes
