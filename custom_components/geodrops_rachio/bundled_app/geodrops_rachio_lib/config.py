@@ -120,6 +120,10 @@ class Tunables:
     # hours is reset to recalibrating on return (soil likely changed, e.g.
     # overseed); a shorter/accidental exclusion keeps its learned calibration.
     recalibrate_after_exclusion_hours: float = 48.0
+    # How often (seconds) the pre-dawn wait re-checks calibrating zones that were
+    # skipped for a bad sensor, to fold in a probe if the sensor recovers before
+    # the window closes. Matches the GeoDrops report cadence and the settle poll.
+    recovery_poll_seconds: float = 1800.0
 
 
 # Where a run's watering window ENDS, per drought profile. Dawn is the earlier

@@ -113,6 +113,10 @@ BLOCK_START_CONFIRM_S = 90
 RESUME_PROBE_S = 90
 RACHIO_BASE = "https://api.rach.io/1/public/"
 RUNTIME_CACHE_TTL_S = 6 * 3600
+# Offline reasons that mean the SENSOR was unusable at plan time (as opposed to
+# "excluded" or being above target). A calibrating zone skipped for one of these
+# is a sensor-recovery probe candidate. Mirrors sensors.read_zone.
+SENSOR_SKIP_REASONS = frozenset(("unavailable", "low_quality"))
 
 _manual_stop = False
 api_calls = 0    # Rachio-affecting service calls (start/stop) — the real budget
@@ -1481,6 +1485,16 @@ def _plan_context(cfg):
 
     start = end - dt.timedelta(minutes=the_plan.span_minutes)
     earliest_start = end - dt.timedelta(minutes=cap)
+    # Calibrating zones skipped tonight for a bad sensor — the pre-dawn wait
+    # re-checks these and folds in a probe if the sensor recovers.
+    recovery_candidates = []
+    if tun.self_calibration_enabled:
+        for _k in cfg.zones:
+            _rec = efficacy_store.get(_k) or {}
+            if evaluate.recovery_candidate(
+                    _rec.get("state", "calibrating"),
+                    uncompleted.get(_k), SENSOR_SKIP_REASONS):
+                recovery_candidates.append(_k)
     return {
         "cfg": cfg, "tun": tun, "level": level, "priority": priority,
         "minutes": minutes, "uncompleted": uncompleted, "the_plan": the_plan,
@@ -1497,6 +1511,9 @@ def _plan_context(cfg):
         # Per-zone drought floor, for the window-start moisture re-check (which
         # runs after the wait, without re-deriving the drought profile).
         "floors": {k: targets[k].floor for k in targets},
+        "api_runtimes": api_runtimes,
+        "api_depths": api_depths_for_dose,
+        "recovery_candidates": recovery_candidates,
     }
 
 
@@ -1656,6 +1673,8 @@ def _publish_last_run(stamp, trigger, ctx=None, result=None, outcome=None,
         # landed after planning). Absent when nothing was dropped.
         if ctx.get("window_start_dropped"):
             attributes["window_start_dropped"] = ctx["window_start_dropped"]
+        if ctx.get("recovery_added"):
+            attributes["recovery_added"] = ctx["recovery_added"]
     if result is not None:
         attributes.update({
             "start": result.start, "end": result.end,
@@ -1825,7 +1844,92 @@ def _plan_and_run(wait, trigger):
                 # is when the watering window closes (dawn − end_offset); startup
                 # re-arms only while now is still before it.
                 _write_waiting_marker(ctx["end"].isoformat(), stamp, trigger)
-                task.sleep(wait_s)
+                # Re-plan watch across the idle front: fold in a probe for any
+                # calibrating zone whose bad sensor recovers before the window
+                # closes. Adding a zone only ever moves `start` EARLIER (span
+                # grows), so the loop still converges to the run; fits_window
+                # keeps the enlarged run inside the window. No recovery -> this
+                # is a chunked no-op sleep, identical to a plain wait.
+                poll_s = tun.recovery_poll_seconds
+                watching = tun.self_calibration_enabled and bool(
+                    ctx["recovery_candidates"])
+                pending_recovery = list(ctx["recovery_candidates"]) if watching else []
+                now_w = dt.datetime.now(start.tzinfo)
+                while now_w < start:
+                    nap = (start - now_w).total_seconds()
+                    if pending_recovery:
+                        nap = min(nap, poll_s)
+                    if nap > 0:
+                        task.sleep(nap)
+                    now_w = dt.datetime.now(start.tzinfo)
+                    if now_w >= start or not pending_recovery:
+                        continue
+                    rstore = _read_efficacy_store()
+                    still_pending = []
+                    for rk in pending_recovery:
+                        rzc = cfg.zones[rk]
+                        rreading = sensors.read_zone(rzc, _read_zone_signals(rzc))
+                        if not rreading.online:
+                            still_pending.append(rk)
+                            continue
+                        rrec = rstore.get(rk) or {}
+                        rpinned = rzc.refill_span_pts > 0
+                        if not calibration.should_probe(
+                                rrec.get("state", "calibrating"),
+                                rreading.dominant, rpinned, tun):
+                            continue  # converged or above ceiling: nothing to gain
+                        rbase = ctx["api_runtimes"].get(rzc.rachio_zone_id) or rzc.runtime_minutes
+                        rfull = plan.cycles_minutes(rbase, 1.0)
+                        rpm = calibration.probe_minutes(
+                            rfull, rrec.get("prior_minutes"), rrec.get("last_rise"), tun)
+                        rpm = calibration.cap_for_saturation(
+                            rpm, rreading.dominant, rrec.get("efficacy"), tun)
+                        rpm = min(rpm, rfull)
+                        trial_minutes = dict(ctx["minutes"])
+                        trial_minutes[rk] = rpm
+                        trial_zones = list(priority) + [rk]
+                        rgeo = {z: cfg.zones[z].geography for z in trial_zones}
+                        radj = {z: cfg.zones[z].adjacency for z in trial_zones}
+                        trial_plan = plan.build_plan(
+                            trial_zones, trial_minutes, rgeo, radj,
+                            ctx["cap_minutes"], tun)
+                        if rk not in trial_plan.watered:
+                            still_pending.append(rk)  # build_plan cap-trimmed it; window too tight now
+                            continue
+                        if not plan.fits_window(now_w, ctx["end"], trial_plan.span_minutes):
+                            still_pending.append(rk)  # no room now; keep watching
+                            continue
+                        # Commit the probe into the live plan.
+                        rdepth = ctx["api_depths"].get(rzc.rachio_zone_id) or rzc.refill_depth_mm
+                        rfrac = min(rpm / rfull, 1.0) if rfull > 0 else 0.0
+                        ctx["minutes"][rk] = rpm
+                        ctx["doses"][rk] = dosing.DoseResult(
+                            minutes=rpm, frac=rfrac,
+                            effective_depth_mm=rfrac * float(rdepth),
+                            deficit_pts=0.0, span_pts=0.0, source="probe")
+                        ctx["dosing_sources"][rk] = "probe"
+                        # The zone was skipped at plan time, so it has no entry in
+                        # dominant_by_zone. The post-run pending-obs block reads
+                        # pre_dominant from there; without this the settle poll
+                        # sees pre_dominant=None and drops the obs (probe waters
+                        # but never calibrates). Record the recovery reading as the
+                        # pre-watering moisture.
+                        ctx["dominant_by_zone"][rk] = rreading.dominant
+                        priority.append(rk)
+                        the_plan = trial_plan
+                        ctx["the_plan"] = the_plan
+                        start = ctx["end"] - dt.timedelta(minutes=the_plan.span_minutes)
+                        ctx["start"] = start
+                        ctx.setdefault("recovery_added", {})[rk] = {
+                            "dominant": rreading.dominant}
+                        _activity(
+                            f"Recovery probe folded in: {rk} "
+                            f"(dominant {rreading.dominant}, {int(rpm)} min)")
+                        _set_status(
+                            "waiting",
+                            detail=f"watering starts {start.astimezone():%H:%M}")
+                    pending_recovery = still_pending
+                    now_w = dt.datetime.now(start.tzinfo)
                 # The wait is over (whichever branch follows). Clear the marker so
                 # a later restart cannot re-arm a run that already left waiting.
                 _clear_waiting_marker()
@@ -1902,6 +2006,7 @@ def _plan_and_run(wait, trigger):
                         survivors, surv_minutes, geo, adjacency,
                         ctx["cap_minutes"], tun,
                     )
+                    ctx["the_plan"] = the_plan
                     for z in the_plan.dropped:
                         uncompleted[z] = "insufficient window"
                     detail_bits = []
