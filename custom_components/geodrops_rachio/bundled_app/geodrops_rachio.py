@@ -113,6 +113,10 @@ BLOCK_START_CONFIRM_S = 90
 RESUME_PROBE_S = 90
 RACHIO_BASE = "https://api.rach.io/1/public/"
 RUNTIME_CACHE_TTL_S = 6 * 3600
+# Offline reasons that mean the SENSOR was unusable at plan time (as opposed to
+# "excluded" or being above target). A calibrating zone skipped for one of these
+# is a sensor-recovery probe candidate. Mirrors sensors.read_zone.
+SENSOR_SKIP_REASONS = frozenset(("unavailable", "low_quality"))
 
 _manual_stop = False
 api_calls = 0    # Rachio-affecting service calls (start/stop) — the real budget
@@ -1481,6 +1485,16 @@ def _plan_context(cfg):
 
     start = end - dt.timedelta(minutes=the_plan.span_minutes)
     earliest_start = end - dt.timedelta(minutes=cap)
+    # Calibrating zones skipped tonight for a bad sensor — the pre-dawn wait
+    # re-checks these and folds in a probe if the sensor recovers.
+    recovery_candidates = []
+    if tun.self_calibration_enabled:
+        for _k in cfg.zones:
+            _rec = efficacy_store.get(_k) or {}
+            if evaluate.recovery_candidate(
+                    _rec.get("state", "calibrating"),
+                    uncompleted.get(_k), SENSOR_SKIP_REASONS):
+                recovery_candidates.append(_k)
     return {
         "cfg": cfg, "tun": tun, "level": level, "priority": priority,
         "minutes": minutes, "uncompleted": uncompleted, "the_plan": the_plan,
@@ -1497,6 +1511,9 @@ def _plan_context(cfg):
         # Per-zone drought floor, for the window-start moisture re-check (which
         # runs after the wait, without re-deriving the drought profile).
         "floors": {k: targets[k].floor for k in targets},
+        "api_runtimes": api_runtimes,
+        "api_depths": api_depths_for_dose,
+        "recovery_candidates": recovery_candidates,
     }
 
 
