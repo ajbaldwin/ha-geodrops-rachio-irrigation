@@ -26,6 +26,15 @@ def cycles_minutes(runtime_min: float, scale: float) -> float:
     return runtime_min * scale
 
 
+def fits_window(now, end, span_minutes) -> bool:
+    """True iff a run of `span_minutes` beginning at `now` finishes at or before
+    `end` (the window close). Boundary inclusive. Used to decide whether a
+    recovered zone's probe still fits before the pre-dawn window shuts.
+    """
+    import datetime as _dt
+    return now + _dt.timedelta(minutes=span_minutes) <= end
+
+
 def span_of(slots: list) -> int:
     # pyscript has no generator expressions; use a list comprehension.
     return sum([s.minutes for s in slots])
