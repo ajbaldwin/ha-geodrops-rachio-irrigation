@@ -101,3 +101,23 @@ def test_revalidate_offline_keeps_fail_open():
     assert evaluate.revalidate_zone(
         online=False, dominant_now=99.0, dosing_source="probe",
         floor=65.0, ceiling=85.0) is None
+
+
+# --- sensor-recovery candidate predicate ---
+
+_SKIP = frozenset({"unavailable", "low_quality"})
+
+
+def test_recovery_candidate_calibrating_sensor_skipped():
+    assert evaluate.recovery_candidate("calibrating", "unavailable", _SKIP) is True
+    assert evaluate.recovery_candidate("recalibrating", "low_quality", _SKIP) is True
+
+
+def test_recovery_candidate_rejects_non_calibrating_state():
+    assert evaluate.recovery_candidate("converged", "unavailable", _SKIP) is False
+
+
+def test_recovery_candidate_rejects_non_sensor_reason():
+    # Skipped for exclusion or above-floor, not a bad sensor: not a candidate.
+    assert evaluate.recovery_candidate("calibrating", "excluded", _SKIP) is False
+    assert evaluate.recovery_candidate("calibrating", None, _SKIP) is False

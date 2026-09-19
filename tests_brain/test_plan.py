@@ -1,3 +1,4 @@
+import datetime as _dt
 import pytest
 
 from geodrops_rachio_lib import config, plan
@@ -129,3 +130,19 @@ def test_build_plan_trims_multiple_zones():
     assert result.watered == ["a"]
     assert result.dropped == ["b", "c"]
     assert result.span_minutes <= 45
+
+
+def _t(h, m):
+    return _dt.datetime(2026, 9, 18, h, m, tzinfo=_dt.timezone.utc)
+
+
+def test_fits_window_true_when_run_ends_before_end():
+    assert plan.fits_window(_t(3, 0), _t(6, 0), 90) is True
+
+
+def test_fits_window_boundary_exact_fit_true():
+    assert plan.fits_window(_t(4, 30), _t(6, 0), 90) is True
+
+
+def test_fits_window_false_when_run_overruns_end():
+    assert plan.fits_window(_t(5, 0), _t(6, 0), 90) is False
