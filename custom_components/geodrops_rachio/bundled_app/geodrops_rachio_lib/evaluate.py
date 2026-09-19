@@ -56,6 +56,18 @@ def revalidate_zone(online, dominant_now, dosing_source, floor, ceiling):
     return None
 
 
+def recovery_candidate(state, uncompleted_reason, sensor_skip_reasons):
+    """True iff a zone is worth re-checking during the pre-dawn wait: it is
+    calibrating/recalibrating AND was skipped from tonight's plan for a SENSOR
+    reason (offline / low-quality), so a mid-window sensor recovery could still
+    earn a probe. Excluded ("excluded") and above-floor (None) skips are not
+    candidates.
+    """
+    if state not in ("calibrating", "recalibrating"):
+        return False
+    return uncompleted_reason in sensor_skip_reasons
+
+
 def sort_by_priority(evals: list, rng: random.Random) -> list:
     """Zones needing water, ordered by index deficit, then dominant-% deficit,
     then random.
