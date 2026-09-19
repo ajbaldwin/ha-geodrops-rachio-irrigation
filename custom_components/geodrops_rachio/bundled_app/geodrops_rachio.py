@@ -1893,6 +1893,9 @@ def _plan_and_run(wait, trigger):
                         trial_plan = plan.build_plan(
                             trial_zones, trial_minutes, rgeo, radj,
                             ctx["cap_minutes"], tun)
+                        if rk not in trial_plan.watered:
+                            still_pending.append(rk)  # build_plan cap-trimmed it; window too tight now
+                            continue
                         if not plan.fits_window(now_w, ctx["end"], trial_plan.span_minutes):
                             still_pending.append(rk)  # no room now; keep watching
                             continue
