@@ -4,6 +4,18 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.12 — Catch a zone whose sensor comes back overnight
+
+### Changes
+- If a zone's soil-moisture sensor is unusable at planning time (offline or
+  low-quality), that zone is skipped for the night. Now, while it's still dark
+  and the watering window is open, the scheduler keeps an eye on those zones: if
+  the sensor recovers in time, it folds a small calibration probe for that zone
+  into the same night's run instead of losing a night of calibration. Only
+  affects zones that are still calibrating; nothing to configure.
+
+Brain-only update.
+
 ## v0.9.11 — Skip zones the rain already watered
 
 ### Changes
