@@ -359,3 +359,11 @@ def test_retain_and_retention_floor_defaults():
     assert t.retain_hours == 6.0
     assert t.retention_floor == 0.1
     assert t.retain_hours > t.settle_hours   # finalize must be after the retained floor
+
+
+def test_recovery_poll_seconds_default():
+    assert config.Tunables().recovery_poll_seconds == 1800.0
+
+
+def test_recovery_poll_seconds_override():
+    assert config.Tunables(recovery_poll_seconds=600).recovery_poll_seconds == 600
