@@ -23,6 +23,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import aiohttp_client, selector
 
 from .const import DOMAIN
+from .config_writer import generate_config
 from .rachio_client import (
     async_fetch_device_zones,
     async_fetch_devices,
@@ -164,6 +165,53 @@ class _BindingsWizardSteps:
     def _existing_bindings(self) -> dict[str, Any]:
         return dict(self._existing.get("bindings", {}))
 
+    def _persist(self) -> None:
+        """Options-only: write the in-progress _data to the config entry now.
+
+        The reload listener is suppressed while the dialog is open (see
+        __init__._reload_on_options), so this saves each edit durably WITHOUT
+        restarting the scheduler mid-flow. The single reload happens on "Done".
+        """
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, data=self._data)
+
+    def _core_from_bindings(self) -> dict[str, Any]:
+        """The Core-step field set, read back out of _data['bindings'].
+
+        Lets the Weather sub-step re-assemble a complete bindings dict from the
+        existing core without the admin re-walking Core.
+        """
+        b = self._data.get("bindings", {})
+        return {
+            "notify_service": b.get("notify_service"),
+            "calendar_entity": b.get("calendar_entity"),
+            "rachio_device_name": b.get("rachio_device_name"),
+            "rachio_api_key_secret": b.get("rachio_api_key_secret", self._secret_name),
+            "standby_switch": b.get("standby_switch"),
+            "forecast_entity": b.get("forecast_entity"),
+        }
+
+    def _weather_form_from_bindings(self) -> dict[str, Any]:
+        """The Weather-step form dict, reconstructed from _data['bindings'], so
+        the Core sub-step can re-assemble a complete bindings dict without the
+        admin re-walking Weather."""
+        b = self._data.get("bindings", {})
+        w = b.get("weather", {})
+        d = b.get("derived", {})
+        return {
+            "weather_temperature": w.get("temperature", DEFAULT_WEATHER["temperature"]),
+            "weather_humidity": w.get("humidity", DEFAULT_WEATHER["humidity"]),
+            "weather_wind": w.get("wind", DEFAULT_WEATHER["wind"]),
+            "weather_rain_last_hour": w.get(
+                "rain_last_hour", DEFAULT_WEATHER["rain_last_hour"]),
+            "weather_precip_type": w.get(
+                "precip_type", DEFAULT_WEATHER["precip_type"]),
+            "precipitation_chance_prefix": d.get(
+                "precipitation_chance_prefix", DEFAULT_PRECIPITATION_CHANCE_PREFIX),
+            "precipitation_amount_prefix": d.get(
+                "precipitation_amount_prefix", DEFAULT_PRECIPITATION_AMOUNT_PREFIX),
+        }
+
     async def _connect_rachio(self, secret_name: str) -> None:
         """Resolve the API key and fetch the account's controllers.
 
@@ -199,6 +247,10 @@ class _BindingsWizardSteps:
         if user_input is not None:
             self._secret_name = user_input["rachio_api_key_secret"]
             await self._connect_rachio(self._secret_name)
+            if self._is_options:
+                self._data["bindings"]["rachio_api_key_secret"] = self._secret_name
+                self._persist()
+                return await self.async_step_menu()
             return await self.async_step_bindings()
 
         existing = self._existing_bindings()
@@ -315,6 +367,11 @@ class _BindingsWizardSteps:
                     "forecast_entity": user_input["forecast_entity"],
                 }
                 await self._fetch_zones_for_device(user_input["rachio_device_name"])
+                if self._is_options:
+                    self._data["bindings"] = _assemble_bindings(
+                        self._core, self._weather_form_from_bindings())
+                    self._persist()
+                    return await self.async_step_menu()
                 return await self.async_step_weather()
 
         defaults = user_input if user_input is not None else self._existing_bindings()
@@ -324,11 +381,12 @@ class _BindingsWizardSteps:
 
     async def async_step_weather(self, user_input=None):
         if user_input is not None:
+            if self._is_options:
+                self._data["bindings"] = _assemble_bindings(
+                    self._core_from_bindings(), user_input)
+                self._persist()
+                return await self.async_step_menu()
             self._data["bindings"] = _assemble_bindings(self._core, user_input)
-            if self._data["zones"]:
-                # Options flow re-entering with existing zones already seeded:
-                # let the admin add/edit/remove zones or leave them as-is.
-                return await self.async_step_manage_zones()
             return await self.async_step_zone()
 
         existing = self._existing_bindings()
@@ -373,21 +431,22 @@ class _BindingsWizardSteps:
         })
         return self.async_show_form(step_id="weather", data_schema=schema)
 
-    async def async_step_manage_zones(self, user_input=None):
-        """Only reached by the options flow when zones already exist.
+    async def async_step_menu(self, user_input=None):
+        """Options hub. Every sub-step returns here; 'Done' saves and reloads.
 
-        Lets the admin add, edit, or remove zones, or leave them as-is and
-        move on to the advanced step.
+        Inline label dict (not a translated list) so the menu never renders
+        blank before this integration's translations load.
         """
-        # Inline labels (dict) so the menu never renders blank when the
-        # frontend hasn't loaded this integration's translations yet — a
-        # list here would rely on a translation lookup for each label.
         return self.async_show_menu(
-            step_id="manage_zones",
+            step_id="menu",
             menu_options={
+                "connect": "Connect Your Rachio Account",
+                "bindings": "Core Setup",
+                "weather": "Weather Station",
                 "add_zone": "Add a zone",
                 "edit_zone": "Edit a zone",
                 "remove_zone": "Remove a zone",
+                "advanced": "Advanced",
                 "finish": "Done",
             })
 
@@ -396,7 +455,8 @@ class _BindingsWizardSteps:
         return await self.async_step_zone()
 
     async def async_step_finish(self, user_input=None):
-        return await self.async_step_advanced()
+        # Options-hub "Done": persist, drop the reload guard, restart once.
+        return await self._async_finish()
 
     async def async_step_edit_zone(self, user_input=None):
         self._removing = False
@@ -425,7 +485,8 @@ class _BindingsWizardSteps:
             if user_input.get("confirm"):
                 self._data["zones"] = [
                     z for z in self._data["zones"] if z["key"] != self._selected_key]
-            return await self.async_step_manage_zones()
+                self._persist()
+            return await self.async_step_menu()
         schema = vol.Schema({vol.Required("confirm", default=False): bool})
         return self.async_show_form(step_id="confirm_remove", data_schema=schema)
 
@@ -546,7 +607,8 @@ class _BindingsWizardSteps:
                 self._append_zone(dict(user_input, key=self._editing_key),
                                   rachio_zone_id=zid)
                 self._editing_key = None
-                return await self.async_step_manage_zones()
+                self._persist()
+                return await self.async_step_menu()
             if any(slug(user_input["key"]) == slug(z["key"])
                    for z in self._data["zones"]):
                 errors["key"] = "duplicate_zone_key"
@@ -554,9 +616,10 @@ class _BindingsWizardSteps:
                 zid = self._picked_zone["id"] if self._picked_zone else ""
                 self._append_zone(user_input, rachio_zone_id=zid)
                 if self._is_options:
-                    # The menu is the hub: adding returns there so the new zone
-                    # is saved via "Done" and the user can add/edit/remove more.
-                    return await self.async_step_manage_zones()
+                    # The hub is home base: adding returns there so the new zone
+                    # is already persisted and the admin can add/edit/remove more.
+                    self._persist()
+                    return await self.async_step_menu()
                 if user_input.get("add_another_zone"):
                     return await self.async_step_zone()
                 return await self.async_step_advanced()
@@ -622,7 +685,8 @@ class _BindingsWizardSteps:
             else:
                 self._append_zone(user_input)
                 if self._is_options:
-                    return await self.async_step_manage_zones()
+                    self._persist()
+                    return await self.async_step_menu()
                 if user_input.get("add_another_zone"):
                     return await self.async_step_zone()
                 return await self.async_step_advanced()
@@ -661,6 +725,9 @@ class _BindingsWizardSteps:
         if user_input is not None:
             self._data["self_calibration_enabled"] = user_input["self_calibration_enabled"]
             self._data["advanced_overrides"] = user_input.get("advanced_overrides", "")
+            if self._is_options:
+                self._persist()
+                return await self.async_step_menu()
             return await self._async_finish()
 
         schema = vol.Schema({
@@ -734,10 +801,32 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
 
     async def async_step_init(self, user_input=None):
         self._existing = dict(self.config_entry.data)
-        # Seed with the existing zones so declining to add more preserves them.
+        # Seed _data fully so any early sub-step persists a COMPLETE entry — an
+        # unopened section (bindings, zones, calib, overrides) is kept verbatim.
+        self._data["bindings"] = dict(self._existing.get("bindings", {}))
         self._data["zones"] = list(self._existing.get("zones", []))
-        return await self.async_step_connect()
+        self._data["self_calibration_enabled"] = self._existing.get(
+            "self_calibration_enabled", False)
+        self._data["advanced_overrides"] = self._existing.get("advanced_overrides", "")
+        # Defer scheduler restarts until "Done" (see __init__._reload_on_options).
+        store = self.hass.data.setdefault(DOMAIN, {}).setdefault(
+            self.config_entry.entry_id, {})
+        store["suppress_reload"] = True
+        # Auto-connect with the stored secret so the Core device dropdown and
+        # zone pickers are live without visiting Connect. Best-effort, degrades
+        # exactly as the connect step does.
+        self._secret_name = self._existing_bindings().get(
+            "rachio_api_key_secret", DEFAULT_RACHIO_API_KEY_SECRET)
+        await self._connect_rachio(self._secret_name)
+        return await self.async_step_menu()
 
     async def _async_finish(self):
-        self.hass.config_entries.async_update_entry(self.config_entry, data=self._data)
+        entry = self.config_entry
+        # Data is already persisted per-step; this is a no-op unless the admin
+        # went straight to Done. Persist happens while the guard is still up.
+        self._persist()
+        store = self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if store is not None:
+            store["suppress_reload"] = False
+        await self.hass.config_entries.async_reload(entry.entry_id)
         return self.async_create_entry(title="", data={})
