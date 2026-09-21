@@ -173,12 +173,16 @@
           "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour."
         }
       },
-      "manage_zones": {
-        "title": "Manage Zones",
+      "menu": {
+        "title": "GeoDrops + Rachio Options",
         "menu_options": {
+          "connect": "Connect Your Rachio Account",
+          "bindings": "Core Setup",
+          "weather": "Weather Station",
           "add_zone": "Add a zone",
           "edit_zone": "Edit a zone",
           "remove_zone": "Remove a zone",
+          "advanced": "Advanced",
           "finish": "Done"
         }
       },
@@ -269,7 +273,8 @@
     },
     "error": {
       "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity.",
-      "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name."
+      "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name.",
+      "invalid_advanced_overrides": "Advanced overrides must be a valid YAML mapping of tunables. Fix the YAML and try again."
     }
   }
 }
