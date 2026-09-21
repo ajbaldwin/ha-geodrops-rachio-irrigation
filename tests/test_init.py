@@ -30,6 +30,38 @@ async def test_setup_delivers_and_registers_listener(hass, enable_pyscript_and_r
         deliver.assert_awaited()
 
 
+async def test_reload_listener_honors_suppress_flag(hass, enable_pyscript_and_rachio):
+    from custom_components.geodrops_rachio.const import DOMAIN
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": {}, "zones": [], "self_calibration_enabled": False,
+        "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    with patch("custom_components.geodrops_rachio.delivery.async_deliver",
+               AsyncMock(return_value=True)):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reloads = []
+
+        async def _fake_reload(entry_id):
+            reloads.append(entry_id)
+
+        with patch.object(hass.config_entries, "async_reload", _fake_reload):
+            # Flag set -> update fires the listener but it must NOT reload.
+            hass.data[DOMAIN][entry.entry_id]["suppress_reload"] = True
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "advanced_overrides": "a: 1"})
+            await hass.async_block_till_done()
+            assert reloads == []
+
+            # Flag cleared -> the next data change reloads exactly once.
+            hass.data[DOMAIN][entry.entry_id]["suppress_reload"] = False
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "advanced_overrides": "a: 2"})
+            await hass.async_block_till_done()
+            assert reloads == [entry.entry_id]
+
+
 async def test_removing_zone_purges_its_device(hass, enable_pyscript_and_rachio):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
     from homeassistant.helpers import device_registry as dr
