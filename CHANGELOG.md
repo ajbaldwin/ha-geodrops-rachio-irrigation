@@ -4,6 +4,23 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.14 — Faster options: edit one thing without the whole wizard
+
+### Changes
+- Opening the integration's options now lands on a single menu instead of
+  re-running the full setup wizard. Change a zone, your weather sensors, or
+  the advanced settings directly — Connect, Core Setup, and Weather Station
+  are there when you need them, skipped when you don't.
+- Every edit is saved the moment you make it, so closing the dialog partway
+  through no longer loses a zone you already added or changed.
+- The scheduler now restarts once, when you press Done, instead of after
+  each individual change while you're still editing.
+- Invalid advanced-override YAML is caught on the Advanced screen with a
+  clear message, instead of failing later when the scheduler reloads.
+
+Requires a Home Assistant restart after updating (this release changes the
+integration's Python).
+
 ## v0.9.13 — New combined GeoDrops + Rachio icon
 
 ### Changes
