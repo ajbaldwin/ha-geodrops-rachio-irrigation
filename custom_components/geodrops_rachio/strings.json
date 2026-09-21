@@ -173,12 +173,16 @@
           "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour."
         }
       },
-      "manage_zones": {
-        "title": "Manage Zones",
+      "menu": {
+        "title": "GeoDrops + Rachio Options",
         "menu_options": {
+          "connect": "Connect Your Rachio Account",
+          "bindings": "Core Setup",
+          "weather": "Weather Station",
           "add_zone": "Add a zone",
           "edit_zone": "Edit a zone",
           "remove_zone": "Remove a zone",
+          "advanced": "Advanced",
           "finish": "Done"
         }
       },
