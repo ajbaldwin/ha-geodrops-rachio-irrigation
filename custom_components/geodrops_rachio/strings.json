@@ -273,7 +273,8 @@
     },
     "error": {
       "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity.",
-      "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name."
+      "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name.",
+      "invalid_advanced_overrides": "Advanced overrides must be a valid YAML mapping of tunables. Fix the YAML and try again."
     }
   }
 }
