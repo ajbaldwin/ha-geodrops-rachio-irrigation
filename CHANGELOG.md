@@ -4,6 +4,14 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.13 — New combined GeoDrops + Rachio icon
+
+### Changes
+- New integration branding. The dashboard/app icon is now a combined mark:
+  the GeoDrops house and the current Rachio symbol, split by a diagonal slash.
+  The logo is a matching side-by-side lockup of the two marks (no text).
+  Cosmetic only — no behaviour change.
+
 ## v0.9.12 — Catch a zone whose sensor comes back overnight
 
 ### Changes
