@@ -635,3 +635,34 @@ async def test_options_connect_repoll_persists_secret(hass, enable_pyscript_and_
             result["flow_id"], {"rachio_api_key_secret": "rotated_key"})
         assert result["step_id"] == "menu"
     assert entry.data["bindings"]["rachio_api_key_secret"] == "rotated_key"
+
+
+async def test_options_advanced_invalid_yaml_rejected(hass, enable_pyscript_and_rachio):
+    entry = _options_entry(hass)
+    with _patch_poll(key=None), _count_reloads(hass):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "advanced"})
+        assert result["step_id"] == "advanced"
+        # A non-mapping YAML scalar is invalid per generate_config.
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {"self_calibration_enabled": False, "advanced_overrides": "just a string"})
+        assert result["step_id"] == "advanced"
+        assert result["errors"] == {"advanced_overrides": "invalid_advanced_overrides"}
+    # Nothing persisted.
+    assert entry.data["advanced_overrides"] == ""
+
+
+async def test_options_advanced_valid_yaml_persists(hass, enable_pyscript_and_rachio):
+    entry = _options_entry(hass)
+    with _patch_poll(key=None), _count_reloads(hass):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "advanced"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {"self_calibration_enabled": True, "advanced_overrides": "rain_skip_mm: 2"})
+        assert result["step_id"] == "menu"
+    assert entry.data["self_calibration_enabled"] is True
+    assert entry.data["advanced_overrides"] == "rain_skip_mm: 2"

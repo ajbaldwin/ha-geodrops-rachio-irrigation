@@ -722,13 +722,29 @@ class _BindingsWizardSteps:
             step_id="zone", data_schema=data_schema, errors=errors)
 
     async def async_step_advanced(self, user_input=None):
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._data["self_calibration_enabled"] = user_input["self_calibration_enabled"]
-            self._data["advanced_overrides"] = user_input.get("advanced_overrides", "")
+            calib = user_input["self_calibration_enabled"]
+            overrides = user_input.get("advanced_overrides", "")
             if self._is_options:
-                self._persist()
-                return await self.async_step_menu()
-            return await self._async_finish()
+                trial = dict(
+                    self._data, self_calibration_enabled=calib,
+                    advanced_overrides=overrides)
+                try:
+                    # generate_config is the single source of override validation
+                    # (raises ValueError on non-YAML / non-mapping overrides).
+                    generate_config(trial)
+                except ValueError:
+                    errors["advanced_overrides"] = "invalid_advanced_overrides"
+                else:
+                    self._data["self_calibration_enabled"] = calib
+                    self._data["advanced_overrides"] = overrides
+                    self._persist()
+                    return await self.async_step_menu()
+            else:
+                self._data["self_calibration_enabled"] = calib
+                self._data["advanced_overrides"] = overrides
+                return await self._async_finish()
 
         schema = vol.Schema({
             vol.Optional(
@@ -740,7 +756,11 @@ class _BindingsWizardSteps:
                 default=self._existing.get("advanced_overrides", ""),
             ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
         })
-        return self.async_show_form(step_id="advanced", data_schema=schema)
+        # On a validation re-render keep what the admin typed.
+        if user_input is not None:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
+        return self.async_show_form(
+            step_id="advanced", data_schema=schema, errors=errors)
 
     async def _async_finish(self):
         raise NotImplementedError
