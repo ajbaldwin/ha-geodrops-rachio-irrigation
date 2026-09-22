@@ -1,12 +1,16 @@
 {
   "domain": "geodrops_rachio",
   "name": "GeoDrops + Rachio Irrigation",
-  "version": "0.9.14",
+  "after_dependencies": [
+    "pyscript"
+  ],
+  "codeowners": [
+    "@ajbaldwin"
+  ],
   "config_flow": true,
-  "iot_class": "local_polling",
   "dependencies": [],
-  "after_dependencies": ["pyscript"],
-  "codeowners": ["@ajbaldwin"],
   "documentation": "https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation",
-  "issue_tracker": "https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation/issues"
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation/issues",
+  "version": "0.9.14"
 }
