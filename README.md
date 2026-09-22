@@ -31,9 +31,12 @@ set up and working in Home Assistant:
   integration, configured with your Rachio controller and zones.
 - **GeoDrops soil-moisture sensors** already flowing into Home Assistant as
   entities (one dominant sensor and quality/agreement sensors per zone you
-  want to schedule). One way to get these into Home Assistant is
+  want to schedule). The simplest way to get these into Home Assistant is
+  **[ha-geodrops-hacs](https://github.com/ajbaldwin/ha-geodrops-hacs)**, a
+  native HACS integration that reads GeoDrops readings straight from BigQuery
+  with no external service to run. An off-box alternative is
   **[ha-geodrops-integration](https://github.com/ajbaldwin/ha-geodrops-integration)**,
-  which syncs GeoDrops readings to Home Assistant over MQTT.
+  which syncs the same readings to Home Assistant over MQTT.
 - Weather inputs for the five observed conditions the wizard binds:
   temperature, humidity, wind speed, rain-in-the-last-hour, and
   precipitation-type. A **local weather station (a Tempest or equivalent) is
