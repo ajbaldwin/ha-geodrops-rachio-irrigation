@@ -4,6 +4,20 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v0.9.15 — Home Assistant now shows it as cloud/internet-dependent
+
+### Changes
+
+- Home Assistant now correctly shows this integration as internet-dependent.
+  Its `iot_class` was corrected from `local_polling` to `cloud_polling` — the
+  setup wizard and the scheduler reach both Rachio and GeoDrops only over the
+  cloud (`api.rach.io` / BigQuery). Metadata only; scheduling and watering
+  behaviour are unchanged.
+- Setup docs now point to the native GeoDrops HACS integration as the simplest
+  way to get soil-moisture sensors into Home Assistant, with the MQTT bridge
+  kept as an off-box alternative.
+- Repository housekeeping: added hassfest + HACS validation to CI.
+
 ## v0.9.14 — Faster options: edit one thing without the whole wizard
 
 ### Changes
