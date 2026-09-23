@@ -1,4 +1,5 @@
 import json
+import logging
 
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import async_mock_service
@@ -119,3 +120,13 @@ async def test_open_store_survives_failing_pyscript_reload(hass, tmp_path, caplo
     assert any("pyscript.reload failed" in m and "exploded" in m for m in msgs)
     assert any("pyscript reloaded: False" in m for m in msgs)
     assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+async def test_open_store_fresh_install_logs_the_new_store(hass, tmp_path, caplog):
+    caplog.set_level(logging.INFO, logger="custom_components.geodrops_rachio")
+    hass.config.config_dir = str(tmp_path)
+    await es.async_open_store(hass, "entry1")
+    assert any("created a new store" in r.getMessage() for r in caplog.records)
+    caplog.clear()
+    await es.async_open_store(hass, "entry1")      # second boot: store exists
+    assert not any("store" in r.getMessage() for r in caplog.records)

@@ -10,6 +10,8 @@ import datetime as dt
 import logging
 from typing import Any, Awaitable, Callable
 
+from homeassistant.exceptions import ServiceNotFound
+
 from ..brain import config
 from .port import HAPort
 from .store import PERSISTED_RECORDS, EngineStore, record_key
@@ -136,10 +138,17 @@ class EngineBase:
         found by scrolling the global Logbook; attached ones can be filtered to, and
         show up in that entity's own more-info dialog. Pass a zone switch to file an
         event under the zone it happened to.
+
+        A Home Assistant without the logbook integration (it ships in
+        default_config, but can be left out) just loses the entry; the action
+        that logged it must still happen.
         """
         target = entity_id if entity_id is not None else STATUS_ENTITY
-        await self.port.call("logbook", "log", {
-            "name": LOGBOOK_NAME, "message": message, "entity_id": target})
+        try:
+            await self.port.call("logbook", "log", {
+                "name": LOGBOOK_NAME, "message": message, "entity_id": target})
+        except ServiceNotFound:
+            _LOGGER.debug(f"irrigation: logbook not loaded; not recorded: {message}")
 
     async def _notify(self, message, title):
         """Send a push, tolerant of a missing/renamed notify service.

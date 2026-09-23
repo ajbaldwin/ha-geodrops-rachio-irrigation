@@ -329,3 +329,103 @@ async def test_setup_survives_failing_pyscript_reload(
     assert entry.state is ConfigEntryState.LOADED
     assert not (ps / "geodrops_rachio.py").exists()
     assert any("pyscript.reload failed" in r.getMessage() for r in caplog.records)
+
+
+async def _open_options_then_close(hass, entry, edit):
+    reloads = []
+
+    async def _fake_reload(entry_id):
+        reloads.append(entry_id)
+
+    async def _resolve(h, name):
+        return None
+
+    with patch.object(hass.config_entries, "async_reload", _fake_reload), \
+            patch("custom_components.geodrops_rachio.config_flow.resolve_secret", _resolve):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert hass.data[DOMAIN][entry.entry_id]["suppress_reload"] is True
+        if edit:
+            # A sub-step persists an edit while the guard is up ...
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "advanced_overrides": "a: 1"})
+            await hass.async_block_till_done()
+            assert reloads == []
+        # ... then the admin closes the dialog instead of pressing Done.
+        hass.config_entries.options.async_abort(result["flow_id"])
+        await hass.async_block_till_done()
+    return reloads
+
+
+async def test_options_closed_without_done_applies_persisted_edits(
+        hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data=_full_entry_data())
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    reloads = await _open_options_then_close(hass, entry, edit=True)
+    assert reloads == [entry.entry_id]
+    assert hass.data[DOMAIN][entry.entry_id]["suppress_reload"] is False
+
+
+async def test_options_closed_without_edits_clears_guard_without_reload(
+        hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data=_full_entry_data())
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    reloads = await _open_options_then_close(hass, entry, edit=False)
+    assert reloads == []
+    assert hass.data[DOMAIN][entry.entry_id]["suppress_reload"] is False
+
+
+async def test_reload_if_changed_reloads_an_entry_that_is_not_loaded(
+        hass, enable_pyscript_and_rachio):
+    from custom_components.geodrops_rachio import async_reload_if_changed
+    entry = MockConfigEntry(domain=DOMAIN, data=DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    # e.g. a failed platform unload: the setup snapshot lingers in hass.data.
+    entry.mock_state(hass, ConfigEntryState.FAILED_UNLOAD)
+    reloads = []
+
+    async def _fake_reload(entry_id):
+        reloads.append(entry_id)
+
+    with patch.object(hass.config_entries, "async_reload", _fake_reload):
+        assert await async_reload_if_changed(hass, entry) is True
+    assert reloads == [entry.entry_id]
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+
+
+async def test_failed_platform_unload_is_logged(hass, enable_pyscript_and_rachio, caplog):
+    entry = MockConfigEntry(domain=DOMAIN, data=DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    with patch.object(hass.config_entries, "async_unload_platforms",
+                      AsyncMock(return_value=False)):
+        assert not await hass.config_entries.async_unload(entry.entry_id)
+    assert any(r.levelname == "WARNING" and "did not unload" in r.getMessage()
+               for r in caplog.records)
+
+
+async def test_removing_entry_deletes_its_store(hass, hass_storage, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data=DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.data[DOMAIN][entry.entry_id]["scheduler"].store.write("efficacy", {"x": {}})
+    key = f"{DOMAIN}.{entry.entry_id}"
+    assert key in hass_storage
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert key not in hass_storage
+
+
+async def test_stop_button_works_without_logbook(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data=DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert not hass.services.has_service("logbook", "log")
+    await hass.services.async_call(
+        "button", "press", {"entity_id": "button.geodrops_rachio_stop"}, blocking=True)
+    assert hass.data[DOMAIN][entry.entry_id]["scheduler"]._manual_stop is True

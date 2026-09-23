@@ -818,6 +818,7 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         self._editing_key: str | None = None
         self._selected_key: str | None = None
         self._removing: bool = False
+        self._guarding: bool = False
 
     async def async_step_init(self, user_input=None):
         self._existing = dict(self.config_entry.data)
@@ -832,6 +833,7 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         store = self.hass.data.setdefault(DOMAIN, {}).setdefault(
             self.config_entry.entry_id, {})
         store["suppress_reload"] = True
+        self._guarding = True
         # Auto-connect with the stored secret so the Core device dropdown and
         # zone pickers are live without visiting Connect. Best-effort, degrades
         # exactly as the connect step does.
@@ -845,11 +847,29 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         # Data is already persisted per-step; this is a no-op unless the admin
         # went straight to Done. Persist happens while the guard is still up.
         self._persist()
-        store = self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
-        if store is not None:
-            store["suppress_reload"] = False
+        self._release_guard()
         # Restart the scheduler only if something was actually edited: a reload
         # cancels a waiting or watering run (v0.9.x left the run alone too).
         from . import async_reload_if_changed
         await async_reload_if_changed(self.hass, entry)
         return self.async_create_entry(title="", data={})
+
+    def _release_guard(self) -> bool:
+        """Clear suppress_reload; returns whether this flow still held it."""
+        held, self._guarding = self._guarding, False
+        store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        if held and store is not None:
+            store["suppress_reload"] = False
+        return held
+
+    @callback
+    def async_remove(self) -> None:
+        """The flow ended. After "Done" there is nothing left to do; if the
+        dialog was closed instead, the sub-steps' edits are already persisted,
+        so apply them now rather than leave the scheduler on the old config
+        with reloads suppressed until the next restart."""
+        if self._release_guard():
+            from . import async_reload_if_changed
+            self.hass.async_create_task(
+                async_reload_if_changed(self.hass, self.config_entry),
+                "geodrops_rachio_options_closed_reload")
