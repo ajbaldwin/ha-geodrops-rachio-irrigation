@@ -30,12 +30,11 @@ WAITING = {"irrigation_waiting.json": {
 MISSED = {"irrigation_waiting.json": {
     "window_end": "2026-07-02T01:00:00+00:00", "stamp": "2026-07-01T23:00:00",
     "trigger": "nightly"}}
-# LEGACY BUG, ported faithfully: _plan_and_run writes window_end from the AWARE
-# ctx["end"] (sun sensor ISO carries +00:00), but _on_startup compares it with the
-# NAIVE dt.datetime.now().isoformat(), so recovery.startup_action raises
-# "TypeError: can't compare offset-naive and offset-aware datetimes" for every
-# real marker. The aware scenarios pin that crash on both sides; the naive twins
-# below are the only way to drive the RE_ARM / MISSED branches at all.
+# Real markers are AWARE (window_end comes from the sun sensor, +00:00). Through
+# v0.9.15, _on_startup compared them with a NAIVE now() and recovery.startup_action
+# raised TypeError, losing the night. Fixed in v1.0.0 inside brain.recovery (which
+# the legacy oracle shares via the brain alias), so aware and naive markers both
+# reach RE_ARM / MISSED on both sides.
 WAITING_NAIVE = {"irrigation_waiting.json": {
     "window_end": "2026-07-02T04:59:00", "stamp": "2026-07-01T23:00:00",
     "trigger": "nightly"}}
@@ -52,10 +51,8 @@ STARTUP = {
                      lambda w: w.rachio.start_direct([("switch.front_zone", 30)]), None),
     "waiting_rearm": ("2026-07-02 00:30:00", WAITING_NAIVE, lambda w: None, None),
     "waiting_missed": ("2026-07-02 02:00:00", MISSED_NAIVE, lambda w: None, None),
-    "waiting_aware_marker_crashes": ("2026-07-02 00:30:00", WAITING, lambda w: None,
-                                     TypeError),
-    "missed_aware_marker_crashes": ("2026-07-02 02:00:00", MISSED, lambda w: None,
-                                    TypeError),
+    "waiting_rearm_aware": ("2026-07-02 00:30:00", WAITING, lambda w: None, None),
+    "waiting_missed_aware": ("2026-07-02 02:00:00", MISSED, lambda w: None, None),
 }
 
 STOP = ("rachio", "stop_watering", {"devices": "Main House"})
@@ -90,14 +87,14 @@ def _assert_startup_branch(name, lw, lf):
         assert any("re-planning the interrupted run" in m for m in book)
         assert "planning" in statuses and "watering" in statuses
         assert last_run[1]["trigger"] == "startup-heal"
-    elif name == "waiting_rearm":
+    elif name in ("waiting_rearm", "waiting_rearm_aware"):
         assert any("was waiting for its pre-dawn window when HA restarted" in m
                    for m in book)
         assert "planning" in statuses and "watering" in statuses
         assert last_run[1]["trigger"] == "startup-heal"
         assert last_run[1]["aborted_reason"] is None
         assert "irrigation_waiting.json" not in lf.files      # consumed
-    elif name == "waiting_missed":
+    elif name in ("waiting_missed", "waiting_missed_aware"):
         assert status_trail_legacy(lw) == [
             ("idle", None), ("skipped", "missed — restart after window closed")]
         assert any("recorded as missed" in m for m in book)
@@ -105,14 +102,6 @@ def _assert_startup_branch(name, lw, lf):
         assert last_run[1]["updated"] == "2026-07-01T23:00:00"
         assert last_run[1]["trigger"] == "nightly"
         assert "irrigation_waiting.json" not in lf.files      # consumed
-    elif name in ("waiting_aware_marker_crashes", "missed_aware_marker_crashes"):
-        # Crashed inside recovery.startup_action, AFTER consuming the marker and
-        # before any branch: the night is lost with no record (legacy bug).
-        assert status_trail_legacy(lw) == [("idle", None)]
-        assert [c for c in lw.calls if c[0] != "logbook"] == []
-        assert book == []
-        assert last_run is None
-        assert "irrigation_waiting.json" not in lf.files
     else:  # pragma: no cover - every scenario must be pinned
         raise AssertionError(f"no branch evidence for {name}")
 

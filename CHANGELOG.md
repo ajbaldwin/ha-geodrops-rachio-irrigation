@@ -53,13 +53,15 @@ section per released version, newest first.
 - The *Stop irrigation* button's action is now recorded in the Home
   Assistant **logbook** (via the built-in `logbook` integration, part of
   `default_config`), same as other entries the scheduler already logs.
+- **Fix: a restart during the pre-dawn wait no longer loses the night.** If
+  Home Assistant restarted while a planned run was waiting for its watering
+  window, the startup check crashed comparing times with and without a time
+  zone, so the night was silently skipped. It now re-plans that night's run
+  from live moisture (or records the night as missed if the window has
+  already closed), as it was always meant to.
 - **Requires a Home Assistant restart** after updating — the scheduler is
   now part of the integration's own Python, so every future release will
   require a restart too (see `docs/RELEASING.md`).
-
-**Known issues (unchanged from 0.9.x):** a Home Assistant restart during the
-pre-dawn wait for the watering window does not re-arm that night's run
-(pre-existing bug; a fix is planned).
 
 **Rollback:** HACS → Redownload → v0.9.15 → restart. Calibration learned
 since the upgrade is lost. v0.9.15 needs **pyscript installed and set up** — if

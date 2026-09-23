@@ -92,10 +92,11 @@ way to see it.
   and its zones instead of leaving Rachio's own paused-schedule auto-resume
   to run the rest of the night unattended. Nothing to verify on a normal
   cutover, but worth knowing if you restart HA mid-run for any reason.
-- **Known issue, unchanged from 0.9.x:** a Home Assistant restart during the
-  pre-dawn wait for the watering window does not re-arm that night's run.
-  Pre-existing bug; a fix is planned. Don't restart HA during the wait if you
-  need that night's run to happen.
+- Fixed in v1.0.0: a Home Assistant restart during the pre-dawn wait now
+  re-plans that night's run (logbook: "a nightly run was waiting for its
+  pre-dawn window when HA restarted; re-planning from live moisture"), or
+  records the night as missed if the window already closed. Through v0.9.15
+  this crashed and the night was lost.
 - `/config/pyscript/geodrops_rachio_state/` is left in place after the
   upgrade specifically so rollback works; don't delete it until you're
   confident you won't need to roll back.

@@ -1,3 +1,5 @@
+import datetime
+
 from brain import recovery
 from brain.program import Step
 
@@ -97,6 +99,23 @@ def test_marker_exactly_at_window_end_is_missed():
     # At the boundary there is no window left to water in.
     marker = {"window_end": "2026-08-30T06:00:00"}
     assert sa(marker, "2026-08-30T06:00:00") == recovery.MISSED
+
+
+def test_aware_marker_with_naive_now_does_not_crash():
+    # Real markers carry the sun sensor's offset; the scheduler used to pass a
+    # naive now and the comparison raised TypeError, losing the night.
+    marker = {"window_end": "2026-08-30T06:00:00+00:00"}
+    early = datetime.datetime(2026, 8, 30, 2, 29, tzinfo=datetime.timezone.utc)
+    late = datetime.datetime(2026, 8, 30, 6, 50, tzinfo=datetime.timezone.utc)
+    naive_local = lambda d: d.astimezone().replace(tzinfo=None).isoformat()  # noqa: E731
+    assert sa(marker, naive_local(early)) == recovery.RE_ARM
+    assert sa(marker, naive_local(late)) == recovery.MISSED
+
+
+def test_aware_marker_with_aware_now():
+    marker = {"window_end": "2026-08-30T06:00:00+00:00"}
+    assert sa(marker, "2026-08-30T01:29:00-01:00") == recovery.RE_ARM   # 02:29Z
+    assert sa(marker, "2026-08-30T08:50:00+02:00") == recovery.MISSED   # 06:50Z
 
 
 def test_malformed_marker_ignores():

@@ -214,7 +214,7 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
             # verdict.
             marker = self._read_waiting_marker()
             await self._clear_waiting_marker()
-            action = recovery.startup_action(marker, self._naive_now().isoformat())
+            action = recovery.startup_action(marker, self.port.now().isoformat())
             if action == recovery.RE_ARM:
                 await self._activity(
                     "Startup: a nightly run was waiting for its pre-dawn window when "
