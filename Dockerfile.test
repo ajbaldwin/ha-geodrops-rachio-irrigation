@@ -1,3 +1,5 @@
-FROM python:3.13
+# Python 3.14: Home Assistant 2026.3+ (hacs.json minimum) requires it; on 3.13
+# pip silently resolves an older HA (2026.2.x) the integration does not support.
+FROM python:3.14
 RUN pip install --no-cache-dir pytest-homeassistant-custom-component pyyaml
 WORKDIR /app

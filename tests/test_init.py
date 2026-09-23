@@ -28,8 +28,9 @@ async def test_setup_and_unload_entry(hass, enable_pyscript_and_rachio):
     assert await hass.config_entries.async_setup(entry.entry_id)
     assert entry.state is ConfigEntryState.LOADED
     assert "scheduler" in hass.data[DOMAIN][entry.entry_id]
-    with patch("custom_components.geodrops_rachio.engine.scheduler.Scheduler.async_shutdown",
-               AsyncMock()) as shutdown:
+    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    with patch.object(scheduler, "async_shutdown",
+                      AsyncMock(wraps=scheduler.async_shutdown)) as shutdown:
         assert await hass.config_entries.async_unload(entry.entry_id)
     shutdown.assert_awaited_once()
     assert entry.state is ConfigEntryState.NOT_LOADED
@@ -153,7 +154,7 @@ async def test_options_flow_defers_reload_until_finish(hass, enable_pyscript_and
 
 async def test_removing_zone_purges_its_device(hass, enable_pyscript_and_rachio):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
-    from homeassistant.helpers import device_registry as dr
+    from tests.conftest import zone_device
     from custom_components.geodrops_rachio.const import DOMAIN
     def _zone(k):
         return {"key": k, "rachio_switch": "switch.x", "dominant_sensor": "sensor.d",
@@ -166,13 +167,12 @@ async def test_removing_zone_purges_its_device(hass, enable_pyscript_and_rachio)
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    reg = dr.async_get(hass)
-    assert reg.async_get_device({(DOMAIN, f"{entry.entry_id}:zone:back")})
+    assert zone_device(hass, entry, "back")
 
     hass.config_entries.async_update_entry(entry, data={**entry.data, "zones": [_zone("front")]})
     await hass.async_block_till_done()  # triggers reload via existing options listener
-    assert reg.async_get_device({(DOMAIN, f"{entry.entry_id}:zone:back")}) is None
-    assert reg.async_get_device({(DOMAIN, f"{entry.entry_id}:zone:front")})
+    assert zone_device(hass, entry, "back") is None
+    assert zone_device(hass, entry, "front")
 
 
 def _full_entry_data():
@@ -253,7 +253,8 @@ async def test_options_update_without_changes_does_not_reload(
     scheduler = store["scheduler"]
     original = copy.deepcopy(dict(entry.data))
 
-    with patch.object(scheduler, "async_shutdown", AsyncMock()) as shutdown:
+    with patch.object(scheduler, "async_shutdown",
+                      AsyncMock(wraps=scheduler.async_shutdown)) as shutdown:
         # The update listener fires (a title change counts as an entry update)
         # but data and options equal the setup snapshot: no reload.
         hass.config_entries.async_update_entry(entry, title="Renamed")
@@ -283,7 +284,8 @@ async def test_options_update_without_changes_does_not_reload(
 
     # An options change is a change too (the snapshot covers options).
     scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
-    with patch.object(scheduler, "async_shutdown", AsyncMock()) as shutdown:
+    with patch.object(scheduler, "async_shutdown",
+                      AsyncMock(wraps=scheduler.async_shutdown)) as shutdown:
         hass.config_entries.async_update_entry(entry, options={"x": 1})
         await hass.async_block_till_done()
         shutdown.assert_awaited_once()

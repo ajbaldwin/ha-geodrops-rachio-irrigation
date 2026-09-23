@@ -372,7 +372,7 @@ async def test_zone_soil_moisture_non_numeric_source_reads_none(hass, enable_pys
 
 async def test_zone_device_uses_friendly_name(hass, enable_pyscript_and_rachio):
     """Zone devices are named from a title-cased key, not the raw slug."""
-    from homeassistant.helpers import device_registry as dr
+    from tests.conftest import zone_device
     entry = MockConfigEntry(domain=DOMAIN, data={
         "bindings": {"weather": {}, "forecast_entity": "weather.home"},
         "zones": [{"key": "front_slope", "rachio_switch": "switch.x",
@@ -383,6 +383,5 @@ async def test_zone_device_uses_friendly_name(hass, enable_pyscript_and_rachio):
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, f"{entry.entry_id}:zone:front_slope")})
+    device = zone_device(hass, entry, "front_slope")
     assert device is not None and device.name == "Front Slope"
