@@ -327,8 +327,8 @@ class PlanningMixin:
         return floors
 
     async def _publish_targets(self, cfg):
-        """Publish per-zone target floors to pyscript.geodrops_rachio_targets (persisted),
-        so a Deficit sensor has a target the moment HA restarts — before the first
+        """Publish per-zone target floors to the `targets` record (persisted), so a
+        Deficit sensor has a target the moment HA restarts — before the first
         nightly plan. Refreshed at startup and each nightly. Read-only (see
         _compute_target_floors)."""
         floors = self._compute_target_floors(cfg)

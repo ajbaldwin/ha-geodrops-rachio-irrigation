@@ -312,7 +312,8 @@ _RECORDS = [
 
 class RecordSensor(SensorEntity):
     """One scheduler record: value as state, full record as attributes
-    (same attribute names the pyscript.* entity carried, minus friendly_name).
+    (the same attribute names v0.9.x's pyscript.* entities carried, minus
+    friendly_name).
     Attributes stay out of the recorder — they can be large."""
 
     _attr_should_poll = False

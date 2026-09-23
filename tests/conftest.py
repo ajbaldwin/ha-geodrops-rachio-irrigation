@@ -19,6 +19,15 @@ def enable_pyscript_and_rachio(hass):
     hass.config.components.remove("rachio")
 
 
+def zone_device(hass, entry, key):
+    """The entry's zone device for `key`, or None."""
+    from homeassistant.helpers import device_registry as dr
+    from custom_components.geodrops_rachio.const import DOMAIN
+    ident = (DOMAIN, f"{entry.entry_id}:zone:{key}")
+    return next((d for d in dr.async_entries_for_config_entry(
+        dr.async_get(hass), entry.entry_id) if ident in d.identifiers), None)
+
+
 def publish_record(hass, entry, name, value, attributes):
     """Test helper: publish a scheduler record as the engine would."""
     from custom_components.geodrops_rachio.const import DOMAIN

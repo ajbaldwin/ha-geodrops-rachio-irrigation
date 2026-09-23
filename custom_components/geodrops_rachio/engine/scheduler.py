@@ -123,10 +123,11 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
 
     # --- ported: legacy lines 2604-2742 ---------------------------------------
     async def _on_startup(self):
-        """Safety net after any HA restart or pyscript reload.
+        """Safety net after any HA restart or integration reload.
 
-        A run interrupted mid-watering leaves a Rachio valve OPEN: pyscript is killed
-        before it can stop the zone, the run is NOT resumed (the system is stateless),
+        A run interrupted mid-watering can leave a Rachio valve OPEN: a crash or OOM
+        kill gives the engine no chance to stop the zone (a graceful stop or unload
+        does — see async_shutdown), the run is NOT resumed (the system is stateless),
         and no recap is sent. Without this, the only backstop is the 6-hour stuck-zone
         automation. On startup we poll the managed zones and close anything still
         running, noting it in the Logbook. A short sleep first lets the Rachio
@@ -144,13 +145,13 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         skipped — that night is simply missed, costing no water.
         """
         await self.port.sleep(30)
-        # pyscript re-creates its entities, so the status would read `unknown` until
-        # the next run. Publish it now so a filtered Logbook and any dashboard card
-        # have something to point at from the moment HA comes back.
+        # Status is not persisted, so it would read `unknown` until the next run.
+        # Publish it now so a filtered Logbook and any dashboard card have
+        # something to point at from the moment HA comes back.
         self._set_status("idle")
-        # Bring back last night's record and the calibration series. HA does not
-        # restore pyscript entities, so without this a restart erases the evidence
-        # for the very night someone is about to ask about.
+        # Bring back last night's record and the calibration series from the Store,
+        # so a restart does not erase the evidence for the very night someone is
+        # about to ask about.
         self._restore_records()
         # Recompute per-zone target floors now, so a Deficit sensor has a fresh
         # target from the moment HA comes back — not only after the first nightly.
@@ -300,13 +301,14 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
 
     # --- ported: legacy lines 2794-2834 ---------------------------------------
     async def async_refresh_runtimes(self):
-        """Force a live Rachio runtime fetch and record the result in the HA Logbook
-        (activity log) plus a status state — checkable without the system log:
+        """Force a live Rachio runtime fetch and record the result — checkable
+        without the system log:
           1. Logbook entry named "Irrigation" (Settings -> Logbook / activity log);
-          2. state  pyscript.geodrops_rachio_runtimes  (Developer Tools -> States) — value
-             is the zone count; source/live/updated/runtimes_minutes are attributes.
+          2. the `runtimes` record — value is the zone count; source/live/updated/
+             runtimes_minutes/refill_depths_mm are attributes. Not an entity of its
+             own: the zone sensors read their live refill depth from it.
         A live pull yields a non-empty dict keyed by rachio_zone_id; an empty dict
-        means the fetch failed and the scheduler is on static config.yaml runtimes.
+        means the fetch failed and the scheduler is on the zones' configured runtimes.
         """
         if self._run_in_progress:
             _LOGGER.warning(

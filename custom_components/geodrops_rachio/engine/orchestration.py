@@ -7,8 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 
-from ..brain import (
-    calibration, dosing, evaluate, plan, recovery, report_format, sensors)
+from ..brain import calibration, dosing, evaluate, plan, report_format, sensors
 from .store import WAITING_MARKER
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,8 +48,8 @@ class OrchestrationMixin:
         """Full, untruncated record of what the nightly run actually did.
 
         The run used to leave behind one Logbook line and a recap; everything
-        diagnostic lived in `pyscript.geodrops_rachio_preview`, written only by the
-        preview service. So answering "did last night work?" meant cross-reading the
+        diagnostic lived in the preview record, written only by the preview
+        service. So answering "did last night work?" meant cross-reading the
         Logbook, the recap, the system log and the Rachio app — and two open items
         (threshold calibration, quantized-vs-planned minutes) were simply
         unanswerable after the fact. This state is that record.
@@ -532,7 +531,7 @@ class OrchestrationMixin:
         Three surfaces (title 'Irrigation preview' on the notification carries the
         label, so message bodies never repeat it):
           - notify + Logbook: short human summary (Logbook truncates long text);
-          - pyscript.geodrops_rachio_preview state (Developer Tools -> States): the FULL,
+          - sensor.geodrops_rachio_plan (Developer Tools -> States): the FULL,
             untruncated breakdown incl. the dynamic-window characteristics.
         """
         # Only refuse while valves are actually watering — NOT during the pre-dawn

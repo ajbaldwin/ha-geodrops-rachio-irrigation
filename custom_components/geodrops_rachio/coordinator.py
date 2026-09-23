@@ -4,7 +4,6 @@ import logging
 
 from homeassistant.core import HomeAssistant, callback
 
-from .const import DOMAIN
 from .engine.store import EFFICACY
 
 _LOGGER = logging.getLogger(__name__)
