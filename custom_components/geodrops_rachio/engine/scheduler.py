@@ -49,6 +49,17 @@ async def _cancel_and_wait(task: asyncio.Task | None) -> None:
                         f"unwinding ({err})")
 
 
+def _log_task_failure(task: asyncio.Task) -> None:
+    """Done-callback: log a crashed run/startup task at once, with traceback
+    (pyscript logged a trigger's exception immediately). Retrieving it also
+    stops asyncio's "Task exception was never retrieved" at GC time."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        _LOGGER.error(f"irrigation: {task.get_name()} failed ({exc!r})", exc_info=exc)
+
+
 class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
                 IOMixin, EngineBase):
     def __init__(self, port, store, load_raw_config, fetch_zone_data,
@@ -58,16 +69,48 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         self.run_task: asyncio.Task | None = None
         self.startup_task: asyncio.Task | None = None
         self._unsubs: list[Callable[[], None]] = []
+        # Serialises every start/cancel of the run task, and counts requests so
+        # the LAST caller wins (pyscript's task.unique is synchronous: whoever
+        # calls it last is the one survivor).
+        self._run_lock = asyncio.Lock()
+        self._run_gen = 0
 
     # --- the one run task (replaces task.unique("geodrops_rachio_run")) -------
     async def _cancel_run(self) -> None:
+        """Cancel the run task — and supersede any _start_run still in flight —
+        leaving `self.run_task` None."""
+        self._run_gen += 1
+        async with self._run_lock:
+            await self._cancel_current_run()
+
+    async def _cancel_current_run(self) -> None:
+        # Caller holds _run_lock.
         task, self.run_task = self.run_task, None
         await _cancel_and_wait(task)
 
     async def _start_run(self, wait: bool, trigger: str) -> None:
-        await self._cancel_run()
-        self.run_task = self._create_task(
-            self._plan_and_run(wait, trigger), "geodrops_rachio_run")
+        """Replace any run with a fresh `_plan_and_run(wait, trigger)`.
+
+        Under the lock, so the old run finishes unwinding (its `finally` clears
+        the run flags and the run-active marker) BEFORE the new one starts, and
+        two overlapping starts can never both leave a live task. A start that a
+        later start/cancel superseded while it waited starts nothing.
+        """
+        self._run_gen += 1
+        gen = self._run_gen
+        async with self._run_lock:
+            if gen != self._run_gen:
+                return
+            await self._cancel_current_run()
+            if gen != self._run_gen:
+                return
+            self.run_task = self._spawn(
+                self._plan_and_run(wait, trigger), "geodrops_rachio_run")
+
+    def _spawn(self, coro: Coroutine, name: str) -> asyncio.Task:
+        task = self._create_task(coro, name)
+        task.add_done_callback(_log_task_failure)
+        return task
 
     # --- triggers ---------------------------------------------------------
     async def irrigation_nightly(self, _now=None) -> None:
@@ -310,7 +353,7 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         await self._settle_and_learn()
 
     async def _on_ha_started(self, _hass) -> None:
-        self.startup_task = self._create_task(
+        self.startup_task = self._spawn(
             self._on_startup(), "geodrops_rachio_startup")
 
     async def async_shutdown(self) -> None:

@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import gc
 import logging
 import random
 
@@ -199,7 +200,20 @@ async def test_reset_cancels_waiting_run(freezer):
     assert eng.store.read("waiting_marker") is None
 
 
-async def test_unload_mid_pause_stops_the_device(freezer):
+def _record_blocking(eng):
+    """Wrap port.call to record each call's `blocking` flag (FakePort drops it)."""
+    log = []
+    real_call = eng.port.call
+
+    async def call(domain, service, data, *, blocking=False):
+        log.append((domain, service, dict(data), blocking))
+        await real_call(domain, service, data, blocking=blocking)
+    eng.port.call = call
+    return log
+
+
+async def _run_to_pause(freezer):
+    """A run_now parked inside its first device pause (valves 'watering')."""
     data = entry_data()
     freezer.move_to("2026-07-02 02:00:00")
     w = FakeWorld(freezer)
@@ -222,12 +236,136 @@ async def test_unload_mid_pause_stops_the_device(freezer):
     waiter = asyncio.ensure_future(paused.wait())
     await asyncio.wait({waiter, eng.run_task}, return_when=asyncio.FIRST_COMPLETED)
     assert paused.is_set(), "the run never reached a device pause"
+    assert eng._watering_active
+    return w, eng
+
+
+async def test_unload_mid_pause_stops_the_device(freezer):
+    w, eng = await _run_to_pause(freezer)
+    calls = _record_blocking(eng)
     await eng.async_shutdown()
     assert eng.run_task is None
     tail = w.calls[-4:]
     assert ("rachio", "stop_watering", {"devices": "Main House"}) in tail
     assert ("switch", "turn_off", {"entity_id": "switch.front_zone"}) in tail
     assert w.get("switch.geodrops_rachio_run_active") == "off"
+    # The run's own teardown stays non-blocking; only the safety stop blocks.
+    assert calls == [
+        ("switch", "turn_off", {"entity_id": "switch.geodrops_rachio_run_active"}, False),
+        ("rachio", "stop_watering", {"devices": "Main House"}, True),
+        ("switch", "turn_off", {"entity_id": "switch.front_zone"}, True),
+        ("switch", "turn_off", {"entity_id": "switch.back_zone"}, True),
+    ]
+
+
+async def test_unload_safety_stop_is_bounded(freezer, caplog):
+    w, eng = await _run_to_pause(freezer)
+    calls = _record_blocking(eng)
+    inner = eng.port.call
+
+    async def hanging_when_blocking(domain, service, data, *, blocking=False):
+        await inner(domain, service, data, blocking=blocking)
+        if blocking:
+            # asyncio.timeout runs on loop.time(), which freezegun freezes: step
+            # the frozen clock past the 10 s bound, then hang forever.
+            freezer.tick(11)
+            await asyncio.Event().wait()
+    eng.port.call = hanging_when_blocking
+    await eng.async_shutdown()
+    assert eng.run_task is None
+    assert [c[:2] for c in calls if c[3]] == [("rachio", "stop_watering")]  # cut off
+    assert ("warning", "irrigation: unload safety stop failed ()") in log_trail_native(caplog)
+
+
+async def test_unload_during_predawn_wait_leaves_valves_and_marker(freezer):
+    data = entry_data()
+    freezer.move_to("2026-07-01 23:00:00")
+    w = FakeWorld(freezer)
+    populate(w, data)
+    eng = native_scheduler(w, data)
+    gate = asyncio.Event()
+
+    async def blocking_sleep(_s):
+        await gate.wait()
+    eng.port.sleep = blocking_sleep
+    await eng.irrigation_nightly()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert eng.records["status"]["value"] == "waiting"
+    assert eng.run_task is not None and not eng._watering_active
+    before = list(w.calls)
+    await eng.async_shutdown()
+    assert eng.run_task is None
+    assert w.calls == before                       # no safety stop, nothing else
+    assert eng.store.read("waiting_marker") is not None   # startup can re-arm
+
+
+async def test_overlapping_starts_leave_exactly_one_run_last_caller_wins(freezer):
+    data = entry_data()
+    freezer.move_to("2026-07-02 12:00:00")
+    w = FakeWorld(freezer)
+    populate(w, data)
+    eng = native_scheduler(w, data)
+    events = []
+
+    async def fake_plan_and_run(wait, trigger):
+        events.append(("start", trigger))
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)             # a teardown that yields
+            events.append(("unwound", trigger))
+    eng._plan_and_run = fake_plan_and_run
+
+    def live():
+        return [t for t in asyncio.all_tasks()
+                if t.get_name() == "geodrops_rachio_run" and not t.done()]
+
+    await eng._start_run(True, "old")
+    await asyncio.sleep(0)
+    await asyncio.gather(eng._start_run(False, "A"), eng._start_run(False, "B"))
+    for _ in range(3):
+        await asyncio.sleep(0)
+    assert live() == [eng.run_task]
+    assert events == [("start", "old"), ("unwound", "old"), ("start", "B")]
+
+    # A cancel racing a start supersedes it: nothing survives.
+    await asyncio.gather(eng._start_run(False, "C"), eng._cancel_run())
+    for _ in range(3):
+        await asyncio.sleep(0)
+    assert live() == [] and eng.run_task is None
+    assert events[-1] == ("unwound", "B")
+
+
+async def test_crashed_run_and_startup_are_logged_at_once(freezer, caplog):
+    data = entry_data()
+    freezer.move_to("2026-07-02 12:00:00")
+    w = FakeWorld(freezer)
+    populate(w, data)
+    eng = native_scheduler(w, data)
+
+    async def boom(*_a):
+        raise RuntimeError("boom")
+    eng._plan_and_run = boom
+    eng._on_startup = boom
+    await eng.async_run_now()
+    await eng._on_ha_started(None)
+    tasks = [eng.run_task, eng.startup_task]
+    await asyncio.wait(tasks)
+    await asyncio.sleep(0)                     # done-callbacks run on the next tick
+    errors = [r for r in caplog.records
+              if r.name.startswith(ENGINE_LOGGER_PREFIX) and r.levelname == "ERROR"]
+    assert [r.getMessage() for r in errors] == [
+        "irrigation: geodrops_rachio_run failed (RuntimeError('boom'))",
+        "irrigation: geodrops_rachio_startup failed (RuntimeError('boom'))",
+    ]
+    assert all(r.exc_info and r.exc_info[1].args == ("boom",) for r in errors)
+    # Retrieved by the callback: no "never retrieved" when the tasks are collected.
+    eng.run_task = eng.startup_task = None
+    del tasks
+    gc.collect()
+    await asyncio.sleep(0)
+    assert "never retrieved" not in caplog.text
 
 
 async def test_shutdown_is_idempotent_and_skips_stop_when_idle(freezer):
