@@ -240,11 +240,11 @@ class PlanningMixin:
 
     def _read_zone_signals(self, zone):
         return sensors.ZoneSignals(
-            dominant=self.port.state(zone.dominant_sensor),
-            state=self.port.state(zone.state_sensor),
+            dominant=self._state_get(zone.dominant_sensor),
+            state=self._state_get(zone.state_sensor),
             # pyscript does not implement generator expressions (ast_generatorexp);
             # a list comprehension is supported and equivalent here.
-            qualities=tuple([self.port.state(q) for q in zone.quality_sensors]),
+            qualities=tuple([self._state_get(q) for q in zone.quality_sensors]),
         )
 
     def _sensor_last_updated(self, entity):
@@ -257,12 +257,12 @@ class PlanningMixin:
         settle_decision treats as "not fresh".
         """
         try:
-            return self.port.last_updated(entity)
+            return self._last_updated_get(entity)
         except Exception:
             return None
 
     def _dawn_time(self):
-        return dt.datetime.fromisoformat(self.port.state(self._current_bindings.sun.dawn))
+        return dt.datetime.fromisoformat(self._state_get(self._current_bindings.sun.dawn))
 
     def _end_anchor_time(self, anchor):
         """When the watering window must finish, for the given anchor.

@@ -55,6 +55,32 @@ class EngineBase:
     def _naive_now(self) -> dt.datetime:
         return self.port.now().replace(tzinfo=None)
 
+    def _state_get(self, entity_id: str):
+        """`self.port.state(entity_id)`, but RAISE `NameError(entity_id)` when the
+        entity does not exist — matching pyscript's `state.get`.
+
+        Use this (not `self.port.state`) at any ported call site whose legacy
+        `state.get(e)` is a BARE read: no enclosing `except NameError:` that turns
+        a missing entity into an explicit fallback. `self.port.state` degrading to
+        `None` there would silently change behaviour (e.g. a zone reading as
+        merely "unavailable" instead of aborting the run) instead of raising, same
+        as the legacy call would have, into whatever broader `except Exception`
+        (or nothing at all) was around it.
+        """
+        value = self.port.state(entity_id)
+        if value is None:
+            raise NameError(entity_id)
+        return value
+
+    def _last_updated_get(self, entity_id: str) -> dt.datetime:
+        """`self.port.last_updated(entity_id)`, but RAISE `NameError(entity_id)`
+        when the entity does not exist — the `.last_updated` counterpart to
+        `_state_get` (mirrors pyscript's `state.get(e + ".last_updated")`)."""
+        value = self.port.last_updated(entity_id)
+        if value is None:
+            raise NameError(entity_id)
+        return value
+
     def add_listener(self, cb: Callable[[], None]) -> Callable[[], None]:
         self._listeners.append(cb)
 

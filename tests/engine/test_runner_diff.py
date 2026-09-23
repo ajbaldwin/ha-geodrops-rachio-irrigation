@@ -133,3 +133,50 @@ async def test_runner_matches_legacy(freezer, name, collapse, caplog):
     assert nw.calls == legacy_calls(lw)
     assert (eng.api_calls, eng.state_polls) == (ns["api_calls"], ns["state_polls"])
     assert log_trail_native(caplog) == log_trail_legacy(lw)
+
+
+@pytest.mark.parametrize("collapse", [True, False], ids=["collapsed", "run_plan"])
+async def test_missing_zone_switch_raises_like_legacy(freezer, collapse, caplog):
+    """Legacy `poll_zone_running` (`state.get(zone_switch) == "on"`, legacy line
+    234) has NO `except NameError:` guard — a switch entity that does not exist
+    (e.g. a renamed/deleted Rachio zone switch) raises NameError straight out of
+    the poll-verify loop that runs before every block/segment, up through
+    `run_plan`/`run_collapsed`'s own `except Exception: stop_all(...); raise`.
+    Native must match: `poll_zone_running` uses `self._state_get`, not
+    `self.port.state` (which would silently read as "off" and water the other
+    zones as if nothing were wrong). See "Controller ruling (after Task 8):
+    missing entities" in global-constraints-and-port-rules.md.
+
+    "front"'s switch is the normal, populated entity; "back" is pointed at
+    "switch.ghost_zone", an entity nothing in this test ever registers (not
+    added to FakeWorld.rachio.zone_switches, never `set()`), so it genuinely
+    does not exist in the sim -- this is possible to construct (contra the
+    brief's "if it cannot occur in the sim, skip it" allowance), so it is
+    covered rather than skipped, for both runners.
+    """
+    caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
+    overrides = "" if collapse else "use_pause_collapse: false"
+    data = entry_data(overrides=overrides)
+    runner = "run_collapsed" if collapse else "run_plan"
+    switches = {"front": "switch.front_zone", "back": "switch.ghost_zone"}
+
+    lw, _lflags, lpreds = _setup_world(freezer, data, SCENARIOS["normal"], collapse)
+    ns = load_legacy(lw, build_config(data))
+    cfg = ns["config"].parse_config(build_config(data))
+    prime(ns, cfg)
+    with pytest.raises(NameError) as legacy_exc:
+        ns[runner](_slots(cfg), dict(switches), *lpreds)
+
+    nw, _nflags, npreds = _setup_world(freezer, data, SCENARIOS["normal"], collapse)
+    eng = native_engine(nw, data, RunnerMixin, IOMixin)
+    prime(eng, eng._load_cfg())
+    with pytest.raises(NameError) as native_exc:
+        await getattr(eng, runner)(_slots(eng._current_cfg), dict(switches), *npreds)
+
+    assert str(native_exc.value) == str(legacy_exc.value) == "switch.ghost_zone"
+    # Both sides run the SAME stop_all/stop_device cleanup out of their own
+    # `except Exception:` net before re-raising, so calls/counters/logs up to
+    # and including that cleanup must still match exactly.
+    assert nw.calls == legacy_calls(lw)
+    assert (eng.api_calls, eng.state_polls) == (ns["api_calls"], ns["state_polls"])
+    assert log_trail_native(caplog) == log_trail_legacy(lw)

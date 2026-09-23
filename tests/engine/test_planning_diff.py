@@ -85,7 +85,18 @@ async def test_plan_context_matches_legacy(freezer, name, caplog):
 
     # Per-scenario evidence: pin that the legacy run actually reached the
     # named condition, so no scenario silently degrades to "normal".
-    if name == "excluded":
+    if name == "normal":
+        # The baseline every other scenario is checked NOT to silently
+        # collapse into: both zones triggered (dominant 60 < floor 65), the
+        # overnight forecast sensors are present so the window cap comes from
+        # the forecast (not the instant fallback), neither zone has a live
+        # Rachio runtime so both fall back to the static config value, and
+        # nothing is uncompleted (no exclusion/offline/drop).
+        assert set(legacy_ctx["priority"]) == {"front", "back"}
+        assert legacy_ctx["cap_source"] == "forecast"
+        assert legacy_ctx["runtime_sources"] == {"front": "static", "back": "static"}
+        assert legacy_ctx["uncompleted"] == {}
+    elif name == "excluded":
         assert legacy_ctx["uncompleted"].get("back") == "excluded"
     elif name == "low_quality":
         assert legacy_ctx["uncompleted"].get("front") == "low_quality"
@@ -111,6 +122,42 @@ async def test_plan_context_matches_legacy(freezer, name, caplog):
     elif name == "level_4_emergency":
         assert legacy_ctx["level"] == "Level 4 - Emergency"
         assert legacy_ctx["priority"] == []
+
+
+async def test_plan_context_raises_on_missing_zone_sensor(freezer, caplog):
+    """Legacy `state.get` RAISES NameError for a nonexistent entity, and
+    `_read_zone_signals` (legacy lines 1183-1190) has no enclosing
+    `except NameError:` — the exception propagates all the way out of
+    `_plan_context` (into the nightly run's own abort handling), it does NOT
+    quietly mark the zone "unavailable" while the other zone still waters.
+    Native must match: `self._state_get` raises the same `NameError`, not
+    `self.port.state` returning None. See "Controller ruling (after Task 8):
+    missing entities" in global-constraints-and-port-rules.md.
+    """
+    caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
+    data = entry_data()
+    tweak = lambda w: w.remove("sensor.back_dominant")  # noqa: E731
+
+    lw = _world(freezer, data, tweak)
+    ns = load_legacy(lw, build_config(data), LegacyFiles())
+    cfg = ns["config"].parse_config(build_config(data))
+    prime(ns, cfg)
+    with pytest.raises(NameError) as legacy_exc:
+        ns["_plan_context"](cfg)
+
+    nw = _world(freezer, data, tweak)
+    eng = native_engine(nw, data, PlanningMixin, RunnerMixin, IOMixin)
+    ncfg = eng._load_cfg()
+    prime(eng, ncfg)
+    with pytest.raises(NameError) as native_exc:
+        await eng._plan_context(ncfg)
+
+    assert str(native_exc.value) == str(legacy_exc.value) == "sensor.back_dominant"
+    # Nothing had been called/logged before the raise on either side (the
+    # "front" zone processes cleanly first; "back" raises before any service
+    # call, log, or store write happens for it).
+    assert nw.calls == legacy_calls(lw) == []
+    assert log_trail_native(caplog) == log_trail_legacy(lw) == []
 
 
 async def test_is_rain_sustain_and_hail(freezer):

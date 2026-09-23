@@ -43,7 +43,7 @@ class IOMixin:
         calls that were never made.
         """
         self.state_polls += 1
-        return self.port.state(zone_switch) == "on"
+        return self._state_get(zone_switch) == "on"
 
     def any_zone_running(self, zone_switches):
         # pyscript has no generator expressions; use a list comprehension.
@@ -177,7 +177,7 @@ class IOMixin:
         so today's accumulation covers the run and its settling. Missing/non-numeric
         reads fail safe to False (don't discard the observation on a gauge glitch)."""
         try:
-            val = float(self.port.state(bindings.weather.rain_today))
+            val = float(self._state_get(bindings.weather.rain_today))
         except (TypeError, ValueError):
             return False
         return val > tun.rain_confounder_mm
