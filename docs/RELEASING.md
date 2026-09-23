@@ -105,9 +105,15 @@ app, kept only as the differential-test oracle (`tests/engine/` runs it
 side by side with the native engine against identical fixtures and asserts
 the same Rachio/notify/calendar/logbook calls, status transitions, and
 persisted state). It is not shipped, not imported by the integration, and
-not otherwise maintained. **It is deleted in the first release after
-v1.0.0** — once that's done, `tests/engine/`'s differential suite goes with
-it and the engine tests stand on their own fixtures.
+not otherwise maintained.
+
+**Keep it until the differential tests are replaced.** Most of the engine's
+coverage comes from them: without them `orchestration.py` falls from ~89% to
+~14% line coverage, `scheduler.py` to ~49% and `planning.py` to ~61%. Before
+deleting the oracle, freeze each scenario's legacy outputs into JSON fixtures
+and point the tests at those. The native-only tests (`test_runner.py`,
+`test_learning.py`, `test_lifecycle.py`, `test_waiting_marker.py`, ...) do not
+depend on the oracle.
 
 ## Sanity check before tagging
 
