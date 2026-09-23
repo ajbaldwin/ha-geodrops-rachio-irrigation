@@ -30,12 +30,25 @@ LEGACY_ENTITY_MAP = {
 
 def _alias_brain() -> None:
     """Make `import geodrops_rachio_lib.X` resolve to the SAME module objects the
-    native engine uses, so dataclasses from either side compare equal."""
+    native engine uses, so dataclasses from either side compare equal.
+
+    Force the assignment (not setdefault): tests/test_config_roundtrip.py adds
+    CC/bundled_app to sys.path and imports the REAL bundled geodrops_rachio_lib
+    package at module scope, which pytest loads during collection — before any
+    test body runs. If that import wins the race, `sys.modules["geodrops_rachio_lib"]`
+    already holds the bundled copy by the time this first runs, and a setdefault
+    would silently keep it, giving the legacy exec a *different* Config/Tunables/
+    etc. class than the native engine's — so `==` on any dataclass instance built
+    from each side (e.g. `_plan_context`'s "cfg"/"tun") is always False despite
+    identical field values. test_config_roundtrip.py binds its own `scheduler_config`
+    name at import time, so overwriting the sys.modules entry afterward does not
+    affect it.
+    """
     pkg = importlib.import_module("custom_components.geodrops_rachio.brain")
-    sys.modules.setdefault("geodrops_rachio_lib", pkg)
+    sys.modules["geodrops_rachio_lib"] = pkg
     for name in _BRAIN_MODULES:
         mod = importlib.import_module(f"custom_components.geodrops_rachio.brain.{name}")
-        sys.modules.setdefault(f"geodrops_rachio_lib.{name}", mod)
+        sys.modules[f"geodrops_rachio_lib.{name}"] = mod
 
 
 class LegacyFiles:
