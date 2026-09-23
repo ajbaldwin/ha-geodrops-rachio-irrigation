@@ -331,3 +331,28 @@ async def test_setup_survives_failing_pyscript_reload(
     assert entry.state is ConfigEntryState.LOADED
     assert not (ps / "geodrops_rachio.py").exists()
     assert any("pyscript.reload failed" in r.getMessage() for r in caplog.records)
+
+
+async def test_unload_stops_the_scheduler_before_its_platforms(
+        hass, enable_pyscript_and_rachio):
+    """The safety stop must run while the entities it reads still exist."""
+    entry = MockConfigEntry(domain=DOMAIN, data=DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    order = []
+    real_shutdown = scheduler.async_shutdown
+    real_unload = hass.config_entries.async_unload_platforms
+
+    async def shutdown():
+        order.append("scheduler")
+        await real_shutdown()
+
+    async def unload_platforms(*args):
+        order.append("platforms")
+        return await real_unload(*args)
+
+    with patch.object(scheduler, "async_shutdown", shutdown), \
+            patch.object(hass.config_entries, "async_unload_platforms", unload_platforms):
+        assert await hass.config_entries.async_unload(entry.entry_id)
+    assert order[:2] == ["scheduler", "platforms"]

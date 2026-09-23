@@ -385,3 +385,45 @@ async def test_zone_device_uses_friendly_name(hass, enable_pyscript_and_rachio):
     await hass.async_block_till_done()
     device = zone_device(hass, entry, "front_slope")
     assert device is not None and device.name == "Front Slope"
+
+
+@pytest.mark.parametrize("key, method", [
+    ("preview", "async_preview"), ("refresh_runtimes", "async_refresh_runtimes")])
+async def test_long_action_buttons_run_in_the_background(
+        hass, enable_pyscript_and_rachio, key, method):
+    import asyncio
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    release, finished = asyncio.Event(), asyncio.Event()
+
+    async def slow():
+        await release.wait()
+        finished.set()
+    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    with patch.object(scheduler, method, slow):
+        # A blocking press returns while the action is still running (were it
+        # awaited inline, the press would hang until the timeout fails it).
+        await asyncio.wait_for(hass.services.async_call(
+            "button", "press", {"entity_id": f"button.geodrops_rachio_{key}"},
+            blocking=True), 5)
+        assert not finished.is_set()
+        release.set()
+        await hass.async_block_till_done()
+    assert finished.is_set()
+
+
+@pytest.mark.parametrize("entity_id", [
+    "sensor.geodrops_rachio_last_nightly", "sensor.geodrops_rachio_last_run",
+    "sensor.geodrops_rachio_plan"])
+async def test_record_sensor_attributes_stay_out_of_the_recorder(
+        hass, enable_pyscript_and_rachio, entity_id):
+    from homeassistant.const import MATCH_ALL
+    from homeassistant.helpers.entity_component import DATA_INSTANCES
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    entity = hass.data[DATA_INSTANCES]["sensor"].get_entity(entity_id)
+    assert MATCH_ALL in entity._state_info["unrecorded_attributes"]

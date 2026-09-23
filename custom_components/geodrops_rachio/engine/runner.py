@@ -69,10 +69,11 @@ class RunnerMixin:
 
         A block is a maximal run of back-to-back watering slots; Rachio runs the
         whole block from one call while the engine waits and watches. Idle soak
-        slots are the engine sleeping with nothing running. The happy path issues NO stop at
-        all — the block simply ends when its last zone's minutes are up. Stops are
-        reserved for aborts, which is both correct and the reason the operator gets
-        a couple of Rachio notifications a night instead of dozens.
+        slots are the engine sleeping with nothing running. The happy path issues
+        NO stop at all — the block simply ends when its last zone's minutes are
+        up. Stops are reserved for aborts, which is both correct and the reason
+        the operator gets a couple of Rachio notifications a night instead of
+        dozens.
         """
         watered = []
         delivered = {}
