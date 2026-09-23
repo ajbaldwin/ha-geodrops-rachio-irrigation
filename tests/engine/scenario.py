@@ -1,6 +1,7 @@
 """Synthetic install used by every engine scenario (no real yard data)."""
 from __future__ import annotations
 
+import asyncio
 import copy
 
 from custom_components.geodrops_rachio.config_writer import build_config
@@ -102,3 +103,12 @@ from custom_components.geodrops_rachio.engine.planning import PlanningMixin  # n
 from custom_components.geodrops_rachio.engine.runner import RunnerMixin  # noqa: E402
 
 ALL_MIXINS = (LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin, IOMixin)
+
+from custom_components.geodrops_rachio.engine.scheduler import Scheduler  # noqa: E402
+
+
+def native_scheduler(world, data, docs=None):
+    loop = asyncio.get_running_loop()
+    return Scheduler(FakePort(world), EngineStore(docs or {}, _nosave),
+                     lambda: build_config(data), fake_fetch(world),
+                     lambda coro, name: loop.create_task(coro, name=name))
