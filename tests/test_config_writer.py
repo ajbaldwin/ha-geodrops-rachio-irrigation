@@ -161,3 +161,23 @@ def test_existing_exclude_boolean_is_preserved():
             "self_calibration_enabled": False, "advanced_overrides": ""}
     raw = yaml.safe_load(generate_config(data))
     assert raw["zones"]["z"]["exclude_boolean"] == "input_boolean.custom"
+
+
+def test_build_config_matches_generated_yaml():
+    from custom_components.geodrops_rachio.config_writer import build_config
+    assert build_config(BASE) == yaml.safe_load(generate_config(BASE))
+
+
+def test_build_config_parses_with_brain():
+    from custom_components.geodrops_rachio.brain import config as brain_config
+    from custom_components.geodrops_rachio.config_writer import build_config
+    cfg = brain_config.parse_config(build_config(BASE))
+    assert cfg.zones["front"].rachio_switch == "switch.front"
+    assert cfg.bindings.notify_service == "notify.phone"
+
+
+def test_build_config_returns_fresh_dict_each_call():
+    from custom_components.geodrops_rachio.config_writer import build_config
+    first = build_config(BASE)
+    first["zones"]["front"]["rachio_switch"] = "mutated"
+    assert build_config(BASE)["zones"]["front"]["rachio_switch"] == "switch.front"

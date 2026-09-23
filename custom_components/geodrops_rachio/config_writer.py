@@ -74,7 +74,7 @@ def _deep_merge(base: dict, overlay: dict) -> dict:
     return out
 
 
-def generate_config(data: dict) -> str:
+def build_config(data: dict) -> dict:
     tunables = dict(_DEFAULT_TUNABLES)
     tunables["self_calibration_enabled"] = bool(data.get("self_calibration_enabled"))
     drought_profiles = _copy_drought_profiles()
@@ -116,4 +116,9 @@ def generate_config(data: dict) -> str:
         "drought_profiles": drought_profiles,
         "zones": zones,
     }
-    return GENERATED_HEADER + yaml.safe_dump(doc, sort_keys=False, default_flow_style=False)
+    return doc
+
+
+def generate_config(data: dict) -> str:
+    return GENERATED_HEADER + yaml.safe_dump(
+        build_config(data), sort_keys=False, default_flow_style=False)
