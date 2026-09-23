@@ -4,13 +4,13 @@ import yaml
 from .util import slug
 
 # Defaults the wizard does not collect; the scheduler also has code defaults,
-# but emitting them keeps the generated file self-describing.
+# but emitting them keeps the built config self-describing.
 _DEFAULT_TUNABLES = {
     "self_calibration_enabled": False,
 }
 
 # Soil-moisture bands. The scheduler's parse_config direct-indexes raw["bands"],
-# so a generated config without this section is a KeyError on a real run. Values
+# so a built config without this section is a KeyError on a real run. Values
 # copied verbatim from the canonical scheduler's examples/config.example.yaml
 # (agronomy, not site-specific — the wizard does not collect them). `low` is
 # inclusive, `high` exclusive except the top band's inclusive 100.

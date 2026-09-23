@@ -80,7 +80,7 @@ class IOMixin:
 
         HA rachio.pause_watering caps duration at 60 min and auto-resumes; we clamp
         and rely on an explicit resume for exact soak length, with the duration as a
-        crash backstop so a dead pyscript cannot leave the device paused forever.
+        crash backstop so a crashed HA cannot leave the device paused forever.
         """
         self.api_calls += 1
         await self.port.call(

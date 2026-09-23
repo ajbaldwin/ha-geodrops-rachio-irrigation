@@ -1,6 +1,5 @@
 import copy
 
-import pytest
 
 from custom_components.geodrops_rachio.engine import store as es
 from custom_components.geodrops_rachio.engine.io import IOMixin
