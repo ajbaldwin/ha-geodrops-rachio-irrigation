@@ -1,6 +1,6 @@
 """The Scheduler: every engine mixin composed, plus triggers and lifecycle.
 
-Ported from bundled_app/geodrops_rachio.py lines 2461-2464 and 2604-2847
+Ported from tests/legacy/geodrops_rachio_legacy.py lines 2461-2464 and 2604-2847
 (triggers, startup recovery, services), with pyscript's task.unique replaced by
 one owned run task.
 """

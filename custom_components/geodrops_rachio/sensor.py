@@ -4,7 +4,7 @@ import logging
 from homeassistant.components.sensor import (
     SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.const import (
-    PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfLength)
+    MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfLength)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -52,9 +52,9 @@ def _pretty_status(value):
     "no_rise", "recalibrating"); shown raw they read as "calibrating", not
     "Calibrating". Title-case with underscores turned to spaces so both single
     words and multi-word tokens read cleanly, and pass non-strings through
-    unchanged. Nothing consumes the lowercase form (the config dashboards read
-    the pyscript.* source entities, not these sensors), so this only affects how
-    the state is displayed.
+    unchanged. Nothing consumes the lowercase form (the raw token is on the
+    status sensor's `status` attribute), so this only affects how the state is
+    displayed.
     """
     if not isinstance(value, str) or not value:
         return value
@@ -272,45 +272,85 @@ class ZoneDeficitSensor(SensorEntity):
             self.async_write_ha_state()
 
 
-STATUS_ENTITY = "pyscript.geodrops_rachio_status"
-
-
 class SchedulerStatusSensor(SensorEntity):
-    """Surfaces the scheduler's overall status (idle / planning / waiting /
-    watering / standby / skipped / aborted) on the main device, mirroring the
-    scheduler's own pyscript.geodrops_rachio_status entity."""
+    """The scheduler's overall status (idle / planning / waiting / watering /
+    standby / skipped / aborted) on the main device."""
 
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_name = "Status"
     _attr_icon = "mdi:sprinkler"
 
-    def __init__(self, entry) -> None:
+    def __init__(self, entry, scheduler) -> None:
         self._attr_unique_id = f"{entry.entry_id}_status"
         self.entity_id = ENTITY_ID_FORMAT.format("geodrops_rachio_status")
         self._attr_device_info = device_info(entry)
+        self._scheduler = scheduler
 
     async def async_added_to_hass(self) -> None:
         @callback
-        def _mirror(event=None) -> None:
-            st = self.hass.states.get(STATUS_ENTITY)
-            # "Idle"/"Watering"/"Waiting" rather than the raw lowercase token.
-            self._attr_native_value = _pretty_status(st.state) if st else None
+        def _update() -> None:
+            rec = self._scheduler.records.get("status")
+            attrs = rec["attributes"] if rec else {}
+            raw = rec["value"] if rec else None
+            self._attr_native_value = _pretty_status(raw)
             self._attr_extra_state_attributes = {
-                "detail": st.attributes.get("detail") if st else None,
-                "updated": st.attributes.get("updated") if st else None,
-            }
+                "status": raw, "detail": attrs.get("detail"),
+                "updated": attrs.get("updated")}
             self.async_write_ha_state()
-        self.async_on_remove(async_track_state_change_event(
-            self.hass, [STATUS_ENTITY], _mirror))
-        _mirror()
+        self.async_on_remove(self._scheduler.add_listener(_update))
+        _update()
+
+
+# (record name, entity suffix, display name, icon)
+_RECORDS = [
+    ("last_nightly", "last_nightly", "Last nightly run", "mdi:weather-night"),
+    ("last_run", "last_run", "Last run", "mdi:history"),
+    ("preview", "plan", "Plan", "mdi:eye-outline"),
+]
+
+
+class RecordSensor(SensorEntity):
+    """One scheduler record: value as state, full record as attributes
+    (same attribute names the pyscript.* entity carried, minus friendly_name).
+    Attributes stay out of the recorder — they can be large."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({MATCH_ALL})
+
+    def __init__(self, entry, scheduler, record, suffix, name, icon) -> None:
+        self._attr_unique_id = f"{entry.entry_id}_record_{record}"
+        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{suffix}")
+        self._attr_name = name
+        self._attr_icon = icon
+        self._attr_device_info = device_info(entry)
+        self._scheduler = scheduler
+        self._record = record
+
+    async def async_added_to_hass(self) -> None:
+        @callback
+        def _update() -> None:
+            rec = self._scheduler.records.get(self._record)
+            if rec is None:
+                self._attr_native_value = None
+                self._attr_extra_state_attributes = {}
+            else:
+                self._attr_native_value = rec["value"]
+                self._attr_extra_state_attributes = {
+                    k: v for k, v in rec["attributes"].items() if k != "friendly_name"}
+            self.async_write_ha_state()
+        self.async_on_remove(self._scheduler.add_listener(_update))
+        _update()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     weather = entry.data.get("bindings", {}).get("weather", {})
     forecast_entity = entry.data.get("bindings", {}).get("forecast_entity")
-    entities: list[SensorEntity] = [SchedulerStatusSensor(entry)]
+    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    entities: list[SensorEntity] = [SchedulerStatusSensor(entry, scheduler)]
+    entities += [RecordSensor(entry, scheduler, *r) for r in _RECORDS]
     for key, field, unit in _FIELDS:
         entities.append(ObservedOvernightSensor(
             entry, key, weather.get(field if field != "wind_speed" else "wind"), unit))

@@ -1,8 +1,8 @@
 """Config flow (setup wizard) and options flow for GeoDrops + Rachio.
 
 The wizard COLLECTS external Home Assistant entities from the user, then
-ASSEMBLES the complete `bindings` dict that `config_writer.generate_config`
-(frozen) dumps verbatim into the generated `config.yaml`'s `homeassistant:`
+ASSEMBLES the complete `bindings` dict that `config_writer.build_config`
+(frozen) places verbatim in the scheduler config's `homeassistant:`
 section. That section must match the scheduler's real `HABindings` /
 `parse_bindings` schema, so the assembled dict also folds in:
   - fixed, integration-owned entity ids (native entities + derived sensors
@@ -23,7 +23,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import aiohttp_client, selector
 
 from .const import DOMAIN
-from .config_writer import generate_config
+from .config_writer import build_config
 from .rachio_client import (
     async_fetch_device_zones,
     async_fetch_devices,
@@ -33,7 +33,7 @@ from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
 
-REQUIRED_COMPONENTS = ("pyscript", "rachio")
+REQUIRED_COMPONENTS = ("rachio",)
 
 # Sentinel option in the Rachio-zone picker for a zone that isn't in Rachio
 # (e.g. a hose/spray zone) or when the user prefers to type the numbers.
@@ -731,9 +731,9 @@ class _BindingsWizardSteps:
                     self._data, self_calibration_enabled=calib,
                     advanced_overrides=overrides)
                 try:
-                    # generate_config is the single source of override validation
+                    # build_config is the single source of override validation
                     # (raises ValueError on non-YAML / non-mapping overrides).
-                    generate_config(trial)
+                    build_config(trial)
                 except ValueError:
                     errors["advanced_overrides"] = "invalid_advanced_overrides"
                 else:

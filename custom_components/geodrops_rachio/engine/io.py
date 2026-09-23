@@ -1,6 +1,6 @@
 """Rachio zone I/O, the runtime cache and calibration-document access.
 
-Ported from bundled_app/geodrops_rachio.py lines 215-520 (the app's
+Ported from tests/legacy/geodrops_rachio_legacy.py lines 215-520 (the app's
 @pyscript_compile file/HTTP helpers at 325-396 are gone: persistence is the
 EngineStore and the Rachio fetch is injected as `fetch_zone_data`).
 """

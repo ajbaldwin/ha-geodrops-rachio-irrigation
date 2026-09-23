@@ -1,6 +1,19 @@
+from types import SimpleNamespace
+
 from custom_components.geodrops_rachio.coordinator import (
-    parse_last_nightly, parse_efficacy, parse_nightly_calibration,
-    parse_refill_depth, format_calibration_status)
+    ZoneStateCoordinator, parse_last_nightly, parse_efficacy,
+    parse_nightly_calibration, parse_refill_depth, format_calibration_status)
+from custom_components.geodrops_rachio.engine.store import EngineStore
+
+
+async def _nosave(_docs):
+    return None
+
+
+def _scheduler_stub(records=None, docs=None):
+    return SimpleNamespace(records=records or {},
+                           store=EngineStore(docs or {}, _nosave),
+                           add_listener=lambda cb: (lambda: None))
 
 
 def test_format_calibration_status():
@@ -98,8 +111,7 @@ def test_parse_efficacy_extracts_zone():
 
 
 def test_remove_listener_stops_callbacks():
-    from custom_components.geodrops_rachio.coordinator import ZoneStateCoordinator
-    c = ZoneStateCoordinator(None, None)
+    c = ZoneStateCoordinator(None, None, _scheduler_stub())
     calls = []
     cb = lambda: calls.append(1)
     c.add_listener(cb)
@@ -109,3 +121,26 @@ def test_remove_listener_stops_callbacks():
     c._notify()
     assert calls == [1]  # no further callbacks after removal
     c.remove_listener(lambda: None)  # removing an unknown cb is a no-op
+
+
+def test_data_for_reads_scheduler_records(hass):
+    entry = SimpleNamespace(data={"zones": [{"key": "front", "rachio_zone_id": "z1",
+                                             "refill_depth_mm": 7.0}]})
+    sched = _scheduler_stub(
+        records={
+            "last_nightly": {"value": 1, "attributes": {
+                "watered": ["front"], "delivered_minutes": {"front": 42.0},
+                "end_iso": "2026-09-13T06:00:00+00:00",
+                "calibration": {"front": {"state": "calibrating", "n_obs": 2}}}},
+            "targets": {"value": 1, "attributes": {"target_floors": {"front": 65.0}}},
+            "runtimes": {"value": 1, "attributes": {"refill_depths_mm": {"z1": 8.5}}},
+            "preview": {"value": 1, "attributes": {"planned_minutes": {"front": 30}}},
+        },
+        docs={"efficacy": {"front": {"efficacy": 0.4}}})
+    out = ZoneStateCoordinator(hass, entry, sched).data_for("front")
+    assert out["last_delivered_runtime"] == 42.0
+    assert out["target_floor"] == 65.0
+    assert out["refill_depth"] == 8.5
+    assert out["planned_runtime"] == 30
+    assert out["efficacy"] == 0.4
+    assert out["calibration_state"] == "Calibrating (2/3)"

@@ -1,32 +1,57 @@
-import pathlib
+import logging
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from . import config_writer, rachio_client
 from .const import DOMAIN, PLATFORMS
+from .coordinator import ZoneStateCoordinator
+from .engine.port import HassPort
+from .engine.scheduler import Scheduler
+from .engine.store import async_open_store
 from .util import slug
-from . import delivery, updater
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    pyscript_dir = pathlib.Path(hass.config.path("pyscript"))
-    bundled_dir = pathlib.Path(__file__).parent / "bundled_app"
+    data = dict(entry.data)
     try:
-        await delivery.async_deliver(
-            hass, dict(entry.data), pyscript_dir=pyscript_dir, bundled_dir=bundled_dir)
-    except ValueError as err:  # invalid advanced_overrides
+        config_writer.build_config(data)  # validates advanced_overrides
+    except ValueError as err:
         raise ConfigEntryNotReady(str(err)) from err
 
-    from .coordinator import ZoneStateCoordinator
-    coordinator = ZoneStateCoordinator(hass, entry)
-    await coordinator.async_start()
+    store = await async_open_store(hass, entry.entry_id)
+    session = async_get_clientsession(hass)
+
+    async def fetch_zone_data(key_name: str):
+        key = await rachio_client.resolve_secret(hass, key_name)
+        if not key:
+            _LOGGER.warning(
+                "irrigation: no %s in secrets.yaml; using static values", key_name)
+            return {}, {}, {}
+        return await rachio_client.async_fetch_zone_data(session, key)
+
+    scheduler = Scheduler(
+        HassPort(hass), store, lambda: config_writer.build_config(data),
+        fetch_zone_data,
+        lambda coro, name: entry.async_create_background_task(hass, coro, name))
+    coordinator = ZoneStateCoordinator(hass, entry, scheduler)
+    coordinator.async_start()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "data": dict(entry.data), "coordinator": coordinator}
+        "data": data, "coordinator": coordinator, "scheduler": scheduler}
     entry.async_on_unload(coordinator.async_stop)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(updater.async_register_update_listener(hass, entry))
+    scheduler.async_start(hass)
+
+    async def _on_stop(_event) -> None:
+        await scheduler.async_shutdown()
+
+    entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _on_stop))
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
     _purge_orphan_zone_devices(hass, entry)
     return True
@@ -55,6 +80,9 @@ async def _reload_on_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    stored = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if stored is not None:
+        await stored["scheduler"].async_shutdown()
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)

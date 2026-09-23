@@ -1,28 +1,13 @@
 from __future__ import annotations
 
-import datetime as dt
-import json
 import logging
 
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import (
-    async_track_state_change_event, async_track_time_interval)
 
 from .const import DOMAIN
+from .engine.store import EFFICACY
 
 _LOGGER = logging.getLogger(__name__)
-
-LAST_NIGHTLY_ENTITY = "pyscript.geodrops_rachio_last_nightly"
-PREVIEW_ENTITY = "pyscript.geodrops_rachio_preview"
-# Published by the scheduler's refresh_runtimes service (the Refresh Runtimes
-# button): a live Rachio pull, keyed by rachio_zone_id.
-RUNTIMES_ENTITY = "pyscript.geodrops_rachio_runtimes"
-# Per-zone effective target floors, published by the scheduler at startup and
-# each nightly (persisted, so available right after a restart).
-TARGETS_ENTITY = "pyscript.geodrops_rachio_targets"
-STATE_DIRNAME = "geodrops_rachio_state"
-EFFICACY_STATE_FILE = "irrigation_efficacy.json"
-_FILE_REFRESH = dt.timedelta(hours=1)
 
 # Scheduler default `convergence_samples` — the accepted-probe count a zone needs
 # to converge. Only the denominator of a progress hint; a rare advanced override
@@ -112,17 +97,14 @@ def parse_efficacy(store: dict, key: str) -> dict:
 
 
 class ZoneStateCoordinator:
-    """Fans the scheduler's published state + efficacy file out to per-zone sensors."""
+    """Fans the scheduler's records + efficacy document out to per-zone sensors."""
 
-    def __init__(self, hass: HomeAssistant, entry) -> None:
+    def __init__(self, hass: HomeAssistant, entry, scheduler) -> None:
         self.hass = hass
         self.entry = entry
-        self._efficacy: dict = {}
+        self._scheduler = scheduler
         self._listeners: list = []
-        self._unsubs: list = []
-
-    def _efficacy_path(self) -> str:
-        return self.hass.config.path("pyscript", STATE_DIRNAME, EFFICACY_STATE_FILE)
+        self._unsub = None
 
     def add_listener(self, cb) -> None:
         self._listeners.append(cb)
@@ -133,36 +115,40 @@ class ZoneStateCoordinator:
 
     @callback
     def _notify(self) -> None:
-        for cb in self._listeners:
+        for cb in list(self._listeners):
             cb()
+
+    def _attrs(self, name: str) -> dict | None:
+        rec = self._scheduler.records.get(name)
+        return rec["attributes"] if rec is not None else None
 
     def data_for(self, key: str) -> dict:
         out = {"planned_runtime": None, "last_delivered_runtime": None,
                "last_watered": None, "efficacy": None, "calibration_state": None,
                "refill_depth": None, "target_floor": None}
-        ln = self.hass.states.get(LAST_NIGHTLY_ENTITY)
+        ln = self._attrs("last_nightly")
         if ln is not None:
-            out.update(parse_last_nightly(ln.attributes, key))
+            out.update(parse_last_nightly(ln, key))
         # Effective target floor (need-water line) for the live Deficit sensor.
-        tg = self.hass.states.get(TARGETS_ENTITY)
+        tg = self._attrs("targets")
         if tg is not None:
-            out["target_floor"] = (tg.attributes.get("target_floors") or {}).get(key)
+            out["target_floor"] = (tg.get("target_floors") or {}).get(key)
         # Refill depth: config snapshot from the wizard, overlaid with the live
         # Rachio value when a refresh has published it.
         zcfg = next((z for z in self.entry.data.get("zones", [])
                      if z.get("key") == key), {})
-        rt = self.hass.states.get(RUNTIMES_ENTITY)
+        rt = self._attrs("runtimes")
         out.update(parse_refill_depth(
-            rt.attributes if rt is not None else {},
+            rt if rt is not None else {},
             zcfg.get("rachio_zone_id", ""), zcfg.get("refill_depth_mm")))
-        pv = self.hass.states.get(PREVIEW_ENTITY)
+        pv = self._attrs("preview")
         if pv is not None:
-            out.update(parse_preview(pv.attributes, key))
-        out.update(parse_efficacy(self._efficacy, key))
+            out.update(parse_preview(pv, key))
+        out.update(parse_efficacy(self._scheduler.store.read(EFFICACY) or {}, key))
         # The live nightly calibration wins over the file where it has a value:
         # the file carries no `state` for these zones (only excluded_since).
         if ln is not None:
-            cal = parse_nightly_calibration(ln.attributes, key)
+            cal = parse_nightly_calibration(ln, key)
             if cal["calibration_state"] is not None:
                 out["calibration_state"] = cal["calibration_state"]
                 # Take progress + reject reason from the same source as the state.
@@ -177,38 +163,12 @@ class ZoneStateCoordinator:
             out.pop("last_reject_reason", None))
         return out
 
-    async def async_refresh_file(self, _now=None) -> None:
-        path = self._efficacy_path()
-
-        def _read():
-            try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    data = json.load(fh)
-                return data if isinstance(data, dict) else {}
-            except (OSError, ValueError) as err:
-                _LOGGER.debug("Could not read efficacy file %s: %s", path, err)
-                return {}
-
-        self._efficacy = await self.hass.async_add_executor_job(_read)
-        self._notify()
-
-    async def async_start(self) -> None:
-        await self.async_refresh_file()
-
-        @callback
-        def _on_entity(_event):
-            # last_nightly change usually means calibration ran too -> reread file.
-            self.hass.async_create_task(self.async_refresh_file())
-
-        self._unsubs.append(async_track_state_change_event(
-            self.hass,
-            [LAST_NIGHTLY_ENTITY, PREVIEW_ENTITY, RUNTIMES_ENTITY, TARGETS_ENTITY],
-            _on_entity))
-        self._unsubs.append(async_track_time_interval(
-            self.hass, self.async_refresh_file, _FILE_REFRESH))
+    @callback
+    def async_start(self) -> None:
+        self._unsub = self._scheduler.add_listener(self._notify)
 
     @callback
     def async_stop(self) -> None:
-        for unsub in self._unsubs:
-            unsub()
-        self._unsubs.clear()
+        if self._unsub is not None:
+            self._unsub()
+            self._unsub = None

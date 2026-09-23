@@ -1,6 +1,6 @@
 """The nightly run end to end: plan, wait, re-check, water, record, recap.
 
-Ported from bundled_app/geodrops_rachio.py lines 1574-1713 and 1755-2367.
+Ported from tests/legacy/geodrops_rachio_legacy.py lines 1574-1713 and 1755-2367.
 """
 from __future__ import annotations
 

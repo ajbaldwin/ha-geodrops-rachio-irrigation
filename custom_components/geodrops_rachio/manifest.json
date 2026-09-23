@@ -1,9 +1,6 @@
 {
   "domain": "geodrops_rachio",
   "name": "GeoDrops + Rachio Irrigation",
-  "after_dependencies": [
-    "pyscript"
-  ],
   "codeowners": [
     "@ajbaldwin"
   ],

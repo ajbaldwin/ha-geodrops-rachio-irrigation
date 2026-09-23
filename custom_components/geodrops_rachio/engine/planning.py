@@ -1,6 +1,6 @@
 """Planning: abort predicates, sensor/weather/sun reads, and the nightly plan.
 
-Ported from bundled_app/geodrops_rachio.py lines 941-1532 and 1716-1752.
+Ported from tests/legacy/geodrops_rachio_legacy.py lines 941-1532 and 1716-1752.
 """
 from __future__ import annotations
 
