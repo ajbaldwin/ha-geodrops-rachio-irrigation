@@ -39,6 +39,31 @@ def status_trail_native(engine) -> list:
     return [(v, a.get("detail")) for n, v, a in engine.record_history if n == "status"]
 
 
+# The package every engine module's `_LOGGER = logging.getLogger(__name__)` lands
+# under (runner.py -> "...engine.runner", io.py -> "...engine.io", etc).
+ENGINE_LOGGER_PREFIX = "custom_components.geodrops_rachio.engine"
+
+
+def log_trail_legacy(world) -> list:
+    """(level, message) pairs the legacy app logged via `log.<level>`."""
+    return list(world.logs)
+
+
+def log_trail_native(caplog) -> list:
+    """(level, message) pairs the native engine logged via `_LOGGER`.
+
+    Restricted to the engine package's own loggers so caplog picking up an
+    unrelated warning (pytest plugins, other components) can't cause a false
+    mismatch. Level is lower-cased to match the legacy harness's `log.warning`
+    -> `("warning", msg)` convention.
+    """
+    return [
+        (record.levelname.lower(), record.getMessage())
+        for record in caplog.records
+        if record.name.startswith(ENGINE_LOGGER_PREFIX)
+    ]
+
+
 def assert_same_effects(lw, lfiles, nw, eng) -> None:
     assert legacy_calls(lw) == nw.calls
     assert status_trail_legacy(lw) == status_trail_native(eng)
