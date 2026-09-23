@@ -4,9 +4,9 @@ The whole night becomes a single ordered program: water steps feed one
 `start_multiple_zone_schedule` call; idle soak slots become pause steps the
 executor turns into device pauses that keep that one schedule alive.
 """
-from geodrops_rachio_lib import program
-from geodrops_rachio_lib.blocks import ZoneRun
-from geodrops_rachio_lib.plan import Slot
+from brain import program
+from brain.blocks import ZoneRun
+from brain.plan import Slot
 
 
 def test_watering_slots_become_water_steps_in_order():

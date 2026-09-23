@@ -1,4 +1,4 @@
-from geodrops_rachio_lib import config, drought
+from brain import config, drought
 
 ZONE = config.ZoneConfig(
     key="z", rachio_switch="s", dominant_sensor="d", state_sensor="st",
@@ -15,7 +15,7 @@ BANDS = {
 def test_emergency_profile_never_waters():
     # Level 4 - Emergency: offset -2 puts a `moist` zone in the `dry` band, whose
     # low is 0, so the floor is 0 and `dominant < floor` can never be true.
-    from geodrops_rachio_lib import evaluate, sensors
+    from brain import evaluate, sensors
 
     p = config.DroughtProfile(target_offset=-2, trigger_margin=0, runtime_scale=0.5)
     t = drought.effective_target(ZONE, BANDS, p)

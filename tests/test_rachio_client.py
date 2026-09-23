@@ -1,6 +1,6 @@
-"""Unit tests for the pure pieces of rachio_client: zone parsing and secret
-resolution. The async HTTP fetch is exercised through the config-flow tests
-(with a mocked session), not here."""
+"""Unit tests for rachio_client: zone parsing and secret resolution, plus the
+engine's zone-data fetch (against a mocked aiohttp session). The wizard's async
+fetches are exercised through the config-flow tests."""
 from custom_components.geodrops_rachio.rachio_client import (
     parse_devices,
     parse_zones,
@@ -86,3 +86,18 @@ def test_resolve_secret_text_malformed_returns_none():
 def test_resolve_secret_text_non_string_value_returns_none():
     """A non-scalar/non-string secret value is not a usable API key."""
     assert resolve_secret_text("rachio_api_key:\n  - 1\n", "rachio_api_key") is None
+
+
+async def test_async_fetch_zone_data(hass, aioclient_mock):
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from custom_components.geodrops_rachio.rachio_client import (
+        RACHIO_BASE, async_fetch_zone_data)
+    aioclient_mock.get(RACHIO_BASE + "person/info", json={"id": "p1"})
+    aioclient_mock.get(RACHIO_BASE + "person/p1", json={"devices": [{"id": "d1"}]})
+    aioclient_mock.get(RACHIO_BASE + "device/d1", json={"zones": [
+        {"id": "z1", "runtime": 1800, "depthOfWater": 0.5, "enabled": True}]})
+    runtimes, depths, spans = await async_fetch_zone_data(
+        async_get_clientsession(hass), "key")
+    assert runtimes == {"z1": 30.0}
+    assert round(depths["z1"], 1) == 12.7
+    assert isinstance(spans, dict)

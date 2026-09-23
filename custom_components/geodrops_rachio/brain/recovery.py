@@ -85,4 +85,7 @@ def startup_action(marker, now_iso):
         now = datetime.datetime.fromisoformat(now_iso)
     except (KeyError, TypeError, ValueError):
         return IGNORE
-    return RE_ARM if now < window_end else MISSED
+    # window_end comes from the tz-aware sun sensor; now may be naive local time.
+    # Compare both as aware local times (a naive value is taken as local) —
+    # comparing naive with aware raises TypeError and lost the night (<= v0.9.15).
+    return RE_ARM if now.astimezone() < window_end.astimezone() else MISSED

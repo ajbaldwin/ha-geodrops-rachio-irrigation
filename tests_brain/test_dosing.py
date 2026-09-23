@@ -1,4 +1,4 @@
-from geodrops_rachio_lib import dosing
+from brain import dosing
 
 
 def dose(**kw):

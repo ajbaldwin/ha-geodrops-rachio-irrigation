@@ -1,36 +1,20 @@
-"""End-to-end: the wizard's generated config must load in the REAL scheduler.
+"""End-to-end: the wizard's config must load in the REAL scheduler parser.
 
-The mocked suite never fed generate_config's output through the actual
+The mocked suite never fed the config writer's output through the actual
 scheduler parser, which is exactly why C1 (missing bands/drought_profiles)
 slipped through. This test closes that gap: it assembles a realistic
 ConfigEntry data dict the way the config flow does, runs it through
-generate_config, then parses the result with the VENDORED scheduler's
-geodrops_rachio_lib.config — the same code that will run on the box.
+build_config, then parses the result with the native engine's
+brain.config — the same code that runs on the box.
 """
-import pathlib
-import sys
-
-import yaml
-
-from custom_components.geodrops_rachio.config_writer import generate_config
+from custom_components.geodrops_rachio.brain import config as scheduler_config
+from custom_components.geodrops_rachio.config_writer import build_config
 from custom_components.geodrops_rachio.config_flow import (
     _assemble_bindings,
     FIXED_BINDINGS,
     FIXED_DERIVED,
     SUN_DEFAULTS,
 )
-
-# Import the VENDORED scheduler lib (the bytes that ship on the box), not the
-# canonical source tree. geodrops_rachio_lib is pure Python (dataclasses + yaml, no
-# pyscript globals), so it imports fine once its parent dir is on sys.path.
-_BUNDLED = (
-    pathlib.Path(__file__).resolve().parent.parent
-    / "custom_components" / "geodrops_rachio" / "bundled_app"
-)
-if str(_BUNDLED) not in sys.path:
-    sys.path.insert(0, str(_BUNDLED))
-
-from geodrops_rachio_lib import config as scheduler_config  # noqa: E402
 
 
 def _wizard_data() -> dict:
@@ -87,8 +71,8 @@ def _wizard_data() -> dict:
     }
 
 
-def test_generated_config_parses_in_vendored_scheduler():
-    raw = yaml.safe_load(generate_config(_wizard_data()))
+def test_built_config_parses_in_scheduler():
+    raw = build_config(_wizard_data())
 
     # parse_config direct-indexes raw["bands"], raw["drought_profiles"],
     # raw["zones"][*] — a missing section is a KeyError on a real run.
@@ -108,7 +92,7 @@ def test_generated_config_parses_in_vendored_scheduler():
 
 
 def test_bindings_resolve_fixed_entity_ids():
-    raw = yaml.safe_load(generate_config(_wizard_data()))
+    raw = build_config(_wizard_data())
     bindings = scheduler_config.parse_bindings(raw)
 
     # The integration-owned fixed entity ids must survive the round trip.
@@ -128,7 +112,7 @@ def test_bindings_resolve_fixed_entity_ids():
 
 def test_fixed_constants_are_wired_through():
     """Guards against the config flow constants drifting from the schema."""
-    raw = yaml.safe_load(generate_config(_wizard_data()))
+    raw = build_config(_wizard_data())
     ha = raw["homeassistant"]
     for key, value in FIXED_BINDINGS.items():
         assert ha[key] == value

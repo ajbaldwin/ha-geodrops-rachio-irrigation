@@ -102,11 +102,21 @@ def _count_reloads(hass):
         yield calls
 
 
-async def test_aborts_without_pyscript(hass):
+async def test_aborts_without_rachio(hass):
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER})
     assert result["type"] == data_entry_flow.FlowResultType.ABORT
     assert result["reason"] == "missing_prerequisites"
+
+
+async def test_user_step_proceeds_with_only_rachio(hass):
+    """pyscript is no longer a prerequisite: Rachio alone is enough."""
+    hass.config.components.add("rachio")
+    with _patch_poll(key=None):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["step_id"] == "connect"
 
 
 async def test_happy_path_creates_entry(hass, enable_pyscript_and_rachio):
@@ -644,7 +654,7 @@ async def test_options_advanced_invalid_yaml_rejected(hass, enable_pyscript_and_
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "advanced"})
         assert result["step_id"] == "advanced"
-        # A non-mapping YAML scalar is invalid per generate_config.
+        # A non-mapping YAML scalar is invalid per build_config.
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             {"self_calibration_enabled": False, "advanced_overrides": "just a string"})

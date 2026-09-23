@@ -1,7 +1,7 @@
 import pytest
 import yaml
 
-from geodrops_rachio_lib import config
+from brain import config
 
 
 def test_band_rank_orders_low_to_high():
@@ -269,17 +269,17 @@ def test_parse_config_reads_per_level_end_offset(example_config_path):
 
 
 def test_max_schedule_retries_defaults_to_two():
-    from geodrops_rachio_lib.config import Tunables
+    from brain.config import Tunables
     assert Tunables().max_schedule_retries == 2
 
 
 def test_max_schedule_retries_is_overridable():
-    from geodrops_rachio_lib.config import Tunables
+    from brain.config import Tunables
     assert Tunables(max_schedule_retries=0).max_schedule_retries == 0
 
 
 def test_settle_max_wait_hours_default():
-    from geodrops_rachio_lib.config import Tunables
+    from brain.config import Tunables
     assert Tunables().settle_max_wait_hours == 12.0
 
 
@@ -354,7 +354,7 @@ def test_zone_exclude_boolean_default_and_override():
 
 
 def test_retain_and_retention_floor_defaults():
-    from geodrops_rachio_lib.config import Tunables
+    from brain.config import Tunables
     t = Tunables()
     assert t.retain_hours == 6.0
     assert t.retention_floor == 0.1

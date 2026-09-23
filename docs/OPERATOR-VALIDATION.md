@@ -1,136 +1,102 @@
-# Operator Validation Gates (T0 + T10)
+# Operator Cutover Runbook (v0.9.15 → v1.0.0)
 
-These two checks must pass on a real Home Assistant box before this integration
-is trusted / made public. They cannot run in CI (the HA test stack can't run on
-the Windows dev host, and these exercise real pyscript/Rachio/hardware behavior).
+v1.0.0 moves the scheduler off pyscript and runs it natively inside this
+integration. The automated suite (`bash tools/test.sh` + `tests_brain/`,
+including engine unit tests, differential tests against the legacy pyscript
+app, and HA integration tests) already proves the engine matches the old
+app's behavior. What's left is a real-box checklist for cutting over an
+existing 0.9.x install without losing calibration history or watering the
+lawn unattended.
 
-Automated tests (38, via `bash tools/test.sh`) plus a round-trip test already
-verify the generated config parses in the real scheduler. What's left is proving
-the runtime delivery + reload path on actual hardware.
-
----
-
-## T0 — Delivery smoke test (~5 min)
-
-**Proves:** a new top-level pyscript script loads via `pyscript.reload` with **no
-HA restart** — the assumption the whole delivery design rests on.
-
-**Prereq:** pyscript installed and running. Run shell commands in the **HA Terminal
-add-on** (on the box), not a dev machine.
-
-1. Create a throwaway test script:
-   ```bash
-   cat > /config/pyscript/_smoke_geodrops.py <<'PY'
-   @service
-   def geodrops_smoke_ping():
-       log.info("geodrops smoke: loaded and callable")
-       state.set("pyscript.geodrops_smoke", "ok")
-   PY
-   ```
-2. **Do NOT restart HA.** Developer Tools → Actions → run `pyscript.reload`.
-3. Developer Tools → Actions → run `pyscript.geodrops_smoke_ping`.
-4. Developer Tools → States → find `pyscript.geodrops_smoke`.
-   - **PASS:** exists and equals `ok`, no restart done → delivery + live-reload works.
-   - **FAIL:** missing, or the service isn't found after reload → `pyscript.reload`
-     isn't picking up new top-level scripts here; delivery needs a rethink (likely a
-     one-time restart on first install). Record and stop.
-5. Clean up:
-   ```bash
-   rm /config/pyscript/_smoke_geodrops.py
-   ```
-   Then run `pyscript.reload` once more to unload it.
+This is a **runbook to follow on the operator's box**, not a CI gate — it
+can't run in CI (needs real Rachio hardware and a live pyscript install to
+migrate from).
 
 ---
 
-## T10 — Live end-to-end (run after T0 passes)
+## Before (~10 min)
 
-**Proves** the real install path end-to-end on hardware: wizard → generated config
-→ delivered script → scheduler runs → restart-free updates. This is the go/no-go
-for merging PR #1 and flipping the repo public.
+1. Snapshot a baseline over read-only SSH: `irrigation_efficacy.json` and the
+   current `last_nightly` record from `/config/pyscript/geodrops_rachio_state/`
+   (or from `pyscript.geodrops_rachio_last_nightly`'s attributes).
+2. Grep the box's live `automations.yaml`, `scripts.yaml` (and any
+   dashboards) for `pyscript.geodrops_rachio_*` references — entities AND
+   service calls.
+3. Open a config-repo PR repointing them at the new entities:
+   - `pyscript.geodrops_rachio_last_nightly` → `sensor.geodrops_rachio_last_nightly`
+     (same attribute names).
+   - `pyscript.geodrops_rachio_status` → `sensor.geodrops_rachio_status`.
+     Check each reference: a comparison against a lowercase status token
+     (`waiting`, `watering`, `idle`, ...) needs to become
+     `state_attr('sensor.geodrops_rachio_status', 'status')` instead of a
+     state comparison.
+   - Service calls `pyscript.geodrops_rachio_run_now` / `_preview` / `_stop` /
+     `_reset` / `_refresh_runtimes` are gone → `button.press` on
+     `button.geodrops_rachio_run_now` / `_preview` / `_stop` / `_reset` /
+     `_refresh_runtimes`.
 
-**Prereqs:** pyscript + the Rachio integration installed & running; GeoDrops moisture
-sensors, a Tempest (or equivalent) weather station, and a forecast `weather.*` entity
-all present in HA. Ideally stamp a real `bundled_app/VERSION` first (see residual below).
+   Merge this PR **right after** the upgrade below, once the new entities
+   exist.
 
-1. **Install the integration.** HACS → three-dot menu → Custom repositories → add
-   `https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation` (category: Integration)
-   → install. **Restart HA once** — this loads the integration's own Python (true of
-   any HACS integration's first install; it is NOT the pyscript-script restart that
-   the design avoids).
-2. **Run the wizard.** Settings → Devices & Services → Add Integration →
-   "GeoDrops + Rachio Irrigation". Confirm the prereq step passes; fill the bindings
-   (notify service, calendar, Rachio device name, secret key name, the 5 weather-station
-   entities, the forecast entity, the precip prefixes); add ≥1 real zone (Rachio switch,
-   moisture sensors, runtime minutes, refill depth); leave **Active Watering Calibration
-   OFF**; confirm.
-3. **Verify delivery** (HA Terminal). These must exist:
-   - `/config/pyscript/geodrops_rachio.py`
-   - `/config/pyscript/modules/irrigation_lib/`
-   - `/config/pyscript/geodrops_rachio_config.yaml` — has the "Generated by…" header and
-     `homeassistant:` + `tunables:` + `bands:` + `drought_profiles:` + `zones:` sections.
-   - `/config/pyscript/.geodrops_rachio_version`
-4. **Verify entities exist:** `select.geodrops_rachio_drought_level`,
-   `button.geodrops_rachio_stop`, `switch.geodrops_rachio_{run_active,standby,dew_formed}`,
-   `sensor.geodrops_rachio_{observed,forecast}_overnight_{temp,humidity,wind}`.
-5. **Verify the scheduler loaded and reads its config** — the real C1 (bands/
-   drought_profiles) + C2 (config path) check on hardware. Developer Tools → Actions →
-   run the scheduler's **preview** action (`pyscript.geodrops_rachio_preview`; no water).
-   - **PASS:** it produces a plan with no exception. A `KeyError: 'bands'` /
-     `'drought_profiles'` or a `FileNotFoundError` here means the generated config or the
-     delivered script's config path is wrong — stop and report.
-   - **Coexistence:** the vendored script's services are namespaced `geodrops_rachio_*`, so
-     `pyscript.geodrops_rachio_preview` is unambiguously OURS even on a box that also runs the
-     original standalone scheduler (which registers `pyscript.irrigation_*`). The two no
-     longer shadow each other. For an extra shadowing-proof check you can still inspect the
-     generated config directly: `cat /config/pyscript/geodrops_rachio_config.yaml` — it must
-     contain `homeassistant:` + `tunables:` + `bands:` + `drought_profiles:` + a `zones:`
-     block with ONLY the zone(s) you entered in the wizard.
-6. **Verify restart-free brain update.** Simplest: Settings → the integration → Reload
-   (or bump `bundled_app/VERSION` + trigger a HACS update). Confirm it re-delivers and
-   `pyscript.reload`s with **no HA restart** and the scheduler still previews.
-   - If the *automatic* HACS-update trigger doesn't fire, that's the unverified HACS
-     update-entity id (residual I2) — a manual config-entry reload still proves the
-     re-deliver path itself works.
-7. **Run-active recovery check (validates I1).** Trigger a short run
-   (`pyscript.geodrops_rachio_run_now` or the scheduler's run action). Confirm
-   `switch.geodrops_rachio_run_active` flips **on** during the run. If it stays off, the
-   input_boolean→switch service-domain rewrite failed.
-8. **Golden-value the weather sensors.** Compare
-   `sensor.geodrops_rachio_observed_overnight_*` / `…_forecast_overnight_*` against the old
-   statistics/template values (if an old install is available). Expect some divergence on
-   the *observed* ones — they currently use a trailing 12h window, not the overnight span
-   (residual I4). Flag only if wildly off.
+## Upgrade (daytime, 10:00–20:00 — never mid-run)
 
-**Overall PASS:** wizard completes; files + entities present; preview produces a plan
-(no KeyError/FileNotFoundError); a reload re-delivers with no HA restart; run_active
-toggles during a run.
+1. HACS → Download v1.0.0.
+2. Restart Home Assistant.
+3. Pull the dashboard/automations PR from step 3 above.
+
+## Day-one checks (~15 min)
+
+1. **Migration ran.** The log shows a migration summary (zones imported,
+   files removed, pyscript reloaded or not), and
+   `/config/pyscript/geodrops_rachio.py` no longer exists.
+2. **Calibration carried over.** Each zone's Calibration State / efficacy
+   sensor matches the pre-upgrade snapshot.
+3. **Preview works.** Press *Preview irrigation plan* →
+   `sensor.geodrops_rachio_plan` lists the same zones yesterday's plan did,
+   with minutes that look plausible for today's moisture.
+4. **Dashboards render.** The Lawn Ops dashboard (or equivalent) shows no
+   missing-entity errors after the PR from step 3 is merged.
+
+## First night (supervised)
+
+- **23:00** — a plan is published and `sensor.geodrops_rachio_status`'s
+  `status` attribute reads `waiting`.
+- **Morning** — `sensor.geodrops_rachio_last_run` shows delivered ≈ planned,
+  no `aborted_reason`, and the Rachio API call count is in the usual range.
+- **After 09:00** — the settle-and-learn pass accepts/rejects observations
+  normally (compare against the pre-upgrade pattern).
+
+## Rollback (~5 min)
+
+1. Make sure pyscript is still installed and set up (Settings → Devices &
+   services). v0.9.15 runs the scheduler on it; if you uninstalled it after
+   the upgrade, reinstall it first.
+2. HACS → Redownload → pick v0.9.15.
+3. Restart Home Assistant. (Setup re-delivers the pyscript script, which
+   reads the untouched `/config/pyscript/geodrops_rachio_state/` directory
+   the native integration left in place.)
+4. Revert the dashboard/automations PR from step 3 of "Before".
+5. Delete the orphaned v1.0.0-only entities in Settings → Devices & services →
+   Entities: `sensor.geodrops_rachio_last_nightly`,
+   `sensor.geodrops_rachio_last_run` and `sensor.geodrops_rachio_plan`.
+
+**Cost:** any calibration learned since the upgrade is lost — v0.9.15 has no
+way to see it.
 
 ---
 
-## Known residuals to resolve before public release
+## Notes
 
-- **`bundled_app/VERSION` = "unknown"** — the canonical scheduler repo has no VERSION file,
-  so future *code-only* scheduler updates won't auto-redeliver (the installed-vs-bundled
-  version compare sees no change). First install is unaffected. Fix: stamp a real version
-  (or commit SHA) in the scheduler repo, or have the vendor step derive one.
-- **HACS update entity id — corrected, one live confirm pending.** `updater.HACS_UPDATE_ENTITY`
-  is now `update.geodrops_rachio_irrigation_update` (HACS names it `update.<slug>_update` from the
-  hacs.json display name "GeoDrops + Rachio Irrigation" → `geodrops_rachio_irrigation`); the old
-  `update.geodrops_rachio_update` was wrong, so the no-restart brain-update watcher was silently
-  inert. The setup now logs (debug) whether that entity is present, so a still-wrong id shows in the
-  log instead of failing silently. **Confirm once on a live HACS install:** Developer Tools → States,
-  filter `update.` — if the real id differs, change the constant. (A manual config-entry reload
-  re-delivers regardless, so this only affects the *automatic* apply.)
-- **Service-name collision / coexistence — RESOLVED (2026-09-13):** the vendor transform now
-  namespaces the colliding identifiers to `geodrops_rachio_*` — the five `@service` functions
-  (`pyscript.geodrops_rachio_{run_now,preview,stop,reset,refresh_runtimes}`), every
-  `pyscript.geodrops_rachio_*` state entity, and the `task.unique("geodrops_rachio_run")` key.
-  This integration and the original standalone scheduler can now run on the same HA box
-  without shadowing each other's services, state, or run task. (External helpers the user
-  owns, e.g. `input_boolean.irrigation_standby`, and the internal `@time_trigger` functions
-  are intentionally left unchanged.)
-- **Deferred minors** (non-blocking): dead `updater.decide_action`; observed sensors use a
-  12h window not the overnight span; zone options flow is add-only with misleading "replace"
-  copy; the wizard doesn't collect `rachio_zone_id` (disables the scheduler's live-runtime
-  pull, so static runtimes are always used); ~~`target_range` free-text~~ (fixed: now a
-  dropdown); zone `key` is still free-text.
+- The unload safety stop (v1.0.0): if Home Assistant restarts or reloads
+  this integration while valves are watering, it now stops the controller
+  and its zones instead of leaving Rachio's own paused-schedule auto-resume
+  to run the rest of the night unattended. Nothing to verify on a normal
+  cutover, but worth knowing if you restart HA mid-run for any reason.
+- Fixed in v1.0.0: a Home Assistant restart during the pre-dawn wait now
+  re-plans that night's run (logbook: "a nightly run was waiting for its
+  pre-dawn window when HA restarted; re-planning from live moisture"), or
+  records the night as missed if the window already closed. Through v0.9.15
+  this crashed and the night was lost.
+- `/config/pyscript/geodrops_rachio_state/` is left in place after the
+  upgrade specifically so rollback works; don't delete it until you're
+  confident you won't need to roll back.

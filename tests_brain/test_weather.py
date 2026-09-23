@@ -1,4 +1,4 @@
-from geodrops_rachio_lib import config, weather
+from brain import config, weather
 
 T = config.Tunables()
 

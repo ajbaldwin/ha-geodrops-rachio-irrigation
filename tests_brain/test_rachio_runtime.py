@@ -1,6 +1,6 @@
 import pytest
 
-from geodrops_rachio_lib import rachio_runtime
+from brain import rachio_runtime
 
 # Trimmed sample of a Rachio /device zones payload.
 ZONES = [
