@@ -1,7 +1,12 @@
 """Synthetic install used by every engine scenario (no real yard data)."""
 from __future__ import annotations
 
-from tests.engine.world import FakeWorld
+import copy
+
+from custom_components.geodrops_rachio.config_writer import build_config
+from custom_components.geodrops_rachio.engine.base import EngineBase
+from custom_components.geodrops_rachio.engine.store import EngineStore
+from tests.engine.world import FakePort, FakeWorld
 
 T_PLAN = "2026-07-01 23:00:00"
 ZONES = ("front", "back")
@@ -70,3 +75,21 @@ def populate(world: FakeWorld, data: dict, *, level: str = "Level 1 - Mild",
     for h in (12, 18, 24):
         world.set(f"sensor.precipitation_chance_{h}_hour", "10")
         world.set(f"sensor.precipitation_amount_{h}_hour", "0")
+
+
+async def _nosave(_docs):
+    return None
+
+
+def fake_fetch(world):
+    async def fetch(_key_name):
+        if world.rachio_api is None:
+            raise RuntimeError("rachio api down")
+        return copy.deepcopy(world.rachio_api)
+    return fetch
+
+
+def native_engine(world, data, *mixins, docs=None):
+    cls = type("TestEngine", (*mixins, EngineBase), {})
+    return cls(FakePort(world), EngineStore(docs or {}, _nosave),
+               lambda: build_config(data), fake_fetch(world))
