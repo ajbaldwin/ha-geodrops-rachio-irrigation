@@ -1,5 +1,5 @@
-from geodrops_rachio_lib import recovery
-from geodrops_rachio_lib.program import Step
+from brain import recovery
+from brain.program import Step
 
 
 # ─── verdict ─────────────────────────────────────────────────────────────────

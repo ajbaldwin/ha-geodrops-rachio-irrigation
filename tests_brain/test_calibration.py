@@ -1,7 +1,7 @@
 import pytest
 
-from geodrops_rachio_lib import calibration
-from geodrops_rachio_lib.config import Tunables
+from brain import calibration
+from brain.config import Tunables
 
 
 def test_efficacy_to_span():

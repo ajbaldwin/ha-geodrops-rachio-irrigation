@@ -6,8 +6,8 @@ slots separate blocks and are executed by pyscript sleeping with nothing on.
 """
 import pytest
 
-from geodrops_rachio_lib import blocks, config, plan
-from geodrops_rachio_lib.plan import Slot
+from brain import blocks, config, plan
+from brain.plan import Slot
 
 T = config.Tunables()  # cycle 12, soak 20
 

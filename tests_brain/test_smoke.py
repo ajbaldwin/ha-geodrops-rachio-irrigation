@@ -1,5 +1,5 @@
-import geodrops_rachio_lib
+import brain
 
 
 def test_package_imports():
-    assert geodrops_rachio_lib is not None
+    assert brain is not None
