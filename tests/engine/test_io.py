@@ -1,7 +1,5 @@
 import copy
 
-import pytest
-
 from custom_components.geodrops_rachio.engine import store as es
 from custom_components.geodrops_rachio.engine.io import IOMixin
 from tests.engine.scenario import T_PLAN, entry_data, native_engine, populate

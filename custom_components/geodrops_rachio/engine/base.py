@@ -184,8 +184,8 @@ class EngineBase:
         States: idle / planning / waiting / watering / skipped / standby / aborted.
         A preview never touches it — a dry run changes nothing.
 
-        NB pyscript re-creates its entities, so this reads `unknown` after a restart
-        until the next run (or the startup handler) sets it.
+        NB status is not persisted, so it reads `unknown` after a restart until the
+        next run (or the startup handler) sets it.
         """
         attributes = {
             "friendly_name": "Irrigation Status",

@@ -24,7 +24,7 @@ CHECK_INTERVAL_S = 30
 # threshold.
 #
 # The trade is deeply asymmetric and the original comment here had the reasoning
-# but not the conclusion: a LATE verdict is free, because pyscript is not
+# but not the conclusion: a LATE verdict is free, because the engine is not
 # advancing zones during a block — Rachio owns the queue and we are only
 # watching. An EARLY verdict costs the whole night plus a stop that truncates a
 # healthy zone. So this wants to sit far on the tolerant side; three minutes is
@@ -64,15 +64,16 @@ class RunnerMixin:
         return abort.abort_reason(is_standby(), is_manual_stop(), is_rain())
 
     async def run_plan(self, slots, zone_switches, is_standby, is_manual_stop, is_rain,
-                        is_rain_at_start):
+                       is_rain_at_start):
         """Execute a plan block by block.
 
         A block is a maximal run of back-to-back watering slots; Rachio runs the
-        whole block from one call while pyscript waits and watches. Idle soak slots
-        are pyscript sleeping with nothing running. The happy path issues NO stop at
-        all — the block simply ends when its last zone's minutes are up. Stops are
-        reserved for aborts, which is both correct and the reason the operator gets
-        a couple of Rachio notifications a night instead of dozens.
+        whole block from one call while the engine waits and watches. Idle soak
+        slots are the engine sleeping with nothing running. The happy path issues
+        NO stop at all — the block simply ends when its last zone's minutes are
+        up. Stops are reserved for aborts, which is both correct and the reason
+        the operator gets a couple of Rachio notifications a night instead of
+        dozens.
         """
         watered = []
         delivered = {}
@@ -249,7 +250,7 @@ class RunnerMixin:
                     for switch in all_switches:
                         if self.poll_zone_running(switch):
                             _LOGGER.warning(f"irrigation: {switch} was already running before "
-                                        "a collapsed segment; stopping it first")
+                                            "a collapsed segment; stopping it first")
                             await self.stop_zone(switch)
 
                     self.api_calls += 1
@@ -262,7 +263,7 @@ class RunnerMixin:
                         "runs": [[r.zone_key, r.minutes] for r in runs],
                     })
                     self._crumb(crumbs, "recover" if is_recovery else "start",
-                               detail=[[r.zone_key, r.minutes] for r in runs])
+                                detail=[[r.zone_key, r.minutes] for r in runs])
 
                     aborted, watering_seconds, stopped_index = await self._walk_segment(
                         steps, all_switches, is_standby, is_manual_stop, is_rain,
@@ -282,7 +283,7 @@ class RunnerMixin:
                     if aborted:
                         if aborted == "never-started":
                             self._crumb(crumbs, "drop-detected",
-                                       detail=int(delivered_since_issue))
+                                        detail=int(delivered_since_issue))
                         decision = recovery.verdict(
                             aborted, delivered_since_issue, is_recovery,
                             retries_used, tun.max_schedule_retries)
