@@ -107,4 +107,5 @@ async def test_fake_port_sleep_awaits_event_coroutines(freezer):
 
     w.at("2026-07-02 02:01:00", ev)
     await FakePort(w).sleep(120)
-    assert seen == ["02:02"]  # awaited after the clock reached the target
+    assert seen == ["02:01"]  # awaited at its own time, not the end of the sleep
+    assert w.now().strftime("%H:%M") == "02:02"

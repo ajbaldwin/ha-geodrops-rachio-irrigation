@@ -174,6 +174,10 @@ class FakeWorld:
         self.freezer.move_to(target)
         return pending
 
+    def next_event_time(self) -> dt.datetime | None:
+        """When the earliest scripted event is due, or None when none is left."""
+        return self._events[0][0] if self._events else None
+
     # --- state machine -----------------------------------------------------
     def exists(self, entity_id: str) -> bool:
         return entity_id in self._states or entity_id in self.rachio.zone_switches
@@ -241,7 +245,21 @@ class FakePort:
         self.world.call(domain, service, data)
 
     async def sleep(self, seconds):
-        for coro in self.world.advance(seconds):
+        """Sleep through scripted events, awaiting each event's coroutine AT its
+        scheduled time (the clock stepped to that event, not to the end of the
+        sleep) — as a real HA service call fired during a long `asyncio.sleep`
+        runs at its own time. The legacy harness runs events synchronously at
+        their time, so a time-sensitive async event (e.g. a preview fired during
+        the pre-dawn wait) must see the same clock on both sides."""
+        target = self.world.now() + dt.timedelta(seconds=seconds)
+        while True:
+            nxt = self.world.next_event_time()
+            if nxt is None or nxt > target:
+                break
+            step = max(0.0, (nxt - self.world.now()).total_seconds())
+            for coro in self.world.advance(step):
+                await coro
+        for coro in self.world.advance(max(0.0, (target - self.world.now()).total_seconds())):
             await coro
         await asyncio.sleep(0)
 

@@ -93,3 +93,11 @@ def native_engine(world, data, *mixins, docs=None):
     cls = type("TestEngine", (*mixins, EngineBase), {})
     return cls(FakePort(world), EngineStore(docs or {}, _nosave),
                lambda: build_config(data), fake_fetch(world))
+
+
+from custom_components.geodrops_rachio.engine.io import IOMixin  # noqa: E402
+from custom_components.geodrops_rachio.engine.orchestration import OrchestrationMixin  # noqa: E402
+from custom_components.geodrops_rachio.engine.planning import PlanningMixin  # noqa: E402
+from custom_components.geodrops_rachio.engine.runner import RunnerMixin  # noqa: E402
+
+ALL_MIXINS = (OrchestrationMixin, PlanningMixin, RunnerMixin, IOMixin)
