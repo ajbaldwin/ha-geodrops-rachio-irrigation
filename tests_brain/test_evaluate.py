@@ -1,6 +1,6 @@
 import random
 
-from geodrops_rachio_lib import drought, evaluate, sensors
+from brain import drought, evaluate, sensors
 
 
 def reading(key, dominant, index_rank, online=True):

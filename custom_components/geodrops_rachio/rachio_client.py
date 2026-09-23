@@ -1,4 +1,5 @@
-"""Rachio Public API client for the setup wizard.
+"""Rachio Public API client for the setup wizard and the scheduler's live
+runtime pull (`async_fetch_zone_data`).
 
 At wizard time we can auto-populate each zone's full-refill runtime and refill
 depth (and capture the zone's Rachio UUID, which enables the scheduler's live
@@ -134,3 +135,24 @@ async def async_fetch_device_zones(session, key: str, device_id: str) -> list[di
     """
     payload = await _get_json(session, RACHIO_BASE + "device/" + device_id, key)
     return parse_zones(payload.get("zones", []))
+
+
+async def async_fetch_zone_data(session, key: str) -> tuple[dict, dict, dict]:
+    """(runtimes_minutes, refill_depths_mm, refill_spans_pts), each keyed by
+    Rachio zone id, across every controller on the account — one pass over the
+    device payloads (ported from the pyscript app's _fetch_zone_data). Raises on
+    transport/HTTP/JSON errors; the engine then falls back to static values."""
+    from .brain import rachio_runtime
+
+    person = await _get_json(session, RACHIO_BASE + "person/info", key)
+    payload = await _get_json(session, RACHIO_BASE + "person/" + person["id"], key)
+    runtimes: dict = {}
+    depths: dict = {}
+    spans: dict = {}
+    for device in payload["devices"]:
+        dev = await _get_json(session, RACHIO_BASE + "device/" + device["id"], key)
+        zones = dev.get("zones", [])
+        runtimes.update(rachio_runtime.parse_runtimes(zones))
+        depths.update(rachio_runtime.parse_refill_depths(zones))
+        spans.update(rachio_runtime.parse_refill_spans(zones))
+    return runtimes, depths, spans

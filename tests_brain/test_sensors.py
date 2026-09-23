@@ -1,4 +1,4 @@
-from geodrops_rachio_lib import config, sensors
+from brain import config, sensors
 
 ZONE = config.ZoneConfig(
     key="zone_a", rachio_switch="switch.zone_a",

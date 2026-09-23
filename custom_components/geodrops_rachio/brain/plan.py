@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from geodrops_rachio_lib.config import Tunables
+from .config import Tunables
 
 _EPS = 1e-9
 

@@ -1,9 +1,6 @@
 {
   "domain": "geodrops_rachio",
   "name": "GeoDrops + Rachio Irrigation",
-  "after_dependencies": [
-    "pyscript"
-  ],
   "codeowners": [
     "@ajbaldwin"
   ],
@@ -12,5 +9,5 @@
   "documentation": "https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation/issues",
-  "version": "0.9.15"
+  "version": "1.0.0"
 }

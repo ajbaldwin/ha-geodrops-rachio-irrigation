@@ -11,13 +11,12 @@ ENTRY_DATA = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
 
 
 @pytest.fixture(autouse=True)
-def _mock_delivery():
-    """Entity-platform tests exercise real config entry setup, but delivery
-    of the bundled pyscript app is out of scope here (bundled_app/ doesn't
-    exist until the vendoring/release task) — stub it out."""
+def _quiet_scheduler(hass, tmp_path):
+    """Real entry setup, but no 30 s startup task and an isolated config dir."""
+    hass.config.config_dir = str(tmp_path)
     with patch(
-        "custom_components.geodrops_rachio.delivery.async_deliver",
-        AsyncMock(return_value=False),
+        "custom_components.geodrops_rachio.engine.scheduler.Scheduler._on_startup",
+        AsyncMock(),
     ):
         yield
 
@@ -41,33 +40,46 @@ async def test_action_buttons_created(hass, enable_pyscript_and_rachio):
         assert hass.states.get(f"button.geodrops_rachio_{key}") is not None
 
 
-async def test_action_button_calls_pyscript_service(hass, enable_pyscript_and_rachio):
+async def test_action_button_calls_scheduler(hass, enable_pyscript_and_rachio):
     entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    called = []
-    hass.services.async_register(
-        "pyscript", "geodrops_rachio_run_now", lambda call: called.append(call))
-    await hass.services.async_call(
-        "button", "press",
-        {"entity_id": "button.geodrops_rachio_run_now"}, blocking=True)
-    await hass.async_block_till_done()
-    assert len(called) == 1
+    with patch("custom_components.geodrops_rachio.engine.scheduler.Scheduler.async_run_now",
+               AsyncMock()) as run_now:
+        await hass.services.async_call(
+            "button", "press", {"entity_id": "button.geodrops_rachio_run_now"},
+            blocking=True)
+    run_now.assert_awaited_once()
 
 
-async def test_action_button_no_raise_when_service_absent(hass, enable_pyscript_and_rachio):
-    """Pressing before the pyscript action is registered (pyscript not ready or
-    the script not delivered yet) must not raise, only warn."""
+async def test_stop_button_raises_manual_stop(hass, enable_pyscript_and_rachio):
     entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    # No pyscript.geodrops_rachio_preview service registered -> must be a no-op.
+    # request_stop also writes a Logbook entry; the test hass has no logbook.
+    hass.services.async_register("logbook", "log", lambda call: None)
     await hass.services.async_call(
-        "button", "press",
-        {"entity_id": "button.geodrops_rachio_preview"}, blocking=True)
+        "button", "press", {"entity_id": "button.geodrops_rachio_stop"}, blocking=True)
+    assert hass.data[DOMAIN][entry.entry_id]["scheduler"]._manual_stop is True
+
+
+async def test_record_sensors_mirror_scheduler(hass, enable_pyscript_and_rachio):
+    from tests.conftest import publish_record
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    publish_record(hass, entry, "last_nightly", 2,
+                   {"friendly_name": "x", "watered": ["front"], "aborted_reason": None})
+    await hass.async_block_till_done()
+    st = hass.states.get("sensor.geodrops_rachio_last_nightly")
+    assert st.state == "2"
+    assert st.attributes["watered"] == ["front"]
+    assert st.attributes["friendly_name"] != "x"
+    assert hass.states.get("sensor.geodrops_rachio_last_run") is not None
+    assert hass.states.get("sensor.geodrops_rachio_plan") is not None
 
 
 async def test_flag_switches_created_and_toggle(hass, enable_pyscript_and_rachio):
@@ -166,12 +178,8 @@ async def test_observed_window_is_local_not_utc(hass, enable_pyscript_and_rachio
 async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
     from custom_components.geodrops_rachio.const import DOMAIN
+    from tests.conftest import publish_record
     hass.states.async_set("sensor.d", "71.5")  # the zone's dominant_sensor
-    hass.states.async_set(
-        "pyscript.geodrops_rachio_last_nightly", "1",
-        {"delivered_minutes": {"front": 42.0}, "watered": ["front"],
-         "end": "06:00", "updated": "2026-09-13T06:00:00+00:00",
-         "calibration": {"front": {"state": "calibrating", "efficacy": 0.35}}})
     entry = MockConfigEntry(domain=DOMAIN, data={
         "bindings": {"weather": {}, "forecast_entity": "weather.home"},
         "zones": [{"key": "front", "rachio_switch": "switch.x",
@@ -181,6 +189,12 @@ async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
         "self_calibration_enabled": False, "advanced_overrides": ""})
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    publish_record(
+        hass, entry, "last_nightly", 1,
+        {"delivered_minutes": {"front": 42.0}, "watered": ["front"],
+         "end": "06:00", "updated": "2026-09-13T06:00:00+00:00",
+         "calibration": {"front": {"state": "calibrating", "efficacy": 0.35}}})
     await hass.async_block_till_done()
 
     moisture = hass.states.get("sensor.geodrops_rachio_front_soil_moisture")
@@ -211,12 +225,7 @@ async def test_calibration_state_shows_progress_and_reason(hass, enable_pyscript
     """The Calibration State label folds in probe progress and, when stuck, why."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
     from custom_components.geodrops_rachio.const import DOMAIN
-    hass.states.async_set(
-        "pyscript.geodrops_rachio_last_nightly", "1",
-        {"calibration": {
-            "front": {"state": "calibrating", "n_obs": 2},
-            "side": {"state": "calibrating", "n_obs": 1,
-                     "last_reject_reason": "saturated"}}})
+    from tests.conftest import publish_record
     entry = MockConfigEntry(domain=DOMAIN, data={
         "bindings": {"weather": {}, "forecast_entity": "weather.home"},
         "zones": [
@@ -230,6 +239,13 @@ async def test_calibration_state_shows_progress_and_reason(hass, enable_pyscript
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    publish_record(
+        hass, entry, "last_nightly", 1,
+        {"calibration": {
+            "front": {"state": "calibrating", "n_obs": 2},
+            "side": {"state": "calibrating", "n_obs": 1,
+                     "last_reject_reason": "saturated"}}})
+    await hass.async_block_till_done()
     # Progress toward convergence.
     assert hass.states.get(
         "sensor.geodrops_rachio_front_calibration_state").state == "Calibrating (2/3)"
@@ -242,10 +258,8 @@ async def test_zone_deficit_sensor(hass, enable_pyscript_and_rachio):
     """Deficit = max(0, target_floor - current moisture), live and unit-safe."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
     from custom_components.geodrops_rachio.const import DOMAIN
+    from tests.conftest import publish_record
     hass.states.async_set("sensor.d", "30.0")  # current dominant moisture
-    hass.states.async_set(
-        "pyscript.geodrops_rachio_targets", "1",
-        {"target_floors": {"front": 45.0}})
     entry = MockConfigEntry(domain=DOMAIN, data={
         "bindings": {"weather": {}, "forecast_entity": "weather.home"},
         "zones": [{"key": "front", "rachio_switch": "switch.x",
@@ -255,6 +269,8 @@ async def test_zone_deficit_sensor(hass, enable_pyscript_and_rachio):
         "self_calibration_enabled": False, "advanced_overrides": ""})
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    publish_record(hass, entry, "targets", 1, {"target_floors": {"front": 45.0}})
     await hass.async_block_till_done()
     d = hass.states.get("sensor.geodrops_rachio_front_deficit")
     assert float(d.state) == 15.0  # 45 - 30
@@ -291,9 +307,7 @@ async def test_refill_depth_prefers_live_rachio_value(hass, enable_pyscript_and_
     runtimes entity, overriding the static config value."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
     from custom_components.geodrops_rachio.const import DOMAIN
-    hass.states.async_set(
-        "pyscript.geodrops_rachio_runtimes", "1",
-        {"refill_depths_mm": {"zone-abc": 17.5}})
+    from tests.conftest import publish_record
     entry = MockConfigEntry(domain=DOMAIN, data={
         "bindings": {"weather": {}, "forecast_entity": "weather.home"},
         "zones": [{"key": "front", "rachio_switch": "switch.x",
@@ -305,22 +319,25 @@ async def test_refill_depth_prefers_live_rachio_value(hass, enable_pyscript_and_
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    publish_record(hass, entry, "runtimes", 1, {"refill_depths_mm": {"zone-abc": 17.5}})
+    await hass.async_block_till_done()
     refill = hass.states.get("sensor.geodrops_rachio_front_refill_depth")
     assert float(refill.state) == 17.5  # live Rachio value, not the static 10
 
 
-async def test_scheduler_status_sensor_mirrors_pyscript(hass, enable_pyscript_and_rachio):
+async def test_scheduler_status_sensor_mirrors_scheduler(hass, enable_pyscript_and_rachio):
     """The main device gets a Status sensor mirroring the scheduler's status."""
-    hass.states.async_set(
-        "pyscript.geodrops_rachio_status", "waiting",
-        {"detail": "watering starts 01:44"})
+    from tests.conftest import publish_record
     entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    publish_record(hass, entry, "status", "waiting", {"detail": "watering starts 01:44"})
+    await hass.async_block_till_done()
     s = hass.states.get("sensor.geodrops_rachio_status")
     assert s is not None and s.state == "Waiting"  # title-cased for display
     assert s.attributes["detail"] == "watering starts 01:44"
+    assert s.attributes["status"] == "waiting"
 
 
 def test_pretty_status_titlecases_tokens_and_preserves_sentinels():

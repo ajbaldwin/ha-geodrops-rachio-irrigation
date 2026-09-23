@@ -1,7 +1,7 @@
 import datetime as _dt
 import pytest
 
-from geodrops_rachio_lib import config, plan
+from brain import config, plan
 
 T = config.Tunables()  # cycle 12, soak 20
 

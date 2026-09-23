@@ -1,6 +1,6 @@
 import datetime as dt
 
-from geodrops_rachio_lib import report_format as rf
+from brain import report_format as rf
 
 
 def result(**kw):
@@ -144,7 +144,7 @@ def test_calendar_standby_note():
 
 
 def _rr(**kw):
-    from geodrops_rachio_lib.report_format import RunResult
+    from brain.report_format import RunResult
     base = dict(watered=["zone_a"], uncompleted={}, start="04:01",
                 end="05:38", per_zone_minutes={"zone_a": 56}, standby=False)
     base.update(kw)
@@ -152,12 +152,12 @@ def _rr(**kw):
 
 
 def test_no_recovery_line_when_zero():
-    from geodrops_rachio_lib import report_format
+    from brain import report_format
     assert "Rachio" not in report_format.format_notification(_rr(recoveries=0))
 
 
 def test_recovery_line_appears_when_recovered():
-    from geodrops_rachio_lib import report_format
+    from brain import report_format
     msg = report_format.format_notification(_rr(recoveries=2))
     # Neutral wording: true whether the run fully recovered or gave up after N
     # drops (the "Not completed" line carries the shortfall in the give-up case).

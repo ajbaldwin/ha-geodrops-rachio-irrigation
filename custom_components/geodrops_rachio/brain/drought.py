@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from geodrops_rachio_lib.config import BAND_ORDER, Band, DroughtProfile, ZoneConfig, band_rank
+from .config import BAND_ORDER, Band, DroughtProfile, ZoneConfig, band_rank
 
 
 @dataclass(frozen=True)
