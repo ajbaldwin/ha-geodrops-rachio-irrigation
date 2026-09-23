@@ -4,6 +4,56 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.0.0 — Native engine: pyscript is no longer used
+
+### Changes
+
+- The irrigation scheduler now runs **natively inside this integration** —
+  pyscript is no longer required, no longer installed to, and no longer
+  reloaded. The wizard writes straight into the config entry; there's no
+  pyscript app, config YAML, or `pyscript.reload` call involved anymore.
+- **Breaking: entity changes.** The old `pyscript.geodrops_rachio_*` entities
+  are gone, replaced by:
+  - `pyscript.geodrops_rachio_last_nightly` → `sensor.geodrops_rachio_last_nightly`
+    (same attribute names).
+  - `pyscript.geodrops_rachio_status` → `sensor.geodrops_rachio_status`; the
+    raw lowercase status token (`waiting`, `running`, `idle`, ...) is now in
+    its `status` attribute rather than the pyscript state — read
+    `state_attr('sensor.geodrops_rachio_status', 'status')` instead of
+    comparing state directly.
+  - `pyscript.geodrops_rachio_last_run` → `sensor.geodrops_rachio_last_run`.
+  - `pyscript.geodrops_rachio_preview` → `sensor.geodrops_rachio_plan`.
+  - The old calibration/targets/runtimes pyscript entities are gone; that
+    data was already surfaced per-zone (efficacy, calibration state, deficit,
+    refill) and stays there — it's now purely internal otherwise.
+  - Update any dashboard, automation, or template that references the old
+    `pyscript.*` entities before or right after upgrading.
+- **Automatic migration.** On first load after upgrading, the integration
+  deletes its old pyscript files, reloads pyscript if it's still loaded (so a
+  legacy run in progress doesn't linger), and imports your calibration
+  history from `/config/pyscript/geodrops_rachio_state/` into its own
+  storage. That folder is left in place afterward in case you need to roll
+  back.
+- **Fix: unload no longer risks an unattended re-water.** If Home Assistant
+  restarted or reloaded this integration while valves were watering, the
+  scheduler used to leave Rachio's own paused-schedule auto-resume to run the
+  rest of the night unsupervised. The integration now explicitly stops the
+  controller and its zones on unload instead, so an interrupted night stays
+  interrupted rather than resuming unattended.
+- The *Stop irrigation* button's action is now recorded in the Home
+  Assistant **logbook** (via the built-in `logbook` integration, part of
+  `default_config`), same as other entries the scheduler already logs.
+- **Requires a Home Assistant restart** after updating — the scheduler is
+  now part of the integration's own Python, so every future release will
+  require a restart too (see `docs/RELEASING.md`).
+
+**Known issues (unchanged from 0.9.x):** a Home Assistant restart during the
+pre-dawn wait for the watering window does not re-arm that night's run
+(pre-existing bug; a fix is planned).
+
+**Rollback:** HACS → Redownload → v0.9.15 → restart. Calibration learned
+since the upgrade is lost.
+
 ## v0.9.15 — Home Assistant now shows it as cloud/internet-dependent
 
 ### Changes

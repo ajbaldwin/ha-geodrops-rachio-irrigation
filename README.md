@@ -10,10 +10,9 @@ as its input.
 > readings. If you don't have both, this integration has nothing to bind to
 > and won't be useful to you.
 
-The integration itself does not talk to Rachio or GeoDrops directly. It
-delivers a versioned copy of the scheduler as a [pyscript](https://github.com/custom-components/pyscript)
-app, generates its YAML configuration from a HA config-flow wizard, and keeps
-both in sync as you install updates.
+The scheduler ("the brain") runs natively inside this integration — there is
+no separate app to deliver or reload. A HA config-flow wizard collects your
+bindings and generates the scheduler's settings directly from your answers.
 
 ## Prerequisites
 
@@ -22,11 +21,6 @@ set up and working in Home Assistant:
 
 - **[HACS](https://hacs.xyz/)** — used to install this integration and to
   deliver its updates.
-- **[pyscript](https://hacs-pyscript.readthedocs.io/)**, installed via HACS
-  and configured/running. This integration does **not** install or enable
-  pyscript for you — it delivers the scheduler as a pyscript app and asks
-  the already-running pyscript integration to reload, via the
-  `pyscript.reload` service. If pyscript isn't set up first, setup aborts.
 - The **[Rachio](https://www.home-assistant.io/integrations/rachio/)**
   integration, configured with your Rachio controller and zones.
 - **GeoDrops soil-moisture sensors** already flowing into Home Assistant as
@@ -52,9 +46,8 @@ set up and working in Home Assistant:
   and drought-level decisions.
 - Home Assistant **2026.3.0** or newer (the Python 3.14 era of HA core).
 
-Setup checks for pyscript and Rachio being loaded and will abort with
-"Install and set up pyscript and the Rachio integration first" if either is
-missing.
+Setup checks for the Rachio integration being loaded and will abort with
+"Install and set up the Rachio integration first" if it is missing.
 
 ## Installing
 
@@ -91,12 +84,11 @@ missing.
      ```
 
 There is **no YAML file to hand-edit and no Home Assistant restart required**
-to complete installation. The wizard's answers are written straight into a
-generated pyscript config file, the scheduler app is copied into your
-pyscript apps directory, and the integration calls `pyscript.reload` to load
-it — because pyscript is already running, it just picks the new app up. You
-will not find (and do not need to add) a `pyscript: apps:` entry for this
-integration anywhere in your YAML configuration.
+to complete installation (beyond the one restart in step 2, needed to load the
+integration's own code, same as any other HACS integration). The wizard's
+answers are written straight into the config entry, and the integration
+reloads itself to pick them up — the scheduler runs natively inside the
+integration, so there's no separate app or reload service involved.
 
 Only one instance of this integration may be configured at a time; adding a
 second one is blocked. To change bindings, weather sensors, zones, or the
@@ -118,6 +110,14 @@ per zone, with these entities (all prefixed `geodrops_rachio_`):
   behavior.
 - **Switches** — *Run active* (the scheduler's own run flag), *Standby* (pause
   scheduling), *Dew formed* (overnight-dew signal).
+- **Status sensors** — `sensor.geodrops_rachio_status` (state is a
+  human-readable status line; the raw lowercase status token, e.g. `waiting`,
+  `running`, `idle`, is in its `status` attribute — template against the
+  attribute, not the state, for automations), `sensor.geodrops_rachio_last_nightly`
+  (last nightly run's record), `sensor.geodrops_rachio_last_run` (last run of
+  any kind, including *Run irrigation now*), and `sensor.geodrops_rachio_plan`
+  (the most recent *Preview irrigation plan* output). Each carries the run's
+  full detail as attributes.
 
 **Per-zone (one device each)**
 
@@ -142,22 +142,35 @@ scheduler's normal drought-level/soil-moisture-driven watering to work.
 ## Updates
 
 Update this integration through HACS the same way you update any other
-custom integration. What happens next depends on what changed in that
-release:
+custom integration. Since the scheduler runs natively as part of the
+integration's own Python, **every release requires a Home Assistant restart**
+to load the updated code — HACS will flag each update this way, the same as
+it would for any other custom integration.
 
-- If the release only updates the **scheduler brain** (the in-tree
-  scheduler app and its library), the integration notices the change on its
-  own HACS update entity, reloads its config entry, and pushes the new
-  scheduler code into pyscript with a live `pyscript.reload` call —
-  **no Home Assistant restart needed**.
-- If the release changes the **integration's own Python code** (the config
-  flow, entities, delivery, or update logic), Home Assistant needs to
-  re-import that code, which only happens on restart — HACS will flag this
-  update as requiring a restart, the same as it would for any other custom
-  integration.
+## Upgrading from 0.9.x
+
+Versions before v1.0.0 delivered the scheduler as a pyscript app; from
+v1.0.0 on it runs natively inside this integration and pyscript is no longer
+used or required.
+
+1. Update through HACS (Download) and **restart Home Assistant**.
+2. On the restart, the integration automatically deletes its old pyscript
+   files and imports your calibration history from
+   `/config/pyscript/geodrops_rachio_state/` — no manual steps. Once you've
+   confirmed the upgrade is working, pyscript itself can be uninstalled if
+   nothing else on your box uses it.
+3. **Update your dashboards.** Any card or template reading
+   `pyscript.geodrops_rachio_last_nightly` should switch to
+   `sensor.geodrops_rachio_last_nightly` (same attribute names). Anything
+   comparing `pyscript.geodrops_rachio_status`'s state against a lowercase
+   token (e.g. `waiting`, `running`) should read
+   `state_attr('sensor.geodrops_rachio_status', 'status')` instead.
+
+**Rollback:** HACS → Redownload → pick v0.9.15 → restart. Calibration learned
+since the upgrade is lost (the old pyscript app doesn't see it).
 
 ## For maintainers
 
 See [`docs/RELEASING.md`](docs/RELEASING.md) for how the scheduler brain lives
-in this repo (edited directly under `bundled_app/`, tested in `tests_brain/`)
-and how to cut a release.
+in this repo (`custom_components/geodrops_rachio/brain/`, tested in
+`tests_brain/`) and how to cut a release.
