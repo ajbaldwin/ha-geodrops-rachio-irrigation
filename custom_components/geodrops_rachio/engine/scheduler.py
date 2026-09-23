@@ -32,8 +32,9 @@ async def _cancel_and_wait(task: asyncio.Task | None) -> None:
 
     The task's own CancelledError is absorbed — the caller asked for it — but a
     cancellation aimed at the CALLER while it waits is re-raised, never eaten.
-    An ordinary exception raised while the task unwinds is logged, not
-    propagated: the caller (reset / shutdown) still has teardown to do.
+    An ordinary exception raised while the task unwinds is not propagated (the
+    task's done-callback logs it): the caller (reset / shutdown) still has
+    teardown to do.
     """
     if task is None or task.done():
         return
@@ -44,9 +45,10 @@ async def _cancel_and_wait(task: asyncio.Task | None) -> None:
         current = asyncio.current_task()
         if current is not None and current.cancelling():
             raise
-    except Exception as err:
-        _LOGGER.warning(f"irrigation: cancelled task {task.get_name()} failed while "
-                        f"unwinding ({err})")
+    except Exception:
+        # Every task reaching here was started by Scheduler._spawn, whose
+        # done-callback (_log_task_failure) already logs it with traceback.
+        pass
 
 
 def _log_task_failure(task: asyncio.Task) -> None:
@@ -68,6 +70,9 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         self._create_task = create_task
         self.run_task: asyncio.Task | None = None
         self.startup_task: asyncio.Task | None = None
+        # In-flight timed jobs (06:00 calibrate, :00/:30 settle), cancelled on
+        # shutdown like the run and startup tasks.
+        self._jobs: set[asyncio.Task] = set()
         self._unsubs: list[Callable[[], None]] = []
         # Serialises every start/cancel of the run task, and counts requests so
         # the LAST caller wins (pyscript's task.unique is synchronous: whoever
@@ -349,17 +354,22 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         ]
 
     async def _on_calibrate_time(self, _now) -> None:
-        await self.irrigation_calibrate()
+        self._spawn_job(self.irrigation_calibrate(), "geodrops_rachio_calibrate")
 
     async def _on_settle_time(self, _now) -> None:
-        await self._settle_and_learn()
+        self._spawn_job(self._settle_and_learn(), "geodrops_rachio_settle")
+
+    def _spawn_job(self, coro: Coroutine, name: str) -> None:
+        task = self._spawn(coro, name)
+        self._jobs.add(task)
+        task.add_done_callback(self._jobs.discard)
 
     async def _on_ha_started(self, _hass) -> None:
         self.startup_task = self._spawn(
             self._on_startup(), "geodrops_rachio_startup")
 
     async def async_shutdown(self) -> None:
-        """Unsubscribe every trigger, cancel startup + run, and — the one behaviour
+        """Unsubscribe every trigger, cancel startup, timed jobs + run, and — the one behaviour
         change of the native port — stop the device if valves were watering.
 
         Idempotent: it runs as an HA stage-1 shutdown job AND on entry unload; a
@@ -375,6 +385,8 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         self._unsubs.clear()
         startup, self.startup_task = self.startup_task, None
         await _cancel_and_wait(startup)
+        for job in list(self._jobs):
+            await _cancel_and_wait(job)
         # A run the startup heal began watering while we waited counts too.
         was_watering = was_watering or self._watering_active
         await self._cancel_run()

@@ -1,7 +1,7 @@
 import copy
 import logging
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
@@ -12,7 +12,7 @@ from .const import DOMAIN, PLATFORMS
 from .coordinator import ZoneStateCoordinator
 from .engine.port import HassPort
 from .engine.scheduler import Scheduler
-from .engine.store import async_open_store
+from .engine.store import async_open_store, async_remove_store
 from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,10 +83,13 @@ async def async_reload_if_changed(hass: HomeAssistant, entry: ConfigEntry) -> bo
     running entry was set up with (v0.9.x likewise only touched the run when the
     config actually changed). A reload cancels a waiting or watering run, so an
     options "Done" with nothing edited must not trigger one. An entry that is
-    not running (no snapshot) always reloads. Returns whether it reloaded."""
+    not running always reloads — including one whose snapshot outlived it (a
+    failed platform unload, or setup failing after the snapshot was stored).
+    Returns whether it reloaded."""
     store = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
     snapshot = store.get("setup_snapshot")
-    if snapshot is not None and snapshot == _snapshot(entry):
+    if (entry.state is ConfigEntryState.LOADED and snapshot is not None
+            and snapshot == _snapshot(entry)):
         _LOGGER.debug("geodrops_rachio: configuration unchanged; not reloading")
         return False
     await hass.config_entries.async_reload(entry.entry_id)
@@ -111,4 +114,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    else:
+        _LOGGER.warning(
+            "geodrops_rachio: platforms did not unload; the scheduler is already "
+            "stopped, so no nightly run will fire until Home Assistant restarts")
     return ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    # The calibration history and run records live only in this entry's Store.
+    await async_remove_store(hass, entry.entry_id)

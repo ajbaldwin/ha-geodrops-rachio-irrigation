@@ -129,8 +129,15 @@ async def async_open_store(hass: HomeAssistant, entry_id: str) -> EngineStore:
                 "pyscript reloaded: %s",
                 len(docs), len(docs.get(EFFICACY) or {}),
                 ", ".join(removed) or "nothing", reloaded)
+        else:
+            _LOGGER.info("geodrops_rachio: created a new store (no legacy state to import)")
 
     async def _save(docs: dict) -> None:
         await store.async_save({"docs": docs})
 
     return EngineStore(data.get("docs", {}), _save)
+
+
+async def async_remove_store(hass: HomeAssistant, entry_id: str) -> None:
+    """Delete an entry's Store (the config entry itself was removed)."""
+    await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}").async_remove()
