@@ -96,8 +96,9 @@ def native_engine(world, data, *mixins, docs=None):
 
 
 from custom_components.geodrops_rachio.engine.io import IOMixin  # noqa: E402
+from custom_components.geodrops_rachio.engine.learning import LearningMixin  # noqa: E402
 from custom_components.geodrops_rachio.engine.orchestration import OrchestrationMixin  # noqa: E402
 from custom_components.geodrops_rachio.engine.planning import PlanningMixin  # noqa: E402
 from custom_components.geodrops_rachio.engine.runner import RunnerMixin  # noqa: E402
 
-ALL_MIXINS = (OrchestrationMixin, PlanningMixin, RunnerMixin, IOMixin)
+ALL_MIXINS = (LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin, IOMixin)
