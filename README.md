@@ -112,7 +112,7 @@ per zone, with these entities (all prefixed `geodrops_rachio_`):
   scheduling), *Dew formed* (overnight-dew signal).
 - **Status sensors** — `sensor.geodrops_rachio_status` (state is a
   human-readable status line; the raw lowercase status token, e.g. `waiting`,
-  `running`, `idle`, is in its `status` attribute — template against the
+  `watering`, `idle`, is in its `status` attribute — template against the
   attribute, not the state, for automations), `sensor.geodrops_rachio_last_nightly`
   (last nightly run's record), `sensor.geodrops_rachio_last_run` (last run of
   any kind, including *Run irrigation now*), and `sensor.geodrops_rachio_plan`
@@ -163,7 +163,7 @@ used or required.
    `pyscript.geodrops_rachio_last_nightly` should switch to
    `sensor.geodrops_rachio_last_nightly` (same attribute names). Anything
    comparing `pyscript.geodrops_rachio_status`'s state against a lowercase
-   token (e.g. `waiting`, `running`) should read
+   token (e.g. `waiting`, `watering`) should read
    `state_attr('sensor.geodrops_rachio_status', 'status')` instead.
 
 **Rollback:** HACS → Redownload → pick v0.9.15 → restart. Calibration learned

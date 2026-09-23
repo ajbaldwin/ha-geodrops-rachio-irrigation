@@ -26,7 +26,7 @@ migrate from).
      (same attribute names).
    - `pyscript.geodrops_rachio_status` → `sensor.geodrops_rachio_status`.
      Check each reference: a comparison against a lowercase status token
-     (`waiting`, `running`, `idle`, ...) needs to become
+     (`waiting`, `watering`, `idle`, ...) needs to become
      `state_attr('sensor.geodrops_rachio_status', 'status')` instead of a
      state comparison.
 

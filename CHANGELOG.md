@@ -17,7 +17,7 @@ section per released version, newest first.
   - `pyscript.geodrops_rachio_last_nightly` → `sensor.geodrops_rachio_last_nightly`
     (same attribute names).
   - `pyscript.geodrops_rachio_status` → `sensor.geodrops_rachio_status`; the
-    raw lowercase status token (`waiting`, `running`, `idle`, ...) is now in
+    raw lowercase status token (`waiting`, `watering`, `idle`, ...) is now in
     its `status` attribute rather than the pyscript state — read
     `state_attr('sensor.geodrops_rachio_status', 'status')` instead of
     comparing state directly.
@@ -29,11 +29,11 @@ section per released version, newest first.
   - Update any dashboard, automation, or template that references the old
     `pyscript.*` entities before or right after upgrading.
 - **Automatic migration.** On first load after upgrading, the integration
-  deletes its old pyscript files, reloads pyscript if it's still loaded (so a
-  legacy run in progress doesn't linger), and imports your calibration
-  history from `/config/pyscript/geodrops_rachio_state/` into its own
-  storage. That folder is left in place afterward in case you need to roll
-  back.
+  deletes its old pyscript files, and if it removed anything and pyscript is
+  loaded, reloads pyscript too (so a legacy run in progress doesn't linger).
+  It then imports your calibration history from
+  `/config/pyscript/geodrops_rachio_state/` into its own storage. That folder
+  is left in place afterward in case you need to roll back.
 - **Fix: unload no longer risks an unattended re-water.** If Home Assistant
   restarted or reloaded this integration while valves were watering, the
   scheduler used to leave Rachio's own paused-schedule auto-resume to run the
