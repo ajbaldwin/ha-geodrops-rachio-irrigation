@@ -107,8 +107,16 @@ async def async_open_store(hass: HomeAssistant, entry_id: str) -> EngineStore:
     removed = await hass.async_add_executor_job(remove_delivered, pyscript_dir)
     reloaded = False
     if removed and hass.services.has_service("pyscript", "reload"):
-        await hass.services.async_call("pyscript", "reload", blocking=True)
-        reloaded = True
+        # Best-effort: the files are already gone, so a failing reload only
+        # delays the legacy script's retirement to pyscript's next load. It
+        # must not fail setup on the cutover boot.
+        try:
+            await hass.services.async_call("pyscript", "reload", blocking=True)
+            reloaded = True
+        except Exception as err:
+            _LOGGER.warning(
+                "geodrops_rachio: pyscript.reload failed after removing the legacy "
+                "script (%s); restart Home Assistant to be sure it is unloaded", err)
     if data is None or removed:
         docs = await hass.async_add_executor_job(
             read_legacy_state, pyscript_dir / LEGACY_STATE_DIRNAME)

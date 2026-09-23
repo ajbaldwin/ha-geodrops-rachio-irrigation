@@ -115,8 +115,13 @@ class ZoneStateCoordinator:
 
     @callback
     def _notify(self) -> None:
+        # Runs inside engine code (record publish / store write): one sensor's
+        # failing state write must not skip the others or break the run.
         for cb in list(self._listeners):
-            cb()
+            try:
+                cb()
+            except Exception:
+                _LOGGER.exception("geodrops_rachio: sensor update %r failed", cb)
 
     def _attrs(self, name: str) -> dict | None:
         rec = self._scheduler.records.get(name)

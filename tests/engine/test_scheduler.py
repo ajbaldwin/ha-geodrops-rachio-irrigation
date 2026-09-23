@@ -415,3 +415,29 @@ async def test_refresh_runtimes_publishes_record(freezer):
     await eng.async_refresh_runtimes()
     rec = eng.records["runtimes"]
     assert rec["value"] == 1 and rec["attributes"]["refill_depths_mm"] == {"id-front": 8.0}
+
+
+async def test_safety_stop_fires_while_startup_task_still_running(freezer):
+    """HA cancels background tasks (the run included) around shutdown. With the
+    startup task still live, `async_shutdown` yields while cancelling it, the
+    cancelled run unwinds and its `finally` clears `_watering_active` — the
+    safety stop must still fire because the flag is read before any await."""
+    w, eng = await _run_to_pause(freezer)
+
+    async def slow_startup():
+        try:
+            await asyncio.Event().wait()           # the real one sleeps 30 s
+        finally:
+            await asyncio.sleep(0)                 # a teardown that yields
+    eng.startup_task = asyncio.get_running_loop().create_task(slow_startup())
+    await asyncio.sleep(0)
+    calls = _record_blocking(eng)
+    eng.run_task.cancel()                          # what HA does to background tasks
+    await eng.async_shutdown()
+    assert eng.run_task is None and eng.startup_task is None
+    assert not eng._watering_active
+    assert [c for c in calls if c[3]] == [
+        ("rachio", "stop_watering", {"devices": "Main House"}, True),
+        ("switch", "turn_off", {"entity_id": "switch.front_zone"}, True),
+        ("switch", "turn_off", {"entity_id": "switch.back_zone"}, True),
+    ]

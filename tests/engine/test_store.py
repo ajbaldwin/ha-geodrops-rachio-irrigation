@@ -100,3 +100,22 @@ async def test_open_store_fresh_install_without_pyscript(hass, tmp_path):
     hass.config.config_dir = str(tmp_path)
     s = await es.async_open_store(hass, "entry1")   # no pyscript dir, no service
     assert s.read(es.EFFICACY) is None
+
+
+async def test_open_store_survives_failing_pyscript_reload(hass, tmp_path, caplog):
+    hass.config.config_dir = str(tmp_path)
+    ps = _seed_legacy(tmp_path)
+
+    async def _boom(_call):
+        raise RuntimeError("pyscript reload exploded")
+    hass.services.async_register("pyscript", "reload", _boom)
+
+    s = await es.async_open_store(hass, "entry1")
+
+    assert s.read(es.EFFICACY) == {"front": {"efficacy": 0.4}}
+    assert not (ps / "geodrops_rachio.py").exists()
+    assert not (ps / "modules" / "geodrops_rachio_lib").exists()
+    msgs = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("pyscript.reload failed" in m and "exploded" in m for m in msgs)
+    assert any("pyscript reloaded: False" in m for m in msgs)
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]

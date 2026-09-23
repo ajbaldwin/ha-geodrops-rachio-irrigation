@@ -360,17 +360,21 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         """Unsubscribe every trigger, cancel startup + run, and — the one behaviour
         change of the native port — stop the device if valves were watering.
 
-        Idempotent: Task 12 may call it from both EVENT_HOMEASSISTANT_STOP and the
-        entry unload; a second call finds nothing subscribed, no task and
-        `_watering_active` already cleared by the run's `finally`.
+        Idempotent: it runs as an HA stage-1 shutdown job AND on entry unload; a
+        second call finds nothing subscribed, no task and `_watering_active`
+        already cleared by the run's `finally`.
         """
+        # Read BEFORE ANY await: the run's `finally` clears it while unwinding,
+        # and the run may already be cancelled (HA cancels background tasks at
+        # stop) — any yield below lets that unwinding happen first.
+        was_watering = self._watering_active
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
         startup, self.startup_task = self.startup_task, None
         await _cancel_and_wait(startup)
-        # Read BEFORE cancelling: the run's `finally` clears it while unwinding.
-        was_watering = self._watering_active
+        # A run the startup heal began watering while we waited counts too.
+        was_watering = was_watering or self._watering_active
         await self._cancel_run()
         if was_watering and self._current_cfg is not None:
             await self._safety_stop()

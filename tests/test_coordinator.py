@@ -123,6 +123,22 @@ def test_remove_listener_stops_callbacks():
     c.remove_listener(lambda: None)  # removing an unknown cb is a no-op
 
 
+def test_failing_sensor_callback_does_not_skip_the_others(caplog):
+    c = ZoneStateCoordinator(None, None, _scheduler_stub())
+    calls = []
+
+    def boom():
+        raise RuntimeError("state write failed")
+    c.add_listener(boom)
+    c.add_listener(lambda: calls.append(1))
+    c._notify()                                   # must not raise
+    assert calls == [1]
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1 and "sensor update" in errors[0].getMessage()
+    assert errors[0].exc_info[1].args == ("state write failed",)
+    caplog.clear()                                # expected error; keep output clean
+
+
 def test_data_for_reads_scheduler_records(hass):
     entry = SimpleNamespace(data={"zones": [{"key": "front", "rachio_zone_id": "z1",
                                              "refill_depth_mm": 7.0}]})

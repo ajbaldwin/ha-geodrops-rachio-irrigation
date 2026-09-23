@@ -104,3 +104,23 @@ async def test_publish_record_persists_and_restores(freezer):
         "value": 2, "attributes": {"target_floors": {"front": 65.0}}}
     world2, eng2 = _eng(freezer, docs=copy.deepcopy(eng.store._docs))
     assert eng2.records["targets"]["value"] == 2      # preloaded at construction
+
+
+async def test_failing_record_listener_does_not_break_publish(freezer, caplog):
+    world, eng = _eng(freezer)
+    seen = []
+
+    def boom():
+        raise RuntimeError("async_write_ha_state blew up")
+    eng.add_listener(boom)
+    eng.add_listener(lambda: seen.append(eng.records["status"]["value"]))
+    eng._set_status("planning")                   # must not raise
+    await eng._publish_record("preview", 1, {"planned_minutes": {}})
+    await eng.store.write(es.EFFICACY, {})        # store on_write path too
+    assert eng.records["status"]["value"] == "planning"
+    assert eng.store.read(es.record_key("preview"))["value"] == 1
+    assert len(seen) == 4                         # later listeners still ran
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 4
+    assert all("record listener" in r.getMessage() for r in errors)
+    caplog.clear()                                # expected errors; keep output clean

@@ -90,8 +90,13 @@ class EngineBase:
         return _remove
 
     def _notify_listeners(self) -> None:
+        # Listeners are entity updates called synchronously from engine code; a
+        # failing one must never break the run that published the record.
         for cb in list(self._listeners):
-            cb()
+            try:
+                cb()
+            except Exception:
+                _LOGGER.exception("irrigation: record listener %r failed", cb)
 
     def _publish(self, name: str, value, attributes: dict) -> None:
         self.records[name] = {"value": value, "attributes": attributes}
