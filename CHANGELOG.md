@@ -28,6 +28,13 @@ section per released version, newest first.
     refill) and stays there — it's now purely internal otherwise.
   - Update any dashboard, automation, or template that references the old
     `pyscript.*` entities before or right after upgrading.
+- **Breaking: the pyscript services are gone.** `pyscript.geodrops_rachio_run_now`,
+  `pyscript.geodrops_rachio_preview`, `pyscript.geodrops_rachio_stop`,
+  `pyscript.geodrops_rachio_reset` and `pyscript.geodrops_rachio_refresh_runtimes`
+  no longer exist. An automation or script that called one should press the
+  matching button instead — `button.press` on `button.geodrops_rachio_run_now`,
+  `button.geodrops_rachio_preview`, `button.geodrops_rachio_stop`,
+  `button.geodrops_rachio_reset` or `button.geodrops_rachio_refresh_runtimes`.
 - **Automatic migration.** On first load after upgrading, the integration
   deletes its old pyscript files, and if it removed anything and pyscript is
   loaded, reloads pyscript too (so a legacy run in progress doesn't linger).
@@ -40,6 +47,9 @@ section per released version, newest first.
   rest of the night unsupervised. The integration now explicitly stops the
   controller and its zones on unload instead, so an interrupted night stays
   interrupted rather than resuming unattended.
+- Pressing Done in the integration's options without changing anything no
+  longer restarts the scheduler (so it no longer cancels a run waiting for its
+  pre-dawn window); it restarts only when the configuration actually changed.
 - The *Stop irrigation* button's action is now recorded in the Home
   Assistant **logbook** (via the built-in `logbook` integration, part of
   `default_config`), same as other entries the scheduler already logs.
@@ -52,7 +62,11 @@ pre-dawn wait for the watering window does not re-arm that night's run
 (pre-existing bug; a fix is planned).
 
 **Rollback:** HACS → Redownload → v0.9.15 → restart. Calibration learned
-since the upgrade is lost.
+since the upgrade is lost. v0.9.15 needs **pyscript installed and set up** — if
+you uninstalled it after upgrading, reinstall it first. The new
+`sensor.geodrops_rachio_last_nightly`, `sensor.geodrops_rachio_last_run` and
+`sensor.geodrops_rachio_plan` entities are left behind as orphans; delete them
+in Settings → Devices & services → Entities.
 
 ## v0.9.15 — Home Assistant now shows it as cloud/internet-dependent
 

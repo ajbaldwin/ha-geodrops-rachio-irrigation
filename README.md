@@ -158,16 +158,28 @@ used or required.
    files and imports your calibration history from
    `/config/pyscript/geodrops_rachio_state/` — no manual steps. Once you've
    confirmed the upgrade is working, pyscript itself can be uninstalled if
-   nothing else on your box uses it.
+   nothing else on your box uses it (you'd need it back to roll back — see
+   below).
 3. **Update your dashboards.** Any card or template reading
    `pyscript.geodrops_rachio_last_nightly` should switch to
    `sensor.geodrops_rachio_last_nightly` (same attribute names). Anything
    comparing `pyscript.geodrops_rachio_status`'s state against a lowercase
    token (e.g. `waiting`, `watering`) should read
    `state_attr('sensor.geodrops_rachio_status', 'status')` instead.
+4. **Update your automations.** The `pyscript.geodrops_rachio_run_now`,
+   `_preview`, `_stop`, `_reset` and `_refresh_runtimes` services are gone.
+   Call `button.press` on the matching button instead:
+   `button.geodrops_rachio_run_now`, `button.geodrops_rachio_preview`,
+   `button.geodrops_rachio_stop`, `button.geodrops_rachio_reset` or
+   `button.geodrops_rachio_refresh_runtimes`.
 
 **Rollback:** HACS → Redownload → pick v0.9.15 → restart. Calibration learned
-since the upgrade is lost (the old pyscript app doesn't see it).
+since the upgrade is lost (the old pyscript app doesn't see it). v0.9.15 runs
+the scheduler on pyscript, so **pyscript must be installed and set up** — if
+you uninstalled it after upgrading, reinstall it before the restart. After
+rolling back, the v1.0.0-only `sensor.geodrops_rachio_last_nightly`,
+`sensor.geodrops_rachio_last_run` and `sensor.geodrops_rachio_plan` entities
+are left as orphans; delete them in Settings → Devices & services → Entities.
 
 ## For maintainers
 

@@ -19,8 +19,9 @@ migrate from).
 1. Snapshot a baseline over read-only SSH: `irrigation_efficacy.json` and the
    current `last_nightly` record from `/config/pyscript/geodrops_rachio_state/`
    (or from `pyscript.geodrops_rachio_last_nightly`'s attributes).
-2. Grep the box's live `automations.yaml` (and any dashboards) for
-   `pyscript.geodrops_rachio_*` references.
+2. Grep the box's live `automations.yaml`, `scripts.yaml` (and any
+   dashboards) for `pyscript.geodrops_rachio_*` references — entities AND
+   service calls.
 3. Open a config-repo PR repointing them at the new entities:
    - `pyscript.geodrops_rachio_last_nightly` → `sensor.geodrops_rachio_last_nightly`
      (same attribute names).
@@ -29,6 +30,10 @@ migrate from).
      (`waiting`, `watering`, `idle`, ...) needs to become
      `state_attr('sensor.geodrops_rachio_status', 'status')` instead of a
      state comparison.
+   - Service calls `pyscript.geodrops_rachio_run_now` / `_preview` / `_stop` /
+     `_reset` / `_refresh_runtimes` are gone → `button.press` on
+     `button.geodrops_rachio_run_now` / `_preview` / `_stop` / `_reset` /
+     `_refresh_runtimes`.
 
    Merge this PR **right after** the upgrade below, once the new entities
    exist.
@@ -63,11 +68,17 @@ migrate from).
 
 ## Rollback (~5 min)
 
-1. HACS → Redownload → pick v0.9.15.
-2. Restart Home Assistant. (Setup re-delivers the pyscript script, which
+1. Make sure pyscript is still installed and set up (Settings → Devices &
+   services). v0.9.15 runs the scheduler on it; if you uninstalled it after
+   the upgrade, reinstall it first.
+2. HACS → Redownload → pick v0.9.15.
+3. Restart Home Assistant. (Setup re-delivers the pyscript script, which
    reads the untouched `/config/pyscript/geodrops_rachio_state/` directory
    the native integration left in place.)
-3. Revert the dashboard/automations PR from step 3 above.
+4. Revert the dashboard/automations PR from step 3 of "Before".
+5. Delete the orphaned v1.0.0-only entities in Settings → Devices & services →
+   Entities: `sensor.geodrops_rachio_last_nightly`,
+   `sensor.geodrops_rachio_last_run` and `sensor.geodrops_rachio_plan`.
 
 **Cost:** any calibration learned since the upgrade is lost — v0.9.15 has no
 way to see it.
