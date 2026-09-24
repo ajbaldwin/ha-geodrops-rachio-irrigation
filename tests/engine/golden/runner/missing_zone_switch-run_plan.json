@@ -1,0 +1,23 @@
+{
+ "calls": [
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.front_zone"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.ghost_zone"
+   }
+  ]
+ ],
+ "counters": [
+  2,
+  2
+ ],
+ "logs": []
+}

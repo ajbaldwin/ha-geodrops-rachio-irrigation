@@ -1,5 +1,5 @@
-"""Runner branches the scenario suites do not reach, asserted on the engine's
-own effects (no legacy oracle)."""
+"""Runner branches the scenario suites do not reach, asserted directly on the
+engine's own effects (no golden fixture)."""
 import logging
 
 import pytest
@@ -7,7 +7,7 @@ import pytest
 from custom_components.geodrops_rachio.brain.plan import Slot
 from custom_components.geodrops_rachio.engine.io import IOMixin
 from custom_components.geodrops_rachio.engine.runner import RunnerMixin
-from tests.engine.diff import ENGINE_LOGGER_PREFIX, prime
+from tests.engine.helpers import ENGINE_LOGGER_PREFIX, prime
 from tests.engine.scenario import entry_data, native_engine, populate
 from tests.engine.world import FakeWorld
 

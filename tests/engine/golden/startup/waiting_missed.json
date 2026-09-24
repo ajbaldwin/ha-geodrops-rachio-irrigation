@@ -1,0 +1,96 @@
+{
+ "calls": [
+  [
+   "logbook",
+   "log",
+   {
+    "entity_id": "sensor.geodrops_rachio_status",
+    "message": "Startup: a nightly run was waiting when HA restarted, but the watering window had already closed; recorded as missed",
+    "name": "Irrigation"
+   }
+  ]
+ ],
+ "logs": [],
+ "records": {
+  "last_nightly": [
+   0,
+   {
+    "friendly_name": "Irrigation Last Nightly Run",
+    "rachio_calls": 0,
+    "skipped": "missed-restart",
+    "state_polls": 2,
+    "trigger": "nightly",
+    "updated": "2026-07-01T23:00:00"
+   }
+  ],
+  "last_run": [
+   0,
+   {
+    "friendly_name": "Irrigation Last Run",
+    "rachio_calls": 0,
+    "skipped": "missed-restart",
+    "state_polls": 2,
+    "trigger": "nightly",
+    "updated": "2026-07-01T23:00:00"
+   }
+  ],
+  "status": [
+   "skipped",
+   {
+    "detail": "missed — restart after window closed",
+    "friendly_name": "Irrigation Status",
+    "updated": "2026-07-02T02:00:30"
+   }
+  ],
+  "targets": [
+   2,
+   {
+    "friendly_name": "Irrigation Target Floors",
+    "target_floors": {
+     "back": 65,
+     "front": 65
+    },
+    "updated": "2026-07-02T02:00:30"
+   }
+  ]
+ },
+ "status_trail": [
+  [
+   "idle",
+   null
+  ],
+  [
+   "skipped",
+   "missed — restart after window closed"
+  ]
+ ],
+ "store": {
+  "efficacy": null,
+  "pending_obs": null,
+  "record.calibration": null,
+  "record.last_nightly": {
+   "attributes": {
+    "friendly_name": "Irrigation Last Nightly Run",
+    "rachio_calls": 0,
+    "skipped": "missed-restart",
+    "state_polls": 2,
+    "trigger": "nightly",
+    "updated": "2026-07-01T23:00:00"
+   },
+   "value": 0
+  },
+  "record.preview": null,
+  "record.targets": {
+   "attributes": {
+    "friendly_name": "Irrigation Target Floors",
+    "target_floors": {
+     "back": 65,
+     "front": 65
+    },
+    "updated": "2026-07-02T02:00:30"
+   },
+   "value": 2
+  },
+  "waiting_marker": null
+ }
+}
