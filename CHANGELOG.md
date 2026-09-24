@@ -4,6 +4,35 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.1.0 — Run active is an indicator; Dew formed is gone
+
+### Breaking changes
+
+- **Run active is now a read-only indicator.** `switch.geodrops_rachio_run_active`
+  is replaced by `binary_sensor.geodrops_rachio_run_active`. It shows whether
+  a watering run is in progress and has no toggle. Update any automation,
+  script or dashboard that uses the old switch.
+- **The Dew formed switch is removed.** Nothing ever turned it on, and it only
+  mattered when the overnight forecast was unavailable. `dew_formed` is also
+  gone from the `weather` attribute of *Plan*, *Last run* and *Last nightly
+  run*. The old switches are removed from Home Assistant automatically on
+  restart.
+- **Plan shows `0` in Standby** instead of the text `standby` (see the zone
+  count below). Its `standby` attribute and the *Status* sensor still say why.
+
+### Changes
+
+- *Plan*, *Last run* and *Last nightly run* now show their count with a unit,
+  e.g. `2 zones`: zones watered, or zones the preview would water.
+- **Fix: calibration no longer uses a sensor reading from before watering
+  ended.** The first reading after a run could be one reported before the
+  zone finished watering, which could skew that zone's learned efficacy.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.0.1 → restart. The stored data format is
+unchanged, so nothing is lost; the old Run active and Dew formed switches come
+back.
+
 ## v1.0.1 — Interrupted nights finish; late stops are respected
 
 ### Changes
