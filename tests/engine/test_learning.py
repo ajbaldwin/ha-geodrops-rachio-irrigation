@@ -91,6 +91,78 @@ async def test_settle_skips_the_poll_when_config_fails_to_load(freezer, caplog):
                for r in caplog.records)
 
 
+async def test_unparseable_last_seen_stamp_counts_as_never_seen(freezer):
+    obs = {**_obs("front"), "last_seen_updated": "garbage"}
+    w, eng = _engine(freezer, pending=[obs])
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    await _poll(w, eng, 14)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["n_obs"] == 1 and front["last_rise"] == pytest.approx(8.0)
+
+
+async def test_a_zone_that_cannot_be_read_keeps_its_obs_for_the_next_poll(freezer, caplog):
+    w, eng = _engine(freezer, pending=[_obs("front")])
+    w.remove("sensor.front_q1")            # a renamed/deleted quality sensor
+    await _poll(w, eng, 1)
+    assert eng.store.read(PENDING_OBS) == [_obs("front")]
+    assert ("warning", "irrigation: settle-and-learn skipped a record (sensor.front_q1)") in [
+        (r.levelname.lower(), r.getMessage()) for r in caplog.records]
+
+
+async def test_obs_finalizing_together_fetch_runtimes_once(freezer):
+    w, eng = _engine(freezer, pending=[_obs("front"), _obs("back")])
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.back_dominant", "66.0"))
+    fetches = []
+    real = eng.get_runtimes
+
+    async def counting():
+        fetches.append(1)
+        return await real()
+    eng.get_runtimes = counting
+    await _poll(w, eng, 14)
+    eff = eng.store.read(EFFICACY)
+    assert eff["front"]["n_obs"] == 1 and eff["back"]["n_obs"] == 1
+    assert len(fetches) == 1
+
+
+@pytest.mark.parametrize("field, value", [("pre_dominant", None), ("minutes", 0)])
+async def test_obs_without_a_pre_reading_or_minutes_is_dropped_unlearned(
+        freezer, field, value):
+    w, eng = _engine(freezer, pending=[{**_obs("front"), field: value}])
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    await _poll(w, eng, 14)
+    assert eng.store.read(PENDING_OBS) == []
+    assert eng.store.read(EFFICACY) == {"front": {"state": "calibrating"}}
+
+
+async def test_accept_trims_recent_and_counts_a_miss(freezer):
+    w, eng = _engine(freezer, pending=[_obs("front")])
+    await eng.store.write(EFFICACY, {"front": {
+        "state": "calibrating", "efficacy": 0.1, "recent": [0.1, 0.2, 0.3],
+        "miss_streak": 0}})
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    await _poll(w, eng, 14)
+    front = eng.store.read(EFFICACY)["front"]
+    # (68-60)/20 = 0.4 per minute: appended, oldest dropped (convergence_samples=3).
+    assert front["recent"] == pytest.approx([0.2, 0.3, 0.4])
+    # |0.4 - 0.1| / 0.1 is far past convergence_tolerance (0.10): a miss.
+    assert front["miss_streak"] == 1
+
+
+async def test_a_corrupt_zone_record_skips_that_obs(freezer, caplog):
+    """A finalize failure (here a corrupt stored zone record) is logged and the
+    obs dropped; it is not retried, since the next poll would fail the same way."""
+    w, eng = _engine(freezer, pending=[_obs("front")])
+    await eng.store.write(EFFICACY, {"front": "corrupt"})
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    await _poll(w, eng, 14)
+    assert eng.store.read(PENDING_OBS) == []
+    assert eng.store.read(EFFICACY) == {"front": "corrupt"}
+    assert any(r.getMessage().startswith("irrigation: settle-and-learn skipped a record (")
+               and r.levelname == "WARNING" for r in caplog.records)
+
+
 # --- forecast calibration -------------------------------------------------
 
 def _calibrate_engine(freezer):
