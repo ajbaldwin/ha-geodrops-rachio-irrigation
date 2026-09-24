@@ -48,8 +48,6 @@ GENERIC_NOTIFY_SERVICES = {"send_message"}
 FIXED_BINDINGS: dict[str, Any] = {
     "drought_level_select": "select.geodrops_rachio_drought_level",
     "standby_boolean": "switch.geodrops_rachio_standby",
-    "dew_formed_boolean": "switch.geodrops_rachio_dew_formed",
-    "run_active_boolean": "switch.geodrops_rachio_run_active",
 }
 
 # ---- Fixed, integration-owned derived sensors (Task 6c) ----

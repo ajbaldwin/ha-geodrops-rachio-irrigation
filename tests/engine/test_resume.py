@@ -5,12 +5,13 @@ import collections
 
 import pytest
 
-from custom_components.geodrops_rachio.engine.store import PENDING_OBS, RUN_PROGRESS
+from custom_components.geodrops_rachio.engine.store import (
+    PENDING_OBS, RUN_ACTIVE, RUN_PROGRESS,
+)
 from tests.engine.scenario import entry_data, native_scheduler, populate
 from tests.engine.world import FakeWorld
 
 START = ("rachio", "start_multiple_zone_schedule")
-MARKER = "switch.geodrops_rachio_run_active"
 WINDOW_END = "2026-07-02T04:15:00+00:00"
 
 
@@ -112,13 +113,13 @@ async def test_graceful_restart_keeps_progress_and_resumes_only_whats_owed(freez
 async def test_crash_mid_step_counts_that_step_as_delivered(freezer):
     data = entry_data(self_cal=True)
     world = _world(freezer, "2026-07-02 02:20:00", data)
-    world.set(MARKER, "on")                          # the run never cleared it
     world.rachio.start_direct([("switch.back_zone", 12)])   # still watering
     crashed = {"stamp": "2026-07-01T23:00:00", "trigger": "nightly",
                "window_end": WINDOW_END,
                "planned": {"front": 24, "back": 24},
                "delivered": {"front": 12, "back": 12}}   # back's step was in flight
-    eng = native_scheduler(world, data, docs={RUN_PROGRESS: crashed})
+    # RUN_ACTIVE still set: the run never cleared it.
+    eng = native_scheduler(world, data, docs={RUN_PROGRESS: crashed, RUN_ACTIVE: True})
     await eng._on_startup()
     await eng.run_task
     assert ("rachio", "stop_watering", {"devices": "Main House"}) in world.calls
@@ -185,15 +186,18 @@ async def test_crash_during_a_pause_stops_the_schedule_then_resumes(freezer):
     # auto-resume unattended) without any per-zone stop, then resume what's owed.
     data = entry_data()
     world = _world(freezer, "2026-07-02 02:20:00", data)
-    world.set(MARKER, "on")
     left = {"stamp": "2026-07-01T23:00:00", "trigger": "nightly",
             "window_end": WINDOW_END, "planned": {"front": 24, "back": 24},
             "delivered": {"front": 12, "back": 12}}
-    eng = native_scheduler(world, data, docs={RUN_PROGRESS: left})
+    eng = native_scheduler(world, data, docs={RUN_PROGRESS: left, RUN_ACTIVE: True})
     await eng._on_startup()
-    stop_at = world.calls.index(("rachio", "stop_watering", {"devices": "Main House"}))
-    assert world.calls[stop_at + 1] == ("switch", "turn_off", {"entity_id": MARKER})
     await eng.run_task
+    stop_at = world.calls.index(("rachio", "stop_watering", {"devices": "Main House"}))
+    # No per-zone stop between the device stop and the resume's first schedule.
+    after = world.calls[stop_at + 1:]
+    first_start = next(i for i, c in enumerate(after) if c[:2] == START)
+    assert ("switch", "turn_off") not in [c[:2] for c in after[:first_start]]
+    assert eng.store.read(RUN_ACTIVE) is None
     assert _sent_minutes(world) == {"front": 12, "back": 12}
 
 

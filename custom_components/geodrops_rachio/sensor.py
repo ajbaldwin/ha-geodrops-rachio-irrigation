@@ -318,6 +318,8 @@ class RecordSensor(SensorEntity):
 
     _attr_should_poll = False
     _attr_has_entity_name = True
+    # Each record's state is a zone count (watered, or planned for Plan).
+    _attr_native_unit_of_measurement = "zones"
     _unrecorded_attributes = frozenset({MATCH_ALL})
 
     def __init__(self, entry, scheduler, record, suffix, name, icon) -> None:

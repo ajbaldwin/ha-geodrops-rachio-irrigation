@@ -11,7 +11,6 @@ class WeatherReading:
     temp_f: float
     rh_pct: float
     wind_mph: float
-    dew_formed: bool
     rain_last_hour_mm: float
     precip_type: str
 
@@ -22,7 +21,7 @@ def pressure_breakdown(w: WeatherReading, t: Tunables) -> dict:
     Returns {"warm", "humid", "stagnant": bool, "count": int}.
     """
     warm = w.temp_f > t.warm_temp_f
-    humid = w.rh_pct > t.humid_rh_pct or w.dew_formed
+    humid = w.rh_pct > t.humid_rh_pct
     stagnant = w.wind_mph < t.stagnant_wind_mph
     return {
         "warm": warm, "humid": humid, "stagnant": stagnant,

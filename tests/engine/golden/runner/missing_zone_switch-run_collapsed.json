@@ -1,13 +1,6 @@
 {
  "calls": [
   [
-   "switch",
-   "turn_on",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
-   }
-  ],
-  [
    "rachio",
    "stop_watering",
    {
@@ -26,13 +19,6 @@
    "turn_off",
    {
     "entity_id": "switch.ghost_zone"
-   }
-  ],
-  [
-   "switch",
-   "turn_off",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
    }
   ]
  ],

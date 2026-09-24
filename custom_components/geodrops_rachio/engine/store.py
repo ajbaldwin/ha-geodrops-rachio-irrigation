@@ -30,6 +30,9 @@ EFFICACY = "efficacy"
 PENDING_OBS = "pending_obs"
 WAITING_MARKER = "waiting_marker"
 RUN_PROGRESS = "run_progress"
+# True while a collapsed run is in flight; absent otherwise. Survives a restart
+# so startup can detect the interrupted run. Shown by the Run active indicator.
+RUN_ACTIVE = "run_active"
 PERSISTED_RECORDS = ("last_nightly", "calibration", "targets", "preview")
 LEGACY_STATE_DIRNAME = "geodrops_rachio_state"
 DELIVERED_PATHS = (

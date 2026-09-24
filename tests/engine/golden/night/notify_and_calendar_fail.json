@@ -10,13 +10,6 @@
    }
   ],
   [
-   "switch",
-   "turn_on",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
-   }
-  ],
-  [
    "rachio",
    "start_multiple_zone_schedule",
    {
@@ -59,13 +52,6 @@
    "resume_watering",
    {
     "devices": "Main House"
-   }
-  ],
-  [
-   "switch",
-   "turn_off",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
    }
   ],
   [
@@ -719,6 +705,7 @@
    },
    "value": 2
   },
+  "run_active": null,
   "waiting_marker": null
  }
 }

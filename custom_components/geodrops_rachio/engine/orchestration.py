@@ -618,8 +618,10 @@ class OrchestrationMixin:
             await self._notify(msg, "Irrigation Preview")
             await self._activity("Preview: " + msg)
             # Persisted so planned-runtime consumers survive a restart (see PERSISTED).
+            # 0, not "standby": the Plan sensor counts zones, so its state must
+            # stay numeric. The status sensor and `standby` attribute say why.
             await self._publish_record(
-                "preview", "standby",
+                "preview", 0,
                 {"updated": stamp, "standby": True, "message": msg},
             )
             return
@@ -729,7 +731,7 @@ class OrchestrationMixin:
                 "runtimes_all_live": len(static_zones) == 0,
                 "weather": {
                     "temp_f": wx.temp_f, "rh_pct": wx.rh_pct, "wind_mph": wx.wind_mph,
-                    "dew_formed": wx.dew_formed, "precip_type": wx.precip_type,
+                    "precip_type": wx.precip_type,
                     "rain_last_hour_mm": wx.rain_last_hour_mm,
                 },
                 "planned_minutes": {z: int(m) for z, m in planned},
