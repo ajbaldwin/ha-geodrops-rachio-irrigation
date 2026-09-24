@@ -125,6 +125,65 @@ def test_malformed_marker_ignores():
     assert sa({"window_end": "not-a-time"}, "2026-08-30T05:00:00") == recovery.IGNORE
 
 
+# ─── interrupted-night resume ────────────────────────────────────────────────
+# A run writes its plan and what it has delivered (each water step counted as
+# delivered the moment it starts: an interruption errs dry). A restart that
+# finds that progress resumes only what is still owed, never re-planning from
+# moisture readings that lag the watering by an hour or more.
+
+def test_owed_is_planned_minus_delivered():
+    assert recovery.owed_minutes({"front": 24, "back": 24},
+                                 {"front": 24, "back": 12}) == {"back": 12}
+
+
+def test_owed_includes_zones_not_yet_reached_and_skips_crumbs():
+    assert recovery.owed_minutes({"front": 24, "back": 24, "side": 10},
+                                 {"front": 23.5}) == {"back": 24, "side": 10}
+
+
+def test_owed_never_negative():
+    assert recovery.owed_minutes({"front": 12}, {"front": 24}) == {}
+
+
+NOW = "2026-07-02T02:00:00+00:00"
+
+
+def progress(window_end, planned=None, delivered=None):
+    return {"stamp": "2026-07-01T23:00:00", "trigger": "nightly",
+            "window_end": window_end,
+            "planned": planned if planned is not None else {"front": 24, "back": 24},
+            "delivered": delivered if delivered is not None else {"front": 12}}
+
+
+def test_no_progress_is_ignored():
+    assert recovery.resume_action(None, NOW) == (recovery.IGNORE, {})
+
+
+def test_malformed_progress_is_ignored():
+    assert recovery.resume_action({"planned": "x"}, NOW) == (recovery.IGNORE, {})
+    assert recovery.resume_action(progress("not-a-time"), NOW) == (recovery.IGNORE, {})
+
+
+def test_inside_the_window_resumes_what_is_owed():
+    assert recovery.resume_action(progress("2026-07-02T04:15:00+00:00"), NOW) == (
+        recovery.RESUME, {"front": 12, "back": 24})
+
+
+def test_window_closed_is_recorded_as_interrupted():
+    assert recovery.resume_action(progress("2026-07-02T01:00:00+00:00"), NOW) == (
+        recovery.INTERRUPTED, {"front": 12, "back": 24})
+
+
+def test_nothing_owed_is_recorded_not_resumed():
+    done = progress("2026-07-02T04:15:00+00:00", delivered={"front": 24, "back": 24})
+    assert recovery.resume_action(done, NOW) == (recovery.INTERRUPTED, {})
+
+
+def test_a_previous_nights_leftover_is_ignored():
+    assert recovery.resume_action(progress("2026-07-01T04:15:00+00:00"), NOW) == (
+        recovery.IGNORE, {})
+
+
 # ─── classify_non_start ──────────────────────────────────────────────────────
 # A water step that "never started" right after the previous water step's valves
 # were seen switching off (and staying off) was stopped, not dropped: a Rachio

@@ -4,11 +4,12 @@ Ported from v0.9.15 bundled_app/geodrops_rachio.py lines 1574-1713 and 1755-2367
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 
 from ..brain import calibration, dosing, evaluate, plan, report_format, sensors
-from .store import WAITING_MARKER
+from .store import RUN_PROGRESS, WAITING_MARKER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -146,14 +147,19 @@ class OrchestrationMixin:
         # while diagnosing the 2026-08-09 abort: the run_now erased the night we
         # were trying to read. A self-heal counts as the night's run; a run_now
         # does not.
-        if trigger == "nightly" or trigger == "startup-heal":
+        if trigger in ("nightly", "startup-heal", "startup-resume"):
             nightly = dict(attributes)
             nightly["friendly_name"] = "Irrigation Last Nightly Run"
             await self._publish_record("last_nightly", value, nightly)
 
-    async def _plan_and_run(self, wait, trigger):
+    async def _plan_and_run(self, wait, trigger, resume=None):
         """Plan and water. `wait=True` (nightly) sleeps until the pre-dawn window;
-        `wait=False` (run-now) executes immediately."""
+        `wait=False` (run-now) executes immediately.
+
+        `resume` ({zone: minutes owed}) finishes an interrupted night: the plan is
+        built from what is still owed rather than from live moisture, which lags
+        the watering by an hour or more (see recovery.resume_action). The usual
+        standby, rain and window checks still apply."""
         self._manual_stop = False
         self._rain_since = None  # fresh sustain clock; a stale one could abort instantly
         self.reset_counters()
@@ -199,6 +205,8 @@ class OrchestrationMixin:
                 return
 
             ctx = await self._plan_context(cfg)
+            if resume is not None:
+                self._apply_resume(ctx, resume, cfg, tun)
             the_plan, start = ctx["the_plan"], ctx["start"]
             uncompleted, priority = ctx["uncompleted"], ctx["priority"]
 
@@ -442,6 +450,12 @@ class OrchestrationMixin:
             # From here until the finally, valves may open. A preview is refused for
             # this span (it would clobber the run-scoped globals a live run reads).
             self._watering_active = True
+            # Open the night's progress doc; the runner records the plan and each
+            # step as it starts. It outlives a crash or a graceful restart (see the
+            # finally), so startup can finish the night rather than lose it.
+            await self.store.write(RUN_PROGRESS, {
+                "stamp": stamp, "trigger": trigger,
+                "window_end": ctx["end"].isoformat()})
             self._set_status("watering", detail=f"{len(the_plan.watered)} zone(s)")
             if cfg.tunables.use_pause_collapse:
                 outcome = await self.run_collapsed(
@@ -490,7 +504,9 @@ class OrchestrationMixin:
             # exactly the nights that go wrong, so nothing fragile runs ahead of them.
             await self._publish_last_run(stamp, trigger, ctx=ctx, result=result,
                                          outcome=outcome)
-            if tun.self_calibration_enabled and watered:
+            # A resumed night is a confounded calibration observation (its first
+            # part watered hours earlier, under another plan): record none.
+            if tun.self_calibration_enabled and watered and trigger != "startup-resume":
                 pend = []
                 for k in watered:
                     pend.append({
@@ -522,8 +538,41 @@ class OrchestrationMixin:
                 ended_at=finished if watered else None,
             )
         finally:
+            # A run that ENDED (done, skipped, aborted, even crashed on an
+            # exception) is over: drop its progress. A cancelled one (HA stopping,
+            # an unload) keeps it, so startup can resume the night.
+            task = asyncio.current_task()
+            if task is None or not task.cancelling():
+                try:
+                    await self.store.write(RUN_PROGRESS, None)
+                except Exception as err:
+                    _LOGGER.warning(f"irrigation: could not clear run progress ({err})")
             self._watering_active = False
             self._run_in_progress = False
+
+    def _apply_resume(self, ctx, owed, cfg, tun):
+        """Replace the moisture-based plan in `ctx` with one for what is owed.
+
+        Zones keep tonight's priority order; one no longer configured is dropped,
+        and so is one excluded since (its exclude switch is the operator's say).
+        No probes are folded in: the watch for recovering sensors is a first-run
+        nicety, not part of finishing a night.
+        """
+        uncompleted = ctx["uncompleted"]
+        owed = {z: m for z, m in owed.items()
+                if z in cfg.zones and uncompleted.get(z) != "excluded"}
+        order = [z for z in ctx["priority"] if z in owed]
+        order += [z for z in owed if z not in order]
+        for z in order:
+            uncompleted.pop(z, None)
+        geo = {z: cfg.zones[z].geography for z in order}
+        adjacency = {z: cfg.zones[z].adjacency for z in order}
+        the_plan = plan.build_plan(order, owed, geo, adjacency, ctx["cap_minutes"], tun)
+        for z in the_plan.dropped:
+            uncompleted[z] = "insufficient window"
+        ctx.update(the_plan=the_plan, priority=order, minutes=dict(owed),
+                   start=ctx["end"] - dt.timedelta(minutes=the_plan.span_minutes),
+                   recovery_candidates=[])
 
     async def _preview(self):
         """Report the plan that WOULD run — no valves opened, no calendar written.
