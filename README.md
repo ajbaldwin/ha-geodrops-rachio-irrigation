@@ -104,7 +104,8 @@ per zone, with these entities (all prefixed `geodrops_rachio_`):
 
 - **Buttons** — *Run irrigation now*, *Preview irrigation plan*, *Stop
   irrigation*, *Reset irrigation*, *Refresh Rachio runtimes*. Each triggers the
-  scheduler's matching action; *Preview* plans without watering.
+  scheduler's matching action; *Preview* plans without watering. *Reset* also
+  discards an interrupted night, so it will not resume after a restart.
 - **Drought level** (`select`) — the active drought rating (Level 0 Normal →
   Level 4 Emergency); drives target offsets, runtime scaling and rain-skip
   behavior.
@@ -138,6 +139,21 @@ The **Active Watering Calibration** option in the Advanced step of the
 wizard is **Beta and off by default** (`self_calibration_enabled`). Leave it
 off unless you specifically want to try it; it is not required for the
 scheduler's normal drought-level/soil-moisture-driven watering to work.
+
+## If watering is interrupted
+
+- **Home Assistant restarts (or crashes) mid-watering.** On startup the
+  scheduler finishes that night's run: it waters **only what was still owed**,
+  and only while the watering window is open (with the usual standby and rain
+  checks). It never re-plans from moisture readings, which lag the watering
+  by an hour or more and would water recently finished zones twice. If the
+  window has already closed, the night is recorded as interrupted
+  (`skipped: interrupted-restart` on `sensor.geodrops_rachio_last_run`) and
+  nothing more is watered.
+- **Watering is stopped outside the scheduler** — in the Rachio app, or by an
+  automation. The scheduler ends that night's run and credits only the water
+  actually delivered; it does not restart a schedule someone stopped. To stop
+  from Home Assistant, press *Stop irrigation*.
 
 ## Updates
 
