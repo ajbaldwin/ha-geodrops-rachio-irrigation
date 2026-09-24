@@ -35,8 +35,6 @@ def entry_data(*, self_cal: bool = False, overrides: str = "") -> dict:
             "drought_level_select": "select.geodrops_rachio_drought_level",
             "standby_boolean": "switch.geodrops_rachio_standby",
             "standby_switch": "switch.rachio_standby",
-            "dew_formed_boolean": "switch.geodrops_rachio_dew_formed",
-            "run_active_boolean": "switch.geodrops_rachio_run_active",
         },
         "zones": [zone_data("front", "front"), zone_data("back", "back")],
         "self_calibration_enabled": self_cal,
@@ -58,8 +56,6 @@ def populate(world: FakeWorld, data: dict, *, level: str = "Level 1 - Mild",
     world.set(b["drought_level_select"], level)
     world.set(b["standby_boolean"], "off")
     world.set(b["standby_switch"], "off")
-    world.set(b["dew_formed_boolean"], "off")
-    world.set(b["run_active_boolean"], "off")
     # Weather (brain defaults: Tempest entity ids).
     world.set("sensor.tempest_sensor_temperature", "60")
     world.set("sensor.tempest_sensor_humidity", "70")

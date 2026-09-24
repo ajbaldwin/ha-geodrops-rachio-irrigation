@@ -409,8 +409,6 @@ ORIGINAL_BINDINGS = {
     },
     "drought_level_select": "select.geodrops_rachio_drought_level",
     "standby_boolean": "switch.geodrops_rachio_standby",
-    "dew_formed_boolean": "switch.geodrops_rachio_dew_formed",
-    "run_active_boolean": "switch.geodrops_rachio_run_active",
     "sun": {"dawn": "sensor.sun_next_dawn", "sunrise": "sensor.sun_next_rising"},
 }
 

@@ -243,9 +243,7 @@ class HABindings:
     drought_level_select: str = "input_select.irrigation_drought_level"
     standby_boolean: str = "input_boolean.irrigation_standby"
     standby_switch: str = "switch.sprinkler_standby"
-    dew_formed_boolean: str = "input_boolean.dew_formed"
     rachio_device_name: str = "PLACEHOLDER"
-    run_active_boolean: str = "input_boolean.irrigation_run_active"
     weather: WeatherEntities = WeatherEntities()
     sun: SunAnchors = SunAnchors()
     derived: DerivedSensors = DerivedSensors()
@@ -306,9 +304,7 @@ def parse_bindings(raw: dict) -> HABindings:
         drought_level_select=ha.get("drought_level_select", HABindings().drought_level_select),
         standby_boolean=ha.get("standby_boolean", HABindings().standby_boolean),
         standby_switch=ha.get("standby_switch", HABindings().standby_switch),
-        dew_formed_boolean=ha.get("dew_formed_boolean", HABindings().dew_formed_boolean),
         rachio_device_name=ha.get("rachio_device_name", HABindings().rachio_device_name),
-        run_active_boolean=ha.get("run_active_boolean", HABindings().run_active_boolean),
         weather=weather, sun=sun, derived=derived,
     )
 

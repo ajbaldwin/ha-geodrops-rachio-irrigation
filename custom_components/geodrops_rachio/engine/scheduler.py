@@ -21,7 +21,7 @@ from .learning import LearningMixin
 from .orchestration import OrchestrationMixin
 from .planning import PlanningMixin
 from .runner import RunnerMixin
-from .store import RUN_PROGRESS
+from .store import RUN_ACTIVE, RUN_PROGRESS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -188,13 +188,7 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         self._current_cfg = cfg
         self._current_bindings = cfg.bindings
 
-        marker_state = self.port.state(self._current_bindings.run_active_boolean)
-        if marker_state is None:
-            # A missing marker helper (supported when use_pause_collapse is off) must
-            # degrade to "no interrupted collapsed run", never crash the safety check.
-            marker_set = False
-        else:
-            marker_set = marker_state == "on"
+        marker_set = bool(self.store.read(RUN_ACTIVE))
 
         running = []
         for zone in cfg.zones.values():

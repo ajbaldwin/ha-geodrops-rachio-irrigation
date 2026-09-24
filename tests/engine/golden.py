@@ -26,15 +26,15 @@ import pathlib
 from typing import Any
 
 from custom_components.geodrops_rachio.engine.store import (
-    EFFICACY, PENDING_OBS, PERSISTED_RECORDS, WAITING_MARKER, record_key,
+    EFFICACY, PENDING_OBS, PERSISTED_RECORDS, RUN_ACTIVE, WAITING_MARKER, record_key,
 )
 
 GOLDEN_DIR = pathlib.Path(__file__).parent / "golden"
 RECORD_NAMES = ("status", "last_run", "last_nightly", "calibration", "targets",
                 "preview", "runtimes")
 # The persisted docs a scenario's fixture pins (the ones the v0.9.15 app kept as
-# files in its state dir).
-STORE_KEYS = (EFFICACY, PENDING_OBS, WAITING_MARKER,
+# files in its state dir, plus the run marker it kept in a helper entity).
+STORE_KEYS = (EFFICACY, PENDING_OBS, WAITING_MARKER, RUN_ACTIVE,
               *(record_key(n) for n in PERSISTED_RECORDS))
 
 

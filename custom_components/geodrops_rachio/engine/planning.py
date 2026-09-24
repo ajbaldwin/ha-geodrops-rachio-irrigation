@@ -160,7 +160,6 @@ class PlanningMixin:
             # Averaged local wind smooths momentary lulls that would otherwise
             # falsely trip the "stagnant" disease signal on a once-per-night read.
             wind_mph=num(wx_ids.wind),
-            dew_formed=text(self._current_bindings.dew_formed_boolean) == "on",
             rain_last_hour_mm=num(wx_ids.rain_last_hour),
             precip_type=text(wx_ids.precip_type) or "none",
         )
@@ -190,10 +189,7 @@ class PlanningMixin:
         Returns None if any component is unavailable, so the caller falls back to
         instantaneous readings.
 
-        dew_formed is deliberately False: `input_boolean.dew_formed` is a CURRENT
-        observation, and using it to describe 00:00-05:00 is exactly the staleness
-        this replaces. Sustained overnight RH at or above humid_rh_pct already
-        captures dew conditions.
+        Sustained overnight RH above humid_rh_pct is what captures dew conditions.
 
         The precipitation fields are zeroed: this reading sizes the disease window
         only. Rain ABORT during a run stays instantaneous (_read_weather) and still
@@ -207,14 +203,14 @@ class PlanningMixin:
             return None
         return weather.WeatherReading(
             temp_f=temp_f, rh_pct=rh_pct, wind_mph=wind_mph,
-            dew_formed=False, rain_last_hour_mm=0.0, precip_type="none",
+            rain_last_hour_mm=0.0, precip_type="none",
         )
 
     def _read_observed_overnight(self):
         """WeatherReading from the OBSERVED overnight means, or None if unusable.
 
-        Deliberately mirrors _read_forecast_overnight: precipitation fields zeroed
-        and dew_formed False, so the two readings differ only in whether the numbers
+        Deliberately mirrors _read_forecast_overnight: precipitation fields
+        zeroed, so the two readings differ only in whether the numbers
         were predicted or measured. Anything else would compare two models rather
         than one model against reality.
         """
@@ -226,7 +222,7 @@ class PlanningMixin:
             return None
         return weather.WeatherReading(
             temp_f=temp_f, rh_pct=rh_pct, wind_mph=wind_mph,
-            dew_formed=False, rain_last_hour_mm=0.0, precip_type="none",
+            rain_last_hour_mm=0.0, precip_type="none",
         )
 
     def _read_forecast_precip(self, horizon_hours):
