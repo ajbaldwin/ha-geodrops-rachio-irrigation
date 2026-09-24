@@ -66,6 +66,15 @@ def _normalize(steps: list) -> list:
     return merged
 
 
+def water_minutes(steps: list) -> dict:
+    """{zone_key: minutes} across the water Steps: what they hand Rachio."""
+    out = {}
+    for s in steps:
+        if s.kind == "water":
+            out[s.zone_key] = out.get(s.zone_key, 0) + s.minutes
+    return out
+
+
 def program_runs(steps: list) -> list:
     """The water Steps as ZoneRuns, in order — the single schedule's entity list."""
     runs = []

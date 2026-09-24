@@ -29,6 +29,7 @@ STORAGE_VERSION = 1
 EFFICACY = "efficacy"
 PENDING_OBS = "pending_obs"
 WAITING_MARKER = "waiting_marker"
+RUN_PROGRESS = "run_progress"
 PERSISTED_RECORDS = ("last_nightly", "calibration", "targets", "preview")
 LEGACY_STATE_DIRNAME = "geodrops_rachio_state"
 DELIVERED_PATHS = (

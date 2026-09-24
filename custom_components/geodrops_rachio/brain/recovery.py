@@ -105,3 +105,57 @@ def startup_action(marker, now_iso):
     # Compare both as aware local times (a naive value is taken as local) —
     # comparing naive with aware raises TypeError and lost the night (<= v0.9.15).
     return RE_ARM if now.astimezone() < window_end.astimezone() else MISSED
+
+
+# ─── interrupted-night resume ────────────────────────────────────────────────
+
+RESUME = "resume"
+INTERRUPTED = "interrupted"
+# Below this, what is still owed is rounding, not water worth a schedule.
+MIN_OWED_MINUTES = 1.0
+# A progress doc whose window closed longer ago than this belongs to an earlier
+# night (startup only checks overnight, so a daytime restart leaves it behind).
+STALE_AFTER_HOURS = 12
+
+
+def owed_minutes(planned, delivered, min_minutes=MIN_OWED_MINUTES):
+    """{zone: minutes} still owed: planned minus delivered, crumbs dropped."""
+    owed = {}
+    for zone, minutes in planned.items():
+        left = minutes - (delivered or {}).get(zone, 0)
+        if left >= min_minutes:
+            owed[zone] = left
+    return owed
+
+
+def resume_action(progress, now_iso):
+    """Decide what startup does about a night's persisted run progress.
+
+    Returns (IGNORE | RESUME | INTERRUPTED, owed). The run writes its plan and
+    what it has delivered, counting each water step as delivered the moment it
+    starts, so an interruption at worst leaves one step short (never doubled).
+
+    - IGNORE: no progress, a malformed doc, or one from an earlier night.
+    - RESUME: still inside the watering window with water owed — water only
+      that, never re-planning from moisture readings that lag the watering.
+    - INTERRUPTED: the window has closed, or nothing is owed: record the night,
+      water nothing.
+    """
+    if not isinstance(progress, dict):
+        return IGNORE, {}
+    import datetime
+    planned = progress.get("planned")
+    delivered = progress.get("delivered") or {}
+    if not isinstance(planned, dict) or not isinstance(delivered, dict):
+        return IGNORE, {}
+    try:
+        window_end = datetime.datetime.fromisoformat(progress["window_end"]).astimezone()
+        now = datetime.datetime.fromisoformat(now_iso).astimezone()
+    except (KeyError, TypeError, ValueError):
+        return IGNORE, {}
+    if now - window_end > datetime.timedelta(hours=STALE_AFTER_HOURS):
+        return IGNORE, {}
+    owed = owed_minutes(planned, delivered)
+    if now < window_end and owed:
+        return RESUME, owed
+    return INTERRUPTED, owed
