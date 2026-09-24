@@ -156,3 +156,21 @@ def test_default_paused_false_preserves_external_stop():
         False, seen_on, misses, 100, 600, 90, 90, 6,
     )
     assert verdict == "external-stop"
+
+
+# ─── off_run ─────────────────────────────────────────────────────────────────
+# Consecutive empty polls since water was last seen. Unlike watch_step's misses
+# it keeps counting inside the end grace, so the runner can tell, once a step
+# ends, whether its valves had gone off for good before the end.
+
+def test_off_run_resets_while_running():
+    assert abort.off_run(True, True, 4) == 0
+
+
+def test_off_run_counts_empty_polls_after_water_was_seen():
+    assert abort.off_run(False, True, 0) == 1
+    assert abort.off_run(False, True, 2) == 3
+
+
+def test_off_run_does_not_count_before_water_was_ever_seen():
+    assert abort.off_run(False, False, 0) == 0

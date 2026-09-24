@@ -43,6 +43,22 @@ def verdict(aborted_reason, delivered_since_issue, is_recovery_schedule,
     return CONTINUE_ABORT
 
 
+def classify_non_start(aborted_reason, stopped_before):
+    """Tell a Rachio drop from an external stop that the end grace absorbed.
+
+    A drop happens while the device is paused (the cumulative-pause limit), with
+    water running right up to the pause, so the next water step "never starts".
+    An external stop in the last few minutes of a water step (inside the end
+    grace, or too late to reach the consecutive-miss count before it) looks the
+    same one step later -- but its valves were seen switching off, and staying
+    off, before that step ended. `stopped_before` is that evidence; with it, a
+    "never-started" is the external stop, which must never be re-issued.
+    """
+    if aborted_reason == "never-started" and stopped_before:
+        return "external-stop"
+    return aborted_reason
+
+
 def remaining_after(steps, stopped_index):
     """Program Steps still owed after a drop at `stopped_index`.
 
