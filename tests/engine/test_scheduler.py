@@ -6,7 +6,7 @@ import random
 
 import pytest
 
-from custom_components.geodrops_rachio.engine.store import WAITING_MARKER
+from custom_components.geodrops_rachio.engine.store import RUN_ACTIVE, WAITING_MARKER
 from tests.engine import golden
 from tests.engine.helpers import ENGINE_LOGGER_PREFIX, log_trail_native
 from tests.engine.scenario import entry_data, native_scheduler, populate
@@ -40,8 +40,8 @@ MISSED_NAIVE = {WAITING_MARKER: {
 # name -> (start time, seed docs, world tweak, exception _on_startup raises)
 STARTUP = {
     "daytime_noop": ("2026-07-02 14:00:00", {}, lambda w: None, None),
-    "collapsed_marker": ("2026-07-02 02:00:00", {},
-                         lambda w: w.set("switch.geodrops_rachio_run_active", "on"), None),
+    "collapsed_marker": ("2026-07-02 02:00:00", {RUN_ACTIVE: True},
+                         lambda w: None, None),
     "orphan_valve": ("2026-07-02 02:00:00", {},
                      lambda w: w.rachio.start_direct([("switch.front_zone", 30)]), None),
     "waiting_rearm": ("2026-07-02 00:30:00", WAITING_NAIVE, lambda w: None, None),
@@ -51,7 +51,6 @@ STARTUP = {
 }
 
 STOP = ("rachio", "stop_watering", {"devices": "Main House"})
-MARKER_OFF = ("switch", "turn_off", {"entity_id": "switch.geodrops_rachio_run_active"})
 
 
 def _logbook(world) -> list[str]:
@@ -77,7 +76,7 @@ def _assert_startup_branch(name, world, eng):
         assert book == []
         assert last_run is None
     elif name == "collapsed_marker":
-        assert world.calls[0] == STOP and world.calls[1] == MARKER_OFF
+        assert world.calls[0] == STOP
         assert any("interrupted collapsed run was detected" in m for m in book)
         assert "planning" in statuses and "watering" in statuses
         assert last_run[1]["trigger"] == "startup-heal"
@@ -220,10 +219,10 @@ async def test_unload_mid_pause_stops_the_device(freezer):
     tail = w.calls[-4:]
     assert ("rachio", "stop_watering", {"devices": "Main House"}) in tail
     assert ("switch", "turn_off", {"entity_id": "switch.front_zone"}) in tail
-    assert w.get("switch.geodrops_rachio_run_active") == "off"
-    # The run's own teardown stays non-blocking; only the safety stop blocks.
+    assert eng.store.read(RUN_ACTIVE) is None
+    # The run's teardown clears its marker in the store, not via a service
+    # call, so the only calls are the safety stop's, all blocking.
     assert calls == [
-        ("switch", "turn_off", {"entity_id": "switch.geodrops_rachio_run_active"}, False),
         ("rachio", "stop_watering", {"devices": "Main House"}, True),
         ("switch", "turn_off", {"entity_id": "switch.front_zone"}, True),
         ("switch", "turn_off", {"entity_id": "switch.back_zone"}, True),

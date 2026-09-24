@@ -27,13 +27,6 @@
    }
   ],
   [
-   "switch",
-   "turn_on",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
-   }
-  ],
-  [
    "rachio",
    "start_multiple_zone_schedule",
    {
@@ -76,13 +69,6 @@
    "resume_watering",
    {
     "devices": "Main House"
-   }
-  ],
-  [
-   "switch",
-   "turn_off",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
    }
   ],
   [
@@ -549,7 +535,6 @@
     "updated": "2026-07-02T01:00:00",
     "water_minutes": 72,
     "weather": {
-     "dew_formed": false,
      "precip_type": "none",
      "rain_last_hour_mm": 0.0,
      "rh_pct": 70.0,
@@ -835,7 +820,6 @@
     "updated": "2026-07-02T01:00:00",
     "water_minutes": 72,
     "weather": {
-     "dew_formed": false,
      "precip_type": "none",
      "rain_last_hour_mm": 0.0,
      "rh_pct": 70.0,
@@ -858,6 +842,7 @@
    },
    "value": 2
   },
+  "run_active": null,
   "waiting_marker": null
  }
 }

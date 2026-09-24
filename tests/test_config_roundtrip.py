@@ -98,8 +98,8 @@ def test_bindings_resolve_fixed_entity_ids():
     # The integration-owned fixed entity ids must survive the round trip.
     assert bindings.drought_level_select == "select.geodrops_rachio_drought_level"
     assert bindings.standby_boolean == "switch.geodrops_rachio_standby"
-    assert bindings.dew_formed_boolean == "switch.geodrops_rachio_dew_formed"
-    assert bindings.run_active_boolean == "switch.geodrops_rachio_run_active"
+    assert not hasattr(bindings, "dew_formed_boolean")  # retired binding
+    assert not hasattr(bindings, "run_active_boolean")  # now an engine-store flag
 
     # User-collected bindings and derived sensors resolve too.
     assert bindings.notify_service == "notify.mobile_app_phone"

@@ -7,6 +7,7 @@ import pytest
 from custom_components.geodrops_rachio.brain.plan import Slot
 from custom_components.geodrops_rachio.engine.io import IOMixin
 from custom_components.geodrops_rachio.engine.runner import RunnerMixin
+from custom_components.geodrops_rachio.engine.store import RUN_ACTIVE
 from tests.engine.helpers import ENGINE_LOGGER_PREFIX, prime
 from tests.engine.scenario import entry_data, native_engine, populate
 from tests.engine.world import FakeWorld
@@ -16,7 +17,6 @@ FRONT, BACK = "switch.front_zone", "switch.back_zone"
 SWITCHES = {"front": FRONT, "back": BACK}
 START = ("rachio", "start_multiple_zone_schedule")
 STOP_DEVICE = ("rachio", "stop_watering", {"devices": "Main House"})
-MARKER = "switch.geodrops_rachio_run_active"
 
 
 def _engine(freezer, *, collapse, overrides=""):
@@ -69,7 +69,7 @@ async def test_standby_before_first_block_waters_nothing(freezer, collapse):
     assert sorted(_turn_offs(w)) == [BACK, FRONT]            # stop_all, defensively
     if collapse:
         assert STOP_DEVICE in w.calls
-        assert w.get(MARKER) == "off"                          # finally cleared it
+        assert eng.store.read(RUN_ACTIVE) is None              # finally cleared it
 
 
 @BOTH
@@ -104,7 +104,7 @@ async def test_unexpected_error_still_closes_every_valve(freezer, collapse):
         FRONT, BACK}
     if collapse:
         assert STOP_DEVICE in after
-        assert w.get(MARKER) == "off"
+        assert eng.store.read(RUN_ACTIVE) is None
 
 
 async def test_run_plan_manual_stop_during_soak_keeps_earlier_delivery(freezer):
@@ -179,7 +179,7 @@ async def test_collapsed_manual_stop_mid_pause(freezer):
     assert out["aborted_reason"] == "manual-abort"
     assert out["delivered_minutes"] == {"front": 10}
     assert ("rachio", "resume_watering") not in [c[:2] for c in w.calls]
-    assert STOP_DEVICE in w.calls and w.get(MARKER) == "off"
+    assert STOP_DEVICE in w.calls and eng.store.read(RUN_ACTIVE) is None
 
 BOUNDED = "max_pauses_per_schedule: 1"
 TWO_SOAKS = [Slot("front", 5), Slot(None, 20), Slot("back", 5), Slot(None, 20),

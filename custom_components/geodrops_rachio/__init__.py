@@ -5,6 +5,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import config_writer, rachio_client
@@ -57,6 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.async_add_shutdown_job(HassJob(scheduler.async_shutdown)))
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
     _purge_orphan_zone_devices(hass, entry)
+    _purge_retired_entities(hass, entry)
     # Last, so a failure above cannot leak the scheduler's time triggers.
     scheduler.async_start(hass)
     return True
@@ -71,6 +73,20 @@ def _purge_orphan_zone_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
             if domain == DOMAIN and ":zone:" in ident and ident not in keep:
                 reg.async_remove_device(device.id)
                 break
+
+
+# (platform, unique-id suffix) of entities a past version created and this one
+# no longer does; left in the registry they would linger as unavailable.
+_RETIRED_ENTITIES = (("switch", "dew_formed"), ("switch", "run_active"))
+
+
+def _purge_retired_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    reg = er.async_get(hass)
+    for platform, suffix in _RETIRED_ENTITIES:
+        entity_id = reg.async_get_entity_id(
+            platform, DOMAIN, f"{entry.entry_id}_{suffix}")
+        if entity_id is not None:
+            reg.async_remove(entity_id)
 
 
 def _snapshot(entry: ConfigEntry) -> dict:

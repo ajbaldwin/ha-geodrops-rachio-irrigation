@@ -82,18 +82,64 @@ async def test_record_sensors_mirror_scheduler(hass, enable_pyscript_and_rachio)
     assert hass.states.get("sensor.geodrops_rachio_plan") is not None
 
 
+async def test_record_sensors_count_zones(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    for suffix in ("last_nightly", "last_run", "plan"):
+        st = hass.states.get(f"sensor.geodrops_rachio_{suffix}")
+        assert st.attributes["unit_of_measurement"] == "zones"
+
+
 async def test_flag_switches_created_and_toggle(hass, enable_pyscript_and_rachio):
     entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    for key in ("run_active", "standby", "dew_formed"):
-        eid = f"switch.geodrops_rachio_{key}"
-        assert hass.states.get(eid).state == "off"
+    assert hass.states.get("switch.geodrops_rachio_standby").state == "off"
     await hass.services.async_call(
         "switch", "turn_on",
-        {"entity_id": "switch.geodrops_rachio_run_active"}, blocking=True)
-    assert hass.states.get("switch.geodrops_rachio_run_active").state == "on"
+        {"entity_id": "switch.geodrops_rachio_standby"}, blocking=True)
+    assert hass.states.get("switch.geodrops_rachio_standby").state == "on"
+
+
+async def test_run_active_is_a_read_only_indicator(hass, enable_pyscript_and_rachio):
+    # Run active is informational: a binary_sensor mirroring the engine's
+    # persisted run marker, with no switch to toggle.
+    from custom_components.geodrops_rachio.engine.store import RUN_ACTIVE
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.geodrops_rachio_run_active") is None
+    eid = "binary_sensor.geodrops_rachio_run_active"
+    assert hass.states.get(eid).state == "off"
+    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    await scheduler.set_run_active(True)
+    await hass.async_block_till_done()
+    assert hass.states.get(eid).state == "on"
+    assert scheduler.store.read(RUN_ACTIVE) is True
+    await scheduler.set_run_active(False)
+    await hass.async_block_till_done()
+    assert hass.states.get(eid).state == "off"
+
+
+@pytest.mark.parametrize("key", ["dew_formed", "run_active"])
+async def test_retired_switch_is_removed(hass, enable_pyscript_and_rachio, key):
+    # An install from before its removal still has the switch in the entity
+    # registry; setup must drop it rather than leave it unavailable.
+    from homeassistant.helpers import entity_registry as er
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    reg = er.async_get(hass)
+    reg.async_get_or_create(
+        "switch", DOMAIN, f"{entry.entry_id}_{key}",
+        suggested_object_id=f"geodrops_rachio_{key}", config_entry=entry)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert reg.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_{key}") is None
+    assert hass.states.get(f"switch.geodrops_rachio_{key}") is None
 
 
 async def test_zone_exclude_switch_created_per_zone(hass, enable_pyscript_and_rachio):

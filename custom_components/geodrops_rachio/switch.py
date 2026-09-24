@@ -7,8 +7,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .entity_base import device_info, zone_device_info
 from .util import slug
 
-_FLAGS = [("run_active", "Run active"), ("standby", "Standby"),
-          ("dew_formed", "Dew formed")]
+_FLAGS = [("standby", "Standby")]
 
 
 class FlagSwitch(RestoreEntity, SwitchEntity):

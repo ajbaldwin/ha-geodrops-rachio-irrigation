@@ -160,3 +160,16 @@ async def test_preview_refused_while_watering(freezer):
     await eng._preview()
     assert "preview" not in eng.records
     assert w.calls[-1][2]["message"] == "Preview skipped: watering in progress"
+
+
+async def test_preview_in_standby_publishes_zero_zones(freezer):
+    # The Plan sensor counts zones (unit "zones"), so its state must stay
+    # numeric; standby is carried in the attributes and the status sensor.
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    w.set("switch.geodrops_rachio_standby", "on")
+    eng = native_engine(w, data, *ALL_MIXINS)
+    await eng._preview()
+    value, attrs = eng.records["preview"]["value"], eng.records["preview"]["attributes"]
+    assert value == 0
+    assert attrs["standby"] is True

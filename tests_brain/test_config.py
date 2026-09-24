@@ -211,18 +211,12 @@ def test_bindings_default_device_name_is_placeholder():
     assert config.HABindings().rachio_device_name == "PLACEHOLDER"
 
 
-def test_bindings_default_run_active_boolean():
-    assert config.HABindings().run_active_boolean == "input_boolean.irrigation_run_active"
 
 
-def test_parse_bindings_reads_device_and_marker():
-    raw = {"homeassistant": {
-        "rachio_device_name": "Main House",
-        "run_active_boolean": "input_boolean.custom_marker",
-    }}
+def test_parse_bindings_reads_device_name():
+    raw = {"homeassistant": {"rachio_device_name": "Main House"}}
     b = config.parse_bindings(raw)
     assert b.rachio_device_name == "Main House"
-    assert b.run_active_boolean == "input_boolean.custom_marker"
 
 
 def test_tunables_pause_collapse_defaults():

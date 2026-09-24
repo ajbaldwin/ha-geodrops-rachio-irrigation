@@ -107,16 +107,18 @@ per zone, with these entities (all prefixed `geodrops_rachio_`):
 - **Drought level** (`select`) — the active drought rating (Level 0 Normal →
   Level 4 Emergency); drives target offsets, runtime scaling and rain-skip
   behavior.
-- **Switches** — *Run active* (the scheduler's own run flag), *Standby* (pause
-  scheduling), *Dew formed* (overnight-dew signal).
+- **Standby** (`switch`) — pause scheduling.
+- **Run active** (`binary_sensor`) — read-only; on while the scheduler is
+  running a watering schedule.
 - **Status sensors** — `sensor.geodrops_rachio_status` (state is a
   human-readable status line; the raw lowercase status token, e.g. `waiting`,
   `watering`, `idle`, is in its `status` attribute — template against the
   attribute, not the state, for automations), `sensor.geodrops_rachio_last_nightly`
   (last nightly run's record), `sensor.geodrops_rachio_last_run` (last run of
   any kind, including *Run irrigation now*), and `sensor.geodrops_rachio_plan`
-  (the most recent *Preview irrigation plan* output). Each carries the run's
-  full detail as attributes.
+  (the most recent *Preview irrigation plan* output). The state of the last
+  three is a zone count (zones watered, or zones the preview would water), and
+  each carries the run's full detail as attributes.
 
 **Per-zone (one device each)**
 

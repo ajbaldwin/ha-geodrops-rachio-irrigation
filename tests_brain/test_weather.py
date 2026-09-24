@@ -3,9 +3,9 @@ from brain import config, weather
 T = config.Tunables()
 
 
-def wx(temp=60, rh=50, wind=10, dew=False, rain=0.0, precip="none"):
+def wx(temp=60, rh=50, wind=10, rain=0.0, precip="none"):
     return weather.WeatherReading(
-        temp_f=temp, rh_pct=rh, wind_mph=wind, dew_formed=dew,
+        temp_f=temp, rh_pct=rh, wind_mph=wind,
         rain_last_hour_mm=rain, precip_type=precip,
     )
 
@@ -19,12 +19,6 @@ def test_pressure_breakdown_all_active():
     b = weather.pressure_breakdown(wx(temp=75, rh=95, wind=1), T)
     assert b["warm"] and b["humid"] and b["stagnant"]
     assert b["count"] == 3
-
-
-def test_pressure_breakdown_dew_counts_as_humid():
-    b = weather.pressure_breakdown(wx(dew=True), T)
-    assert b["humid"] is True
-    assert b["count"] == 1
 
 
 def test_pressure_signals_equals_breakdown_count():
@@ -41,11 +35,6 @@ def test_all_pressure_gives_disease_cap():
     w = wx(temp=75, rh=95, wind=1)
     assert weather.pressure_signals(w, T) == 3
     assert weather.window_cap_minutes(w, T) == 3 * 60
-
-
-def test_dew_counts_as_humid_signal():
-    w = wx(temp=60, rh=50, wind=10, dew=True)
-    assert weather.pressure_signals(w, T) == 1
 
 
 def test_partial_pressure_interpolates():

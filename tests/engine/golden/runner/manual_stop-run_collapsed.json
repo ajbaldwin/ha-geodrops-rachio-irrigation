@@ -1,13 +1,6 @@
 {
  "calls": [
   [
-   "switch",
-   "turn_on",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
-   }
-  ],
-  [
    "rachio",
    "start_multiple_zone_schedule",
    {
@@ -40,13 +33,6 @@
    "turn_off",
    {
     "entity_id": "switch.back_zone"
-   }
-  ],
-  [
-   "switch",
-   "turn_off",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
    }
   ]
  ],

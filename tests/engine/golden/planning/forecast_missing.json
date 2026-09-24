@@ -73,12 +73,10 @@
         "precipitation_chance_prefix": "sensor.precipitation_chance_"
        }
       },
-      "dew_formed_boolean": "switch.geodrops_rachio_dew_formed",
       "drought_level_select": "select.geodrops_rachio_drought_level",
       "notify_service": "notify.phone",
       "rachio_api_key_secret": "rachio_api_key",
       "rachio_device_name": "Main House",
-      "run_active_boolean": "switch.geodrops_rachio_run_active",
       "standby_boolean": "switch.geodrops_rachio_standby",
       "standby_switch": "switch.rachio_standby",
       "sun": {
@@ -438,7 +436,6 @@
   "wx": {
    "$dataclass": "custom_components.geodrops_rachio.brain.weather.WeatherReading",
    "fields": {
-    "dew_formed": false,
     "precip_type": "none",
     "rain_last_hour_mm": 0.0,
     "rh_pct": 70.0,

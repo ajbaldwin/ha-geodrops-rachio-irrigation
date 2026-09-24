@@ -8,13 +8,6 @@
    }
   ],
   [
-   "switch",
-   "turn_off",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
-   }
-  ],
-  [
    "logbook",
    "log",
    {
@@ -30,13 +23,6 @@
     "entity_id": "sensor.geodrops_rachio_status",
     "message": "Plan ready — 2 zone(s), 88 min span, starting 03:27",
     "name": "Irrigation"
-   }
-  ],
-  [
-   "switch",
-   "turn_on",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
    }
   ],
   [
@@ -82,13 +68,6 @@
    "resume_watering",
    {
     "devices": "Main House"
-   }
-  ],
-  [
-   "switch",
-   "turn_off",
-   {
-    "entity_id": "switch.geodrops_rachio_run_active"
    }
   ],
   [
@@ -737,6 +716,7 @@
    },
    "value": 2
   },
+  "run_active": null,
   "waiting_marker": null
  }
 }

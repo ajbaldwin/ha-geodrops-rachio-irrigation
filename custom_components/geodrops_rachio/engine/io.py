@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from ..brain import blocks
-from .store import EFFICACY, PENDING_OBS
+from .store import EFFICACY, PENDING_OBS, RUN_ACTIVE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,8 +108,10 @@ class IOMixin:
 
     async def set_run_active(self, on):
         """Persisted marker: a collapsed run is in flight (survives a restart)."""
-        await self.port.call("switch", "turn_on" if on else "turn_off",
-                             {"entity_id": self._current_bindings.run_active_boolean})
+        if on:
+            await self.store.write(RUN_ACTIVE, True)
+        else:
+            await self.store.delete(RUN_ACTIVE)
 
     async def stop_all(self, zone_switches):
         for zs in zone_switches:

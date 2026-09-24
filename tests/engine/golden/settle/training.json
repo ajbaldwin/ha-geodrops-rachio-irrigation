@@ -19,6 +19,7 @@
   "record.last_nightly": null,
   "record.preview": null,
   "record.targets": null,
+  "run_active": null,
   "waiting_marker": null
  }
 }
