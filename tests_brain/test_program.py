@@ -88,3 +88,11 @@ def test_two_pause_budget_keeps_both_gaps_in_one_segment():
     segs = program.segment_program(_steps(), 2)
     assert len(segs) == 1
     assert segs[0].gap_after == 0
+
+
+def test_water_minutes_sums_each_zones_water_steps():
+    from brain.program import Step, water_minutes
+    steps = [Step("water", "front", 12), Step("pause", None, 8),
+             Step("water", "back", 12), Step("water", "front", 6)]
+    assert water_minutes(steps) == {"front": 18, "back": 12}
+    assert water_minutes([]) == {}

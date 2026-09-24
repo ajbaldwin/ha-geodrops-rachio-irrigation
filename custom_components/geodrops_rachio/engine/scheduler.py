@@ -21,6 +21,7 @@ from .learning import LearningMixin
 from .orchestration import OrchestrationMixin
 from .planning import PlanningMixin
 from .runner import RunnerMixin
+from .store import RUN_PROGRESS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,8 +94,9 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         task, self.run_task = self.run_task, None
         await _cancel_and_wait(task)
 
-    async def _start_run(self, wait: bool, trigger: str) -> None:
-        """Replace any run with a fresh `_plan_and_run(wait, trigger)`.
+    async def _start_run(self, wait: bool, trigger: str, resume: dict | None = None) -> None:
+        """Replace any run with a fresh `_plan_and_run(wait, trigger)` (finishing
+        an interrupted night's `resume` minutes, when given).
 
         Under the lock, so the old run finishes unwinding (its `finally` clears
         the run flags and the run-active marker) BEFORE the new one starts, and
@@ -109,8 +111,9 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
             await self._cancel_current_run()
             if gen != self._run_gen:
                 return
-            self.run_task = self._spawn(
-                self._plan_and_run(wait, trigger), "geodrops_rachio_run")
+            run = (self._plan_and_run(wait, trigger) if resume is None
+                   else self._plan_and_run(wait, trigger, resume=resume))
+            self.run_task = self._spawn(run, "geodrops_rachio_run")
 
     def _spawn(self, coro: Coroutine, name: str) -> asyncio.Task:
         task = self._create_task(coro, name)
@@ -127,11 +130,18 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
 
         A run interrupted mid-watering can leave a Rachio valve OPEN: a crash or OOM
         kill gives the engine no chance to stop the zone (a graceful stop or unload
-        does — see async_shutdown), the run is NOT resumed (the system is stateless),
-        and no recap is sent. Without this, the only backstop is the 6-hour stuck-zone
-        automation. On startup we poll the managed zones and close anything still
-        running, noting it in the Logbook. A short sleep first lets the Rachio
-        integration load its switch entities before we poll them.
+        does — see async_shutdown), and no recap is sent. Without this, the only
+        backstop is the 6-hour stuck-zone automation. On startup we poll the managed
+        zones and close anything still running, noting it in the Logbook. A short
+        sleep first lets the Rachio integration load its switch entities before we
+        poll them.
+
+        A run that got as far as watering leaves its progress in the Store (the plan
+        and each step counted as delivered as it starts), whether HA crashed or
+        stopped gracefully. That is checked first: inside the watering window, only
+        what is still owed is watered (never re-planned from moisture, which lags the
+        watering); after it, the night is recorded as interrupted. The checks below
+        are the fallback for an interruption with no progress recorded.
 
         If we DID find an open valve, we then self-heal: re-plan and finish the run.
         Gating the self-heal on "an orphan was found" is what keeps it safe without
@@ -193,6 +203,15 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
                     running.append(zone.rachio_switch)
             except Exception:
                 pass
+
+        # A night's persisted progress is the precise record: resume what it still
+        # owes, or record it — never re-plan from moisture that lags the watering.
+        # Without one (e.g. the night of an upgrade), fall through to the checks
+        # below, unchanged.
+        progress = self.store.read(RUN_PROGRESS)
+        if progress is not None:
+            if await self._handle_progress(progress, marker_set, running):
+                return
 
         if marker_set:
             # A collapsed run was in flight — mid-water OR mid-pause (all valves read
@@ -259,6 +278,38 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         await self._activity("Startup: re-planning the interrupted run from live moisture")
         await self._start_run(True, "startup-heal")
 
+    async def _handle_progress(self, progress, marker_set, running) -> bool:
+        """Act on an interrupted night's progress; True if startup is done."""
+        action, owed = recovery.resume_action(progress, self.port.now().isoformat())
+        if action == recovery.IGNORE:
+            await self.store.write(RUN_PROGRESS, None)
+            return False
+        if marker_set or running:
+            # Kill any running or about-to-auto-resume schedule outright.
+            await self.stop_device()
+            if running:
+                await self.stop_all(running)
+            await self.set_run_active(False)
+        await self._clear_waiting_marker()
+        if action == recovery.RESUME:
+            owed_txt = ", ".join(f"{z} {round(m, 1)} min" for z, m in owed.items())
+            await self._activity(
+                f"Startup: resuming the run HA interrupted; still owed: {owed_txt}")
+            # The progress stays until the resumed run opens its own (a restart
+            # before it starts watering resumes again).
+            await self._start_run(True, "startup-resume", resume=owed)
+            return True
+        # INTERRUPTED: the window has closed (or nothing is owed). Record it.
+        stamp = progress.get("stamp") or self._naive_now().isoformat(timespec="seconds")
+        await self._publish_last_run(stamp, progress.get("trigger") or "nightly",
+                                     skipped="interrupted-restart")
+        self._set_status("skipped", detail="interrupted — HA restarted mid-run")
+        await self._activity(
+            "Startup: a run was interrupted by an HA restart and the watering window "
+            "has closed; recorded as interrupted")
+        await self.store.write(RUN_PROGRESS, None)
+        return True
+
     # --- button actions ---------------------------------------------------
     async def async_run_now(self) -> None:
         """Run the full plan immediately (no pre-dawn wait). Waters for real."""
@@ -281,8 +332,8 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         honours once watering is underway; it does NOT interrupt the multi-hour
         pre-dawn "waiting" sleep, so a planned-but-unstarted run keeps its slot until
         its start time. This kills the waiting or watering task outright, closes any
-        open valves, clears the waiting + run-active markers, and returns status to
-        idle. Safe to call in any state.
+        open valves, clears the waiting + run-active markers and the night's run
+        progress, and returns status to idle. Safe to call in any state.
         """
         await self._cancel_run()  # terminate the waiting or watering run task now
         self._manual_stop = False
@@ -294,6 +345,8 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         try:
             await self._clear_waiting_marker()
             await self.set_run_active(False)
+            # A reset night is over: nothing may resume it after a restart.
+            await self.store.write(RUN_PROGRESS, None)
         except Exception as err:
             _LOGGER.warning(f"irrigation: reset — marker cleanup skipped: {err}")
         self._set_status("idle", detail="reset")

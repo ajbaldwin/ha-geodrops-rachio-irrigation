@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from ..brain import abort, blocks, program, recovery
+from .store import RUN_PROGRESS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +83,12 @@ class RunnerMixin:
         # quantization is invisible after the fact.
         sent = []
         all_switches = list(zone_switches.values())
+        planned = {}
+        for block in blocks.group_blocks(slots):
+            if block.kind != "idle":
+                for r in blocks.quantize(block.slots):
+                    planned[r.zone_key] = planned.get(r.zone_key, 0) + r.minutes
+        await self._begin_progress(planned)
         try:
             for block in blocks.group_blocks(slots):
                 reason = self._abort_now(is_standby, is_manual_stop, is_rain)
@@ -127,6 +134,9 @@ class RunnerMixin:
                         await self.stop_zone(switch)
 
                 await self.start_block(runs, zone_switches)
+                # Credit the whole block now it has been handed over.
+                await self._credit_progress(_merge_minutes(
+                    delivered, {r.zone_key: r.minutes for r in runs}))
                 block_seconds = sum([r.minutes for r in runs]) * 60
                 sent.append({
                     "minutes": int(block_seconds / 60),
@@ -180,6 +190,26 @@ class RunnerMixin:
             await self.stop_all(all_switches)
             raise
 
+    async def _begin_progress(self, planned):
+        """Record the night's plan in the run-progress doc the orchestrator opened
+        (none outside a planned run, e.g. a runner exercised on its own)."""
+        doc = self.store.read(RUN_PROGRESS)
+        if not isinstance(doc, dict):
+            return
+        doc["planned"] = dict(planned)
+        doc["delivered"] = {}
+        await self.store.write(RUN_PROGRESS, doc)
+
+    async def _credit_progress(self, credited):
+        """Persist what the night has delivered so far, counting the water step
+        (or block) just started as delivered in full: if HA dies mid-step, a
+        resumed night is at worst that step short, never watered twice."""
+        doc = self.store.read(RUN_PROGRESS)
+        if not isinstance(doc, dict):
+            return
+        doc["delivered"] = dict(credited)
+        await self.store.write(RUN_PROGRESS, doc)
+
     def _crumb(self, crumbs, event, detail=None):
         """Append one timestamped execution breadcrumb.
 
@@ -214,6 +244,7 @@ class RunnerMixin:
                     "delivered_minutes": {}, "blocks": [], "recoveries": 0,
                     "breadcrumbs": []}
         segments = program.segment_program(steps, tun.max_pauses_per_schedule)
+        await self._begin_progress(program.water_minutes(steps))
 
         watered = []
         delivered = {}
@@ -267,7 +298,7 @@ class RunnerMixin:
 
                     aborted, watering_seconds, stopped_index = await self._walk_segment(
                         steps, all_switches, is_standby, is_manual_stop, is_rain,
-                        crumbs)
+                        crumbs, credit_base=dict(delivered))
 
                     # Credit by measurement; track what THIS schedule delivered so the
                     # recovery verdict can tell a dropped-mid-run schedule from one
@@ -347,7 +378,8 @@ class RunnerMixin:
             await self.port.sleep(CHECK_INTERVAL_S)
             waited += CHECK_INTERVAL_S
 
-    async def _walk_segment(self, steps, all_switches, is_standby, is_manual_stop, is_rain, crumbs):
+    async def _walk_segment(self, steps, all_switches, is_standby, is_manual_stop, is_rain,
+                            crumbs, credit_base=None):
         """Drive one schedule's steps; return (aborted, watering_seconds, stopped_index).
 
         watering_seconds counts only time under water steps (pauses excluded).
@@ -355,7 +387,8 @@ class RunnerMixin:
         (len(steps) if it completed). After a resume, a post-resume probe checks the
         valve actually came back and reports a drop early (see _resume_took_hold);
         the _sleep_watching never-started guard is the backstop. Pause timing lands
-        on our own clock (spec §3.4 residual).
+        on our own clock (spec §3.4 residual). `credit_base` is what the run had
+        already delivered before this schedule, for the persisted progress.
         """
         watering_seconds = 0
         just_resumed = False
@@ -364,6 +397,9 @@ class RunnerMixin:
                 if just_resumed and not await self._resume_took_hold(all_switches):
                     return "never-started", watering_seconds, i
                 just_resumed = False
+                # Credit the step now it has started (see _credit_progress).
+                await self._credit_progress(_merge_minutes(
+                    credit_base, program.water_minutes(steps[:i + 1])))
                 aborted, elapsed = await self._sleep_watching(
                     step.minutes * 60, is_standby, is_manual_stop, is_rain,
                     watch_switches=all_switches,
@@ -467,3 +503,10 @@ class RunnerMixin:
                 if verdict:
                     return verdict, stopped_at
         return None, elapsed
+
+
+def _merge_minutes(base, more):
+    out = dict(base or {})
+    for zone, minutes in more.items():
+        out[zone] = out.get(zone, 0) + minutes
+    return out
