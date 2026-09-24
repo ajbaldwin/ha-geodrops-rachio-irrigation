@@ -259,13 +259,16 @@ def accumulate_sample(peak, retained, last_seen, value, last_updated,
     """Fold one candidate sensor reading into an obs accumulator.
 
     Counts only a genuinely new report (last_updated strictly newer than
-    last_seen — a stale MQTT republish carries the same last_updated). peak is
+    last_seen — a stale MQTT republish carries the same last_updated) made at
+    or after run_end (an earlier report predates the watering's end). peak is
     the running max from run_end on; retained is the latest reading at/after
     run_end + settle_hours. Returns (peak, retained, last_seen, changed).
     """
     if value is None or last_updated is None:
         return peak, retained, last_seen, False
     if last_seen is not None and last_updated <= last_seen:
+        return peak, retained, last_seen, False
+    if last_updated < run_end:
         return peak, retained, last_seen, False
     new_peak = value if peak is None else max(peak, value)
     new_ret = retained

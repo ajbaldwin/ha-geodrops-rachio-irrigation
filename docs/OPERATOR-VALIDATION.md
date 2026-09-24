@@ -2,9 +2,9 @@
 
 v1.0.0 moves the scheduler off pyscript and runs it natively inside this
 integration. The automated suite (`bash tools/test.sh` + `tests_brain/`,
-including engine unit tests, differential tests against the legacy pyscript
-app, and HA integration tests) already proves the engine matches the old
-app's behavior. What's left is a real-box checklist for cutting over an
+including engine unit tests, golden fixtures recorded from the legacy
+pyscript app, and HA integration tests) already proves the engine matches the
+old app's behavior. What's left is a real-box checklist for cutting over an
 existing 0.9.x install without losing calibration history or watering the
 lawn unattended.
 

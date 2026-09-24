@@ -120,6 +120,15 @@ def test_accumulate_ignores_stale_republish_and_missing():
     # None value/last_updated -> no change
     assert calibration.accumulate_sample(85.0, 82.0, _t(5), None, _t(6), _t(6), _t(0), 4.0) == (85.0, 82.0, _t(5), False)
 
+def test_accumulate_ignores_reading_reported_before_run_end():
+    # first poll after the run: the sensor's latest report predates run_end
+    # (last_seen is still None) -> not a sample, peak stays unset
+    assert calibration.accumulate_sample(None, None, None, 70.0, _t(-1), _t(1), _t(0), 4.0) == (None, None, None, False)
+    # a report exactly at run_end counts ("from run_end on")
+    peak, ret, seen, ch = calibration.accumulate_sample(
+        None, None, None, 85.0, _t(0), _t(1), _t(0), 4.0)
+    assert (peak, ret, seen, ch) == (85.0, None, _t(0), True)
+
 # --- retention_factor ---
 def test_retention_factor_and_clamps():
     assert calibration.retention_factor(80.0, 92.0, 84.0, 0.1) == pytest.approx((84-80)/(92-80))  # 0.333
