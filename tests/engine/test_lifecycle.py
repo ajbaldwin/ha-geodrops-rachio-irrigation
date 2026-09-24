@@ -1,4 +1,4 @@
-"""Scheduler lifecycle: background jobs and teardown (no legacy oracle needed)."""
+"""Scheduler lifecycle: background jobs and teardown."""
 import asyncio
 import logging
 

@@ -1,6 +1,6 @@
 """Learning passes: the 06:00 forecast calibration and the 30-min settle poll.
 
-Ported from tests/legacy/geodrops_rachio_legacy.py lines 2372-2459 and 2467-2601.
+Ported from v0.9.15 bundled_app/geodrops_rachio.py lines 2372-2459 and 2467-2601.
 """
 from __future__ import annotations
 

@@ -1,8 +1,8 @@
 """A simulated Home Assistant + Rachio controller for engine tests.
 
-Both the native engine (through FakePort) and the legacy pyscript app (through
-legacy_harness) run against a FakeWorld, so one scenario can be replayed on each
-and the observable effects compared.
+The engine runs against a FakeWorld through FakePort, and each scenario's
+observable effects (service calls, published records, persisted docs) are
+compared with its golden fixture (see golden.py).
 
 Time is the freezegun clock (the `freezer` fixture): nothing sleeps for real.
 `advance()` moves the clock, firing scripted events in time order. Rachio zone

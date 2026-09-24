@@ -1,0 +1,715 @@
+{
+ "calls": [
+  [
+   "logbook",
+   "log",
+   {
+    "entity_id": "sensor.geodrops_rachio_status",
+    "message": "Plan ready — 2 zone(s), 88 min span, starting 03:27",
+    "name": "Irrigation"
+   }
+  ],
+  [
+   "switch",
+   "turn_on",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ],
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "12,12,12,12,12,12",
+    "entity_id": [
+     "switch.back_zone",
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone"
+    ]
+   }
+  ],
+  [
+   "rachio",
+   "pause_watering",
+   {
+    "devices": "Main House",
+    "duration": 8
+   }
+  ],
+  [
+   "rachio",
+   "resume_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "rachio",
+   "pause_watering",
+   {
+    "devices": "Main House",
+    "duration": 8
+   }
+  ],
+  [
+   "rachio",
+   "resume_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ],
+  [
+   "logbook",
+   "log",
+   {
+    "entity_id": "switch.back_zone",
+    "message": "Back watered 36 min",
+    "name": "Irrigation"
+   }
+  ],
+  [
+   "logbook",
+   "log",
+   {
+    "entity_id": "switch.front_zone",
+    "message": "Front watered 36 min",
+    "name": "Irrigation"
+   }
+  ],
+  [
+   "logbook",
+   "log",
+   {
+    "entity_id": "sensor.geodrops_rachio_status",
+    "message": "Run complete — rachio_calls=5, state_polls=360",
+    "name": "Irrigation"
+   }
+  ],
+  [
+   "notify",
+   "phone",
+   {
+    "message": "Watered 2: Back, Front\nWatered 03:27–04:55\nWindow: 23:00–04:55 (5.92h)",
+    "title": "Irrigation Recap"
+   }
+  ],
+  [
+   "calendar",
+   "create_event",
+   {
+    "description": "Window: 23:00–04:55 (5.92h)\nWatered: 03:27–04:55\nCycle/soak: 12/20 min\n- Back: 36 min\n- Front: 36 min",
+    "end_date_time": "2026-07-02T04:55:00+00:00",
+    "entity_id": "calendar.lawn",
+    "start_date_time": "2026-07-02T03:27:00+00:00",
+    "summary": "Irrigation — 2 zones, 72 min"
+   }
+  ]
+ ],
+ "logs": [],
+ "records": {
+  "last_nightly": [
+   2,
+   {
+    "aborted_reason": null,
+    "block_count": 1,
+    "blocks": [
+     {
+      "minutes": 72,
+      "runs": [
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ]
+      ]
+     }
+    ],
+    "breadcrumbs": [
+     {
+      "detail": [
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ]
+      ],
+      "event": "start",
+      "t": "03:27:00"
+     },
+     {
+      "detail": 8,
+      "event": "pause",
+      "t": "03:51:00"
+     },
+     {
+      "event": "resume",
+      "t": "03:59:00"
+     },
+     {
+      "detail": 8,
+      "event": "pause",
+      "t": "04:23:00"
+     },
+     {
+      "event": "resume",
+      "t": "04:31:00"
+     },
+     {
+      "event": "end",
+      "t": "04:55:00"
+     }
+    ],
+    "calibration": {
+     "back": {
+      "efficacy": null,
+      "last_reject_reason": null,
+      "n_obs": 0,
+      "span_pts": null,
+      "state": "calibrating"
+     },
+     "front": {
+      "efficacy": null,
+      "last_reject_reason": null,
+      "n_obs": 0,
+      "span_pts": null,
+      "state": "calibrating"
+     }
+    },
+    "delivered_minutes": {
+     "back": 36,
+     "front": 36
+    },
+    "dosing": {
+     "back": {
+      "deficit_pts": 27.0,
+      "effective_depth_mm": 7.5,
+      "frac": 1.0,
+      "scaled_full_refill_min": 36.0,
+      "source": "fallback",
+      "span_pts": 0.0
+     },
+     "front": {
+      "deficit_pts": 27.0,
+      "effective_depth_mm": 7.5,
+      "frac": 1.0,
+      "scaled_full_refill_min": 36.0,
+      "source": "fallback",
+      "span_pts": 0.0
+     }
+    },
+    "dosing_sources": {
+     "back": "fallback",
+     "front": "fallback"
+    },
+    "drought_level": "Level 1 - Mild",
+    "end": "04:55",
+    "end_anchor": "sunrise",
+    "end_iso": "2026-07-02T04:55:00+00:00",
+    "friendly_name": "Irrigation Last Nightly Run",
+    "horizon_hours": 18,
+    "planned_minutes": {
+     "back": 36.0,
+     "front": 36.0
+    },
+    "planned_span_minutes": 88,
+    "planned_zones": [
+     "back",
+     "front"
+    ],
+    "pressure_forecast": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "pressure_instant": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "rachio_calls": 5,
+    "recoveries": 0,
+    "runtime_sources": {
+     "back": "static",
+     "front": "static"
+    },
+    "start": "03:27",
+    "state_polls": 360,
+    "trigger": "nightly",
+    "uncompleted": {},
+    "updated": "2026-07-01T23:00:00",
+    "watered": [
+     "back",
+     "front"
+    ],
+    "window_cap_hours": 5.92,
+    "window_cap_source": "forecast",
+    "window_end": "04:55",
+    "window_start": "23:00"
+   }
+  ],
+  "last_run": [
+   2,
+   {
+    "aborted_reason": null,
+    "block_count": 1,
+    "blocks": [
+     {
+      "minutes": 72,
+      "runs": [
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ]
+      ]
+     }
+    ],
+    "breadcrumbs": [
+     {
+      "detail": [
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ]
+      ],
+      "event": "start",
+      "t": "03:27:00"
+     },
+     {
+      "detail": 8,
+      "event": "pause",
+      "t": "03:51:00"
+     },
+     {
+      "event": "resume",
+      "t": "03:59:00"
+     },
+     {
+      "detail": 8,
+      "event": "pause",
+      "t": "04:23:00"
+     },
+     {
+      "event": "resume",
+      "t": "04:31:00"
+     },
+     {
+      "event": "end",
+      "t": "04:55:00"
+     }
+    ],
+    "calibration": {
+     "back": {
+      "efficacy": null,
+      "last_reject_reason": null,
+      "n_obs": 0,
+      "span_pts": null,
+      "state": "calibrating"
+     },
+     "front": {
+      "efficacy": null,
+      "last_reject_reason": null,
+      "n_obs": 0,
+      "span_pts": null,
+      "state": "calibrating"
+     }
+    },
+    "delivered_minutes": {
+     "back": 36,
+     "front": 36
+    },
+    "dosing": {
+     "back": {
+      "deficit_pts": 27.0,
+      "effective_depth_mm": 7.5,
+      "frac": 1.0,
+      "scaled_full_refill_min": 36.0,
+      "source": "fallback",
+      "span_pts": 0.0
+     },
+     "front": {
+      "deficit_pts": 27.0,
+      "effective_depth_mm": 7.5,
+      "frac": 1.0,
+      "scaled_full_refill_min": 36.0,
+      "source": "fallback",
+      "span_pts": 0.0
+     }
+    },
+    "dosing_sources": {
+     "back": "fallback",
+     "front": "fallback"
+    },
+    "drought_level": "Level 1 - Mild",
+    "end": "04:55",
+    "end_anchor": "sunrise",
+    "end_iso": "2026-07-02T04:55:00+00:00",
+    "friendly_name": "Irrigation Last Run",
+    "horizon_hours": 18,
+    "planned_minutes": {
+     "back": 36.0,
+     "front": 36.0
+    },
+    "planned_span_minutes": 88,
+    "planned_zones": [
+     "back",
+     "front"
+    ],
+    "pressure_forecast": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "pressure_instant": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "rachio_calls": 5,
+    "recoveries": 0,
+    "runtime_sources": {
+     "back": "static",
+     "front": "static"
+    },
+    "start": "03:27",
+    "state_polls": 360,
+    "trigger": "nightly",
+    "uncompleted": {},
+    "updated": "2026-07-01T23:00:00",
+    "watered": [
+     "back",
+     "front"
+    ],
+    "window_cap_hours": 5.92,
+    "window_cap_source": "forecast",
+    "window_end": "04:55",
+    "window_start": "23:00"
+   }
+  ],
+  "status": [
+   "idle",
+   {
+    "friendly_name": "Irrigation Status",
+    "updated": "2026-07-02T04:55:00"
+   }
+  ],
+  "targets": [
+   2,
+   {
+    "friendly_name": "Irrigation Target Floors",
+    "target_floors": {
+     "back": 65,
+     "front": 65
+    },
+    "updated": "2026-07-01T23:00:00"
+   }
+  ]
+ },
+ "status_trail": [
+  [
+   "planning",
+   null
+  ],
+  [
+   "waiting",
+   "watering starts 03:27"
+  ],
+  [
+   "watering",
+   "2 zone(s)"
+  ],
+  [
+   "idle",
+   null
+  ]
+ ],
+ "store": {
+  "efficacy": null,
+  "pending_obs": null,
+  "record.calibration": null,
+  "record.last_nightly": {
+   "attributes": {
+    "aborted_reason": null,
+    "block_count": 1,
+    "blocks": [
+     {
+      "minutes": 72,
+      "runs": [
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ]
+      ]
+     }
+    ],
+    "breadcrumbs": [
+     {
+      "detail": [
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ],
+       [
+        "back",
+        12
+       ],
+       [
+        "front",
+        12
+       ]
+      ],
+      "event": "start",
+      "t": "03:27:00"
+     },
+     {
+      "detail": 8,
+      "event": "pause",
+      "t": "03:51:00"
+     },
+     {
+      "event": "resume",
+      "t": "03:59:00"
+     },
+     {
+      "detail": 8,
+      "event": "pause",
+      "t": "04:23:00"
+     },
+     {
+      "event": "resume",
+      "t": "04:31:00"
+     },
+     {
+      "event": "end",
+      "t": "04:55:00"
+     }
+    ],
+    "calibration": {
+     "back": {
+      "efficacy": null,
+      "last_reject_reason": null,
+      "n_obs": 0,
+      "span_pts": null,
+      "state": "calibrating"
+     },
+     "front": {
+      "efficacy": null,
+      "last_reject_reason": null,
+      "n_obs": 0,
+      "span_pts": null,
+      "state": "calibrating"
+     }
+    },
+    "delivered_minutes": {
+     "back": 36,
+     "front": 36
+    },
+    "dosing": {
+     "back": {
+      "deficit_pts": 27.0,
+      "effective_depth_mm": 7.5,
+      "frac": 1.0,
+      "scaled_full_refill_min": 36.0,
+      "source": "fallback",
+      "span_pts": 0.0
+     },
+     "front": {
+      "deficit_pts": 27.0,
+      "effective_depth_mm": 7.5,
+      "frac": 1.0,
+      "scaled_full_refill_min": 36.0,
+      "source": "fallback",
+      "span_pts": 0.0
+     }
+    },
+    "dosing_sources": {
+     "back": "fallback",
+     "front": "fallback"
+    },
+    "drought_level": "Level 1 - Mild",
+    "end": "04:55",
+    "end_anchor": "sunrise",
+    "end_iso": "2026-07-02T04:55:00+00:00",
+    "friendly_name": "Irrigation Last Nightly Run",
+    "horizon_hours": 18,
+    "planned_minutes": {
+     "back": 36.0,
+     "front": 36.0
+    },
+    "planned_span_minutes": 88,
+    "planned_zones": [
+     "back",
+     "front"
+    ],
+    "pressure_forecast": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "pressure_instant": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "rachio_calls": 5,
+    "recoveries": 0,
+    "runtime_sources": {
+     "back": "static",
+     "front": "static"
+    },
+    "start": "03:27",
+    "state_polls": 360,
+    "trigger": "nightly",
+    "uncompleted": {},
+    "updated": "2026-07-01T23:00:00",
+    "watered": [
+     "back",
+     "front"
+    ],
+    "window_cap_hours": 5.92,
+    "window_cap_source": "forecast",
+    "window_end": "04:55",
+    "window_start": "23:00"
+   },
+   "value": 2
+  },
+  "record.preview": null,
+  "record.targets": {
+   "attributes": {
+    "friendly_name": "Irrigation Target Floors",
+    "target_floors": {
+     "back": 65,
+     "front": 65
+    },
+    "updated": "2026-07-01T23:00:00"
+   },
+   "value": 2
+  },
+  "waiting_marker": null
+ }
+}

@@ -6,13 +6,9 @@ import random
 
 import pytest
 
-from custom_components.geodrops_rachio.config_writer import build_config
-from custom_components.geodrops_rachio.engine.store import LEGACY_FILE_KEYS
-from tests.engine.diff import (
-    ENGINE_LOGGER_PREFIX, assert_same_effects, log_trail_legacy, log_trail_native,
-    status_trail_legacy,
-)
-from tests.engine.legacy_harness import LegacyFiles, load_legacy
+from custom_components.geodrops_rachio.engine.store import WAITING_MARKER
+from tests.engine import golden
+from tests.engine.helpers import ENGINE_LOGGER_PREFIX, log_trail_native
 from tests.engine.scenario import entry_data, native_scheduler, populate
 from tests.engine.world import FakeWorld
 
@@ -24,25 +20,24 @@ def seeded_rng(monkeypatch):
     monkeypatch.setattr(random, "Random", lambda *a: _Random(1234))
 
 
-WAITING = {"irrigation_waiting.json": {
+WAITING = {WAITING_MARKER: {
     "window_end": "2026-07-02T04:59:00+00:00", "stamp": "2026-07-01T23:00:00",
     "trigger": "nightly"}}
-MISSED = {"irrigation_waiting.json": {
+MISSED = {WAITING_MARKER: {
     "window_end": "2026-07-02T01:00:00+00:00", "stamp": "2026-07-01T23:00:00",
     "trigger": "nightly"}}
 # Real markers are AWARE (window_end comes from the sun sensor, +00:00). Through
 # v0.9.15, _on_startup compared them with a NAIVE now() and recovery.startup_action
-# raised TypeError, losing the night. Fixed in v1.0.0 inside brain.recovery (which
-# the legacy oracle shares via the brain alias), so aware and naive markers both
-# reach RE_ARM / MISSED on both sides.
-WAITING_NAIVE = {"irrigation_waiting.json": {
+# raised TypeError, losing the night. Fixed in v1.0.0 inside brain.recovery, so
+# aware and naive markers both reach RE_ARM / MISSED.
+WAITING_NAIVE = {WAITING_MARKER: {
     "window_end": "2026-07-02T04:59:00", "stamp": "2026-07-01T23:00:00",
     "trigger": "nightly"}}
-MISSED_NAIVE = {"irrigation_waiting.json": {
+MISSED_NAIVE = {WAITING_MARKER: {
     "window_end": "2026-07-02T01:00:00", "stamp": "2026-07-01T23:00:00",
     "trigger": "nightly"}}
 
-# name -> (start time, seed files, world tweak, exception _on_startup raises)
+# name -> (start time, seed docs, world tweak, exception _on_startup raises)
 STARTUP = {
     "daytime_noop": ("2026-07-02 14:00:00", {}, lambda w: None, None),
     "collapsed_marker": ("2026-07-02 02:00:00", {},
@@ -63,25 +58,31 @@ def _logbook(world) -> list[str]:
     return [d["message"] for dom, svc, d in world.calls if (dom, svc) == ("logbook", "log")]
 
 
-def _assert_startup_branch(name, lw, lf):
-    """Confirm the LEGACY side reached the branch the scenario is named for, so
-    no scenario can silently collapse into the daytime no-op and still 'match'."""
-    statuses = [v for v, _d in status_trail_legacy(lw)]
-    book = _logbook(lw)
-    last_run = lw.published.get("pyscript.geodrops_rachio_last_run")
+def _status_trail(eng) -> list:
+    return [(v, a.get("detail")) for n, v, a in eng.record_history if n == "status"]
+
+
+def _assert_startup_branch(name, world, eng):
+    """Confirm the run reached the branch the scenario is named for, so no
+    scenario can silently collapse into the daytime no-op and still match (or
+    regenerate) its fixture."""
+    statuses = [v for v, _d in _status_trail(eng)]
+    book = _logbook(world)
+    rec = eng.records.get("last_run")
+    last_run = None if rec is None else (rec["value"], rec["attributes"])
     if name == "daytime_noop":
         # Only the startup "idle" publish; the time gate returned before any check.
-        assert status_trail_legacy(lw) == [("idle", None)]
-        assert [c for c in lw.calls if c[0] != "logbook"] == []
+        assert _status_trail(eng) == [("idle", None)]
+        assert [c for c in world.calls if c[0] != "logbook"] == []
         assert book == []
         assert last_run is None
     elif name == "collapsed_marker":
-        assert lw.calls[0] == STOP and lw.calls[1] == MARKER_OFF
+        assert world.calls[0] == STOP and world.calls[1] == MARKER_OFF
         assert any("interrupted collapsed run was detected" in m for m in book)
         assert "planning" in statuses and "watering" in statuses
         assert last_run[1]["trigger"] == "startup-heal"
     elif name == "orphan_valve":
-        assert lw.calls[0] == ("switch", "turn_off", {"entity_id": "switch.front_zone"})
+        assert world.calls[0] == ("switch", "turn_off", {"entity_id": "switch.front_zone"})
         assert any("closed 1 zone(s) left open" in m and "switch.front_zone" in m
                    for m in book)
         assert any("re-planning the interrupted run" in m for m in book)
@@ -93,15 +94,15 @@ def _assert_startup_branch(name, lw, lf):
         assert "planning" in statuses and "watering" in statuses
         assert last_run[1]["trigger"] == "startup-heal"
         assert last_run[1]["aborted_reason"] is None
-        assert "irrigation_waiting.json" not in lf.files      # consumed
+        assert eng.store.read(WAITING_MARKER) is None       # consumed
     elif name in ("waiting_missed", "waiting_missed_aware"):
-        assert status_trail_legacy(lw) == [
+        assert _status_trail(eng) == [
             ("idle", None), ("skipped", "missed — restart after window closed")]
         assert any("recorded as missed" in m for m in book)
         assert last_run[1]["skipped"] == "missed-restart"
         assert last_run[1]["updated"] == "2026-07-01T23:00:00"
         assert last_run[1]["trigger"] == "nightly"
-        assert "irrigation_waiting.json" not in lf.files      # consumed
+        assert eng.store.read(WAITING_MARKER) is None       # consumed
     else:  # pragma: no cover - every scenario must be pinned
         raise AssertionError(f"no branch evidence for {name}")
 
@@ -111,59 +112,41 @@ def _maybe_raises(exc):
 
 
 @pytest.mark.parametrize("name", list(STARTUP))
-async def test_startup_matches_legacy(freezer, name, caplog):
+async def test_startup_scenario(freezer, name, caplog):
     caplog.set_level(logging.INFO, logger=ENGINE_LOGGER_PREFIX)
-    start, files, tweak, raises = STARTUP[name]
+    start, docs, tweak, raises = STARTUP[name]
     data = entry_data()
 
     freezer.move_to(start)
-    lw = FakeWorld(freezer)
-    populate(lw, data)
-    tweak(lw)
-    lf = LegacyFiles()
-    lf.files.update(files)
-    ns = load_legacy(lw, build_config(data), lf)
-    with _maybe_raises(raises):
-        ns["_on_startup"]()
-    _assert_startup_branch(name, lw, lf)
-
-    freezer.move_to(start)
-    nw = FakeWorld(freezer)
-    populate(nw, data)
-    tweak(nw)
-    eng = native_scheduler(nw, data, docs={LEGACY_FILE_KEYS[f]: v for f, v in files.items()})
+    world = FakeWorld(freezer)
+    populate(world, data)
+    tweak(world)
+    eng = native_scheduler(world, data, docs=docs)
     with _maybe_raises(raises):
         await eng._on_startup()
     if eng.run_task is not None:
         await eng.run_task
 
-    assert_same_effects(lw, lf, nw, eng)
-    assert log_trail_native(caplog) == log_trail_legacy(lw)
+    golden.check(f"startup/{name}",
+                 golden.engine_effects(world, eng, log_trail_native(caplog)))
+    _assert_startup_branch(name, world, eng)
 
 
-async def test_manual_stop_mid_run_matches_legacy(freezer, caplog):
+async def test_manual_stop_mid_run(freezer, caplog):
     caplog.set_level(logging.INFO, logger=ENGINE_LOGGER_PREFIX)
     data = entry_data()
     freezer.move_to("2026-07-01 23:00:00")
-    lw = FakeWorld(freezer)
-    populate(lw, data)
-    lf = LegacyFiles()
-    ns = load_legacy(lw, build_config(data), lf)
-    lw.at("2026-07-02 04:20:00", lambda: ns["_on_stop_button"]("2026-07-02T04:20:00"))
-    ns["irrigation_nightly"]()
-
-    freezer.move_to("2026-07-01 23:00:00")
-    nw = FakeWorld(freezer)
-    populate(nw, data)
-    eng = native_scheduler(nw, data)
-    nw.at("2026-07-02 04:20:00", eng.request_stop)
+    world = FakeWorld(freezer)
+    populate(world, data)
+    eng = native_scheduler(world, data)
+    world.at("2026-07-02 04:20:00", eng.request_stop)
     await eng.irrigation_nightly()
     await eng.run_task
 
-    assert_same_effects(lw, lf, nw, eng)
-    assert log_trail_native(caplog) == log_trail_legacy(lw)
-    assert lw.published["pyscript.geodrops_rachio_last_run"][1]["aborted_reason"] == "manual-abort"
-    assert "Stop button pressed" in _logbook(lw)
+    golden.check("scheduler/manual_stop_mid_run",
+                 golden.engine_effects(world, eng, log_trail_native(caplog)))
+    assert eng.records["last_run"]["attributes"]["aborted_reason"] == "manual-abort"
+    assert "Stop button pressed" in _logbook(world)
 
 
 async def test_reset_cancels_waiting_run(freezer):

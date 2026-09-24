@@ -1,0 +1,24 @@
+{
+ "calls": [],
+ "logs": [
+  [
+   "info",
+   "irrigation: settle-and-learn updated 0 zone(s), dropped 1 inconclusive"
+  ]
+ ],
+ "records": {},
+ "status_trail": [],
+ "store": {
+  "efficacy": {
+   "front": {
+    "state": "calibrating"
+   }
+  },
+  "pending_obs": [],
+  "record.calibration": null,
+  "record.last_nightly": null,
+  "record.preview": null,
+  "record.targets": null,
+  "waiting_marker": null
+ }
+}

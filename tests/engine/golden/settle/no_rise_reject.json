@@ -1,0 +1,22 @@
+{
+ "calls": [],
+ "logs": [],
+ "records": {},
+ "status_trail": [],
+ "store": {
+  "efficacy": {
+   "front": {
+    "last_reject_reason": "no_rise",
+    "last_rise": -1.0,
+    "prior_minutes": 20,
+    "state": "calibrating"
+   }
+  },
+  "pending_obs": [],
+  "record.calibration": null,
+  "record.last_nightly": null,
+  "record.preview": null,
+  "record.targets": null,
+  "waiting_marker": null
+ }
+}

@@ -10,8 +10,8 @@ scheduler, store, orchestration, and I/O). Both are edited directly, in this
 repo.
 
 `brain/`'s unit tests live in `tests_brain/`; the rest of the suite —
-including differential tests against the legacy pyscript app — lives in
-`tests/` (see below).
+including the engine's golden-fixture scenario tests — lives in `tests/`
+(see below).
 
 There is only **one version stamp** now: `custom_components/geodrops_rachio/manifest.json`'s
 `"version"`. Bump it on every release — HACS uses it (together with the git
@@ -59,10 +59,16 @@ body should assume a restart is required.
 
      `tools/test.sh` runs `pytest` in that container (arguments are
      forwarded), which collects **both** `tests/` and `tests_brain/` —
-     including `tests/engine/`'s differential tests, which run the ported
-     engine and the verbatim legacy pyscript app (`tests/legacy/geodrops_rachio_legacy.py`)
-     against the same fixtures and assert identical behavior. CI
-     (`.github/workflows/ci.yml`) runs the same suite on `ubuntu-latest`.
+     including `tests/engine/`'s scenario tests, which run the engine through
+     whole nights, runs and restarts and compare every effect with a golden
+     fixture (see below). CI (`.github/workflows/ci.yml`) runs the same suite
+     on `ubuntu-latest`.
+
+     On Linux, skip Docker and run `pytest -q` directly under **Python 3.14**
+     after `pip install -r requirements_test.txt`. Check that pip resolved the
+     same Home Assistant as CI (`python -c "import homeassistant.const as c;
+     print(c.__version__)"`): Python 3.13, and 3.14 release candidates, quietly
+     get an older HA, below the `hacs.json` minimum.
 
    Both suites must pass before releasing.
 
@@ -98,22 +104,36 @@ body should assume a restart is required.
    sets `hide_default_branch`, HACS only ever offers tagged releases, not raw
    `main`.
 
-## The legacy oracle
+## Golden fixtures
 
-`tests/legacy/geodrops_rachio_legacy.py` is the verbatim v0.9.15 pyscript
-app, kept only as the differential-test oracle (`tests/engine/` runs it
-side by side with the native engine against identical fixtures and asserts
-the same Rachio/notify/calendar/logbook calls, status transitions, and
-persisted state). It is not shipped, not imported by the integration, and
-not otherwise maintained.
+`tests/engine/golden/` holds the expected effects of each engine scenario —
+every Rachio/notify/calendar/logbook call, the status transitions, the
+published records, the persisted docs and the log trail — as JSON. The
+`*_scenarios.py` tests and `test_scheduler.py` run the engine and compare its
+effects with those fixtures (`tests/engine/golden.py`).
 
-**Keep it until the differential tests are replaced.** Most of the engine's
-coverage comes from them: without them `orchestration.py` falls from ~89% to
-~14% line coverage, `scheduler.py` to ~49% and `planning.py` to ~61%. Before
-deleting the oracle, freeze each scenario's legacy outputs into JSON fixtures
-and point the tests at those. The native-only tests (`test_runner.py`,
-`test_learning.py`, `test_lifecycle.py`, `test_waiting_marker.py`, ...) do not
-depend on the oracle.
+The fixtures were captured from the verbatim v0.9.15 pyscript app, which the
+tests used to run side by side with the engine as a "legacy oracle". The oracle
+has since been deleted; its source is still at the `v0.9.15` tag
+(`custom_components/geodrops_rachio/bundled_app/geodrops_rachio.py`), and the
+engine modules' "Ported from" line numbers refer to it. So a passing scenario
+still means "behaves exactly like v0.9.15" — until a fixture is regenerated.
+
+**A deliberate behaviour change** (watering, calibration, logging, anything a
+scenario observes) fails the affected scenarios, naming the part that moved
+(`calls`, `records`, `logs`, ...). After confirming the new behaviour is the one
+you want, regenerate and review the fixture diff as part of the change:
+
+```bash
+GOLDEN_UPDATE=1 pytest tests/engine -q
+git diff tests/engine/golden
+```
+
+Only the scenarios you meant to change should move. Each scenario also asserts
+that it still reaches the branch it is named for (`_assert_branch` and
+friends), so a regeneration cannot quietly turn, say, the rain-abort scenario
+into a normal night. The engine tests run with the process timezone pinned to
+UTC (`tests/engine/conftest.py`), so fixtures are identical on any machine.
 
 ## Sanity check before tagging
 

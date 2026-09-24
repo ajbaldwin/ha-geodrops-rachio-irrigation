@@ -294,10 +294,10 @@ def parse_bindings(raw: dict) -> HABindings:
     derived = DerivedSensors(
         forecast_overnight=_merge(_FORECAST_DEFAULT, d.get("forecast_overnight")),
         observed_overnight=_merge(_OBSERVED_DEFAULT, d.get("observed_overnight")),
-        precipitation_chance_prefix=d.get("precipitation_chance_prefix",
-            DerivedSensors().precipitation_chance_prefix),
-        precipitation_amount_prefix=d.get("precipitation_amount_prefix",
-            DerivedSensors().precipitation_amount_prefix),
+        precipitation_chance_prefix=d.get(
+            "precipitation_chance_prefix", DerivedSensors().precipitation_chance_prefix),
+        precipitation_amount_prefix=d.get(
+            "precipitation_amount_prefix", DerivedSensors().precipitation_amount_prefix),
     )
     return HABindings(
         notify_service=ha.get("notify_service", HABindings().notify_service),

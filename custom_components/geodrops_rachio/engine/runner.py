@@ -1,6 +1,6 @@
 """Plan execution: hand Rachio its schedule, then watch it (poll-verify + aborts).
 
-Ported from tests/legacy/geodrops_rachio_legacy.py lines 70-113 (constants) and
+Ported from v0.9.15 bundled_app/geodrops_rachio.py lines 70-113 (constants) and
 522-938. Every sleep goes through the HAPort, so a test clock drives it.
 """
 from __future__ import annotations

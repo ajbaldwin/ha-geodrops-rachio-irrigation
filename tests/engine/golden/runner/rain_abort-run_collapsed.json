@@ -1,0 +1,128 @@
+{
+ "calls": [
+  [
+   "switch",
+   "turn_on",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ],
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "12,12,12,12,6",
+    "entity_id": [
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone"
+    ]
+   }
+  ],
+  [
+   "rachio",
+   "stop_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.front_zone"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.back_zone"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ]
+ ],
+ "counters": [
+  4,
+  40
+ ],
+ "logs": [],
+ "out": {
+  "aborted_reason": "rain-abort",
+  "blocks": [
+   {
+    "minutes": 54,
+    "runs": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      6
+     ]
+    ]
+   }
+  ],
+  "breadcrumbs": [
+   {
+    "detail": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      6
+     ]
+    ],
+    "event": "start",
+    "t": "02:00:00"
+   },
+   {
+    "detail": "rain-abort",
+    "event": "give-up",
+    "t": "02:10:00"
+   }
+  ],
+  "delivered_minutes": {
+   "front": 10.0
+  },
+  "recoveries": 0,
+  "watered": [
+   "front"
+  ]
+ }
+}
