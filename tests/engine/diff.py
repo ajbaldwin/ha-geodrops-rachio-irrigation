@@ -77,3 +77,27 @@ def assert_same_effects(lw, lfiles, nw, eng) -> None:
             assert (native["value"], native["attributes"]) == legacy, name
     for fname, key in LEGACY_FILE_KEYS.items():
         assert lfiles.files.get(fname) == eng.store.read(key), fname
+
+
+def legacy_effects(lw, lfiles) -> dict:
+    """The legacy run's effects in the native vocabulary golden.engine_effects uses."""
+    from tests.engine import golden
+    return {
+        "calls": [list(c) for c in legacy_calls(lw)],
+        "status_trail": [list(s) for s in status_trail_legacy(lw)],
+        "records": {n: list(p) for n in RECORD_NAMES
+                    if (p := lw.published.get(f"pyscript.geodrops_rachio_{n}")) is not None},
+        "store": {key: lfiles.files.get(fname) for fname, key in LEGACY_FILE_KEYS.items()
+                  if key in golden.STORE_KEYS},
+        "logs": [list(entry) for entry in log_trail_legacy(lw)],
+    }
+
+
+def freeze(name: str, legacy: dict, native: dict) -> None:
+    """GOLDEN_UPDATE: write the LEGACY effects as the fixture. Otherwise: the
+    native effects must match the stored fixture."""
+    from tests.engine import golden
+    if golden.updating():
+        golden.write(name, legacy)
+    else:
+        golden.check(name, native)

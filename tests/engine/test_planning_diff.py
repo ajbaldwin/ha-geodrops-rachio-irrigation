@@ -8,7 +8,7 @@ from custom_components.geodrops_rachio.engine.io import IOMixin
 from custom_components.geodrops_rachio.engine.planning import PlanningMixin
 from custom_components.geodrops_rachio.engine.runner import RunnerMixin
 from tests.engine.diff import (
-    ENGINE_LOGGER_PREFIX, legacy_calls, log_trail_legacy, log_trail_native, prime,
+    ENGINE_LOGGER_PREFIX, freeze, legacy_calls, log_trail_legacy, log_trail_native, prime,
 )
 from tests.engine.legacy_harness import LegacyFiles, load_legacy
 from tests.engine.scenario import T_PLAN, entry_data, native_engine, populate
@@ -82,6 +82,16 @@ async def test_plan_context_matches_legacy(freezer, name, caplog):
         lw.published["pyscript.geodrops_rachio_targets"][1]
     assert eng.store.read("efficacy") == lf.files.get("irrigation_efficacy.json")
     assert log_trail_native(caplog) == log_trail_legacy(lw)
+    freeze(f"planning/{name}",
+           {"ctx": legacy_ctx, "skip": legacy_skip,
+            "calls": [list(c) for c in legacy_calls(lw)],
+            "targets": lw.published["pyscript.geodrops_rachio_targets"][1],
+            "efficacy": lf.files.get("irrigation_efficacy.json"),
+            "logs": [list(e) for e in log_trail_legacy(lw)]},
+           {"ctx": native_ctx, "skip": native_skip, "calls": [list(c) for c in nw.calls],
+            "targets": eng.records["targets"]["attributes"],
+            "efficacy": eng.store.read("efficacy"),
+            "logs": [list(e) for e in log_trail_native(caplog)]})
 
     # Per-scenario evidence: pin that the legacy run actually reached the
     # named condition, so no scenario silently degrades to "normal".

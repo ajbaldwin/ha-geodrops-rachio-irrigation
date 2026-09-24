@@ -1,0 +1,44 @@
+{
+ "calls": [
+  [
+   "switch",
+   "turn_on",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ],
+  [
+   "rachio",
+   "stop_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.front_zone"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.ghost_zone"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ]
+ ],
+ "counters": [
+  3,
+  2
+ ],
+ "logs": []
+}

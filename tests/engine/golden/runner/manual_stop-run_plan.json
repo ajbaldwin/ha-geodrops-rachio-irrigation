@@ -1,0 +1,58 @@
+{
+ "calls": [
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "12,12",
+    "entity_id": [
+     "switch.front_zone",
+     "switch.back_zone"
+    ]
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.front_zone"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.back_zone"
+   }
+  ]
+ ],
+ "counters": [
+  3,
+  40
+ ],
+ "logs": [],
+ "out": {
+  "aborted_reason": "manual-abort",
+  "blocks": [
+   {
+    "minutes": 24,
+    "runs": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ]
+    ]
+   }
+  ],
+  "delivered_minutes": {
+   "front": 10.0
+  },
+  "watered": [
+   "front"
+  ]
+ }
+}

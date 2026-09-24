@@ -8,7 +8,7 @@ from custom_components.geodrops_rachio.config_writer import build_config
 from custom_components.geodrops_rachio.engine.io import IOMixin
 from custom_components.geodrops_rachio.engine.runner import RunnerMixin
 from tests.engine.diff import (
-    ENGINE_LOGGER_PREFIX, legacy_calls, log_trail_legacy, log_trail_native, prime,
+    ENGINE_LOGGER_PREFIX, freeze, legacy_calls, log_trail_legacy, log_trail_native, prime,
 )
 from tests.engine.legacy_harness import load_legacy
 from tests.engine.scenario import entry_data, native_engine, populate
@@ -133,6 +133,13 @@ async def test_runner_matches_legacy(freezer, name, collapse, caplog):
     assert nw.calls == legacy_calls(lw)
     assert (eng.api_calls, eng.state_polls) == (ns["api_calls"], ns["state_polls"])
     assert log_trail_native(caplog) == log_trail_legacy(lw)
+    freeze(f"runner/{name}-{runner}",
+           {"out": legacy_out, "calls": [list(c) for c in legacy_calls(lw)],
+            "counters": [ns["api_calls"], ns["state_polls"]],
+            "logs": [list(e) for e in log_trail_legacy(lw)]},
+           {"out": native_out, "calls": [list(c) for c in nw.calls],
+            "counters": [eng.api_calls, eng.state_polls],
+            "logs": [list(e) for e in log_trail_native(caplog)]})
 
 
 @pytest.mark.parametrize("collapse", [True, False], ids=["collapsed", "run_plan"])
@@ -180,3 +187,10 @@ async def test_missing_zone_switch_raises_like_legacy(freezer, collapse, caplog)
     assert nw.calls == legacy_calls(lw)
     assert (eng.api_calls, eng.state_polls) == (ns["api_calls"], ns["state_polls"])
     assert log_trail_native(caplog) == log_trail_legacy(lw)
+    freeze(f"runner/missing_zone_switch-{runner}",
+           {"calls": [list(c) for c in legacy_calls(lw)],
+            "counters": [ns["api_calls"], ns["state_polls"]],
+            "logs": [list(e) for e in log_trail_legacy(lw)]},
+           {"calls": [list(c) for c in nw.calls],
+            "counters": [eng.api_calls, eng.state_polls],
+            "logs": [list(e) for e in log_trail_native(caplog)]})

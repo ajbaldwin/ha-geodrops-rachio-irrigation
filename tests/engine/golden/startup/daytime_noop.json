@@ -1,0 +1,49 @@
+{
+ "calls": [],
+ "logs": [],
+ "records": {
+  "status": [
+   "idle",
+   {
+    "friendly_name": "Irrigation Status",
+    "updated": "2026-07-02T14:00:30"
+   }
+  ],
+  "targets": [
+   2,
+   {
+    "friendly_name": "Irrigation Target Floors",
+    "target_floors": {
+     "back": 65,
+     "front": 65
+    },
+    "updated": "2026-07-02T14:00:30"
+   }
+  ]
+ },
+ "status_trail": [
+  [
+   "idle",
+   null
+  ]
+ ],
+ "store": {
+  "efficacy": null,
+  "pending_obs": null,
+  "record.calibration": null,
+  "record.last_nightly": null,
+  "record.preview": null,
+  "record.targets": {
+   "attributes": {
+    "friendly_name": "Irrigation Target Floors",
+    "target_floors": {
+     "back": 65,
+     "front": 65
+    },
+    "updated": "2026-07-02T14:00:30"
+   },
+   "value": 2
+  },
+  "waiting_marker": null
+ }
+}

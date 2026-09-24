@@ -5,10 +5,11 @@ import pytest
 from custom_components.geodrops_rachio.config_writer import build_config
 from custom_components.geodrops_rachio.engine.store import LEGACY_FILE_KEYS
 from tests.engine.diff import (
-    ENGINE_LOGGER_PREFIX, assert_same_effects, log_trail_legacy, log_trail_native,
+    ENGINE_LOGGER_PREFIX, assert_same_effects, freeze, legacy_effects, log_trail_legacy, log_trail_native,
 )
 from tests.engine.legacy_harness import LegacyFiles, load_legacy
 from tests.engine.scenario import ALL_MIXINS, entry_data, native_engine, populate
+from tests.engine import golden
 from tests.engine.world import FakeWorld
 
 RUN_END = "2026-07-02T04:30:00+00:00"
@@ -109,6 +110,8 @@ async def test_settle_matches_legacy(freezer, name, caplog):
 
     assert_same_effects(lw, lf, nw, eng)
     assert log_trail_native(caplog) == log_trail_legacy(lw)
+    freeze(f"settle/{name}", legacy_effects(lw, lf),
+           golden.engine_effects(nw, eng, log_trail_native(caplog)))
     _assert_settle_branch(name, lf)
 
 
@@ -138,6 +141,8 @@ async def test_calibrate_matches_legacy(freezer, has_nightly, caplog):
 
     assert_same_effects(lw, lf, nw, eng)
     assert log_trail_native(caplog) == log_trail_legacy(lw)
+    freeze("calibrate/" + ("with_nightly" if has_nightly else "no_nightly"), legacy_effects(lw, lf),
+           golden.engine_effects(nw, eng, log_trail_native(caplog)))
     # Step 4: has_nightly True vs False must visibly differ in the published
     # calibration record (present only when a nightly forecast was available).
     cal = lw.published.get("pyscript.geodrops_rachio_calibration")

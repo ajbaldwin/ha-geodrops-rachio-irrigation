@@ -7,10 +7,11 @@ import pytest
 from custom_components.geodrops_rachio.config_writer import build_config
 from custom_components.geodrops_rachio.engine.store import LEGACY_FILE_KEYS
 from tests.engine.diff import (
-    ENGINE_LOGGER_PREFIX, assert_same_effects, log_trail_legacy, log_trail_native,
+    ENGINE_LOGGER_PREFIX, assert_same_effects, freeze, legacy_effects, log_trail_legacy, log_trail_native,
 )
 from tests.engine.legacy_harness import LegacyFiles, load_legacy
 from tests.engine.scenario import ALL_MIXINS, T_PLAN, entry_data, native_engine, populate
+from tests.engine import golden
 from tests.engine.world import FakeWorld
 
 _Random = random.Random
@@ -159,6 +160,8 @@ async def test_night_matches_legacy(freezer, name, caplog):
 
     assert_same_effects(lw, lf, nw, eng)
     assert log_trail_native(caplog) == log_trail_legacy(lw)
+    freeze(f"night/{name}", legacy_effects(lw, lf),
+           golden.engine_effects(nw, eng, log_trail_native(caplog)))
     _assert_branch(name, lw)
 
 
