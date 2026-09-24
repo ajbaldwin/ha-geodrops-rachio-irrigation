@@ -4,6 +4,47 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.0.1 — Interrupted nights finish; late stops are respected
+
+### Changes
+
+- **Fix: an interrupted night finishes instead of being lost or doubled.** If
+  Home Assistant restarts (or crashes) while watering, the scheduler now
+  resumes only the water still owed that night, inside the watering window.
+  Before, a graceful restart ended the night, and a crash re-planned it from
+  moisture readings that hadn't caught up yet, which could water recently
+  finished zones twice. If the window has already closed, the night is
+  recorded as interrupted. *Reset irrigation* discards an interrupted night.
+- **Fix: stopping watering near the end of a zone's run is respected.** A stop
+  made in the Rachio app (or by an automation) in the last few minutes of a
+  watering step was mistaken for Rachio dropping the schedule, and the
+  scheduler restarted it. It now ends that night's run instead, and credits
+  only the water actually delivered.
+- **Fix: closing the options dialog without pressing Done now applies your
+  edits.** Each edit was already saved, but the scheduler kept running on the
+  old settings until you pressed Done on a later visit or restarted Home
+  Assistant.
+- **Fix: works without the `logbook` integration.** If you run Home Assistant
+  without `logbook` (or without `default_config`), the *Stop irrigation*
+  button and the nightly run no longer fail when they try to write a logbook
+  entry. The entry is just skipped.
+- Reloading or unloading the integration now also cancels the 06:00
+  calibration check and the half-hourly learning step if either is running,
+  so neither keeps going after the scheduler has stopped.
+- Pressing Done in the options now always restarts a scheduler that isn't
+  running (for example after a failed reload), even if you changed nothing.
+  Before, it could stay stopped until Home Assistant restarted.
+- Removing the integration now deletes its stored calibration history and run
+  records instead of leaving them in Home Assistant's storage. Re-adding the
+  integration starts fresh, as it did before.
+- Internal: the test suite now runs against Home Assistant 2026.9 and checks
+  the scheduler against recorded expected outcomes instead of the old
+  pyscript app. This has no effect on behaviour.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.0.0 → restart. The stored data format is
+unchanged, so nothing is lost.
+
 ## v1.0.0 — Native engine: pyscript is no longer used
 
 ### Changes
