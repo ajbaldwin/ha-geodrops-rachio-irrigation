@@ -1,9 +1,10 @@
 """Golden (frozen) expected effects for the engine's scenario tests.
 
 Each scenario's expected effects live in `tests/engine/golden/<name>.json`. They
-were first captured from the verbatim v0.9.15 pyscript app (the old "legacy
-oracle", since deleted), so a passing scenario still means "behaves exactly like
-v0.9.15" until a fixture is deliberately regenerated.
+were captured from the verbatim v0.9.15 pyscript app (the "legacy oracle" the
+differential tests used to run side by side with the engine, since deleted),
+so a passing scenario still means "behaves exactly like v0.9.15" until
+a fixture is deliberately regenerated.
 
 Values are stored in a canonical, tagged JSON form so equality keeps Python's
 distinctions that plain JSON would erase: a tuple is not a list, a dataclass is
@@ -24,14 +25,17 @@ import os
 import pathlib
 from typing import Any
 
-from custom_components.geodrops_rachio.engine.store import LEGACY_FILE_KEYS
+from custom_components.geodrops_rachio.engine.store import (
+    EFFICACY, PENDING_OBS, PERSISTED_RECORDS, WAITING_MARKER, record_key,
+)
 
 GOLDEN_DIR = pathlib.Path(__file__).parent / "golden"
 RECORD_NAMES = ("status", "last_run", "last_nightly", "calibration", "targets",
                 "preview", "runtimes")
 # The persisted docs a scenario's fixture pins (the ones the v0.9.15 app kept as
 # files in its state dir).
-STORE_KEYS = tuple(LEGACY_FILE_KEYS.values())
+STORE_KEYS = (EFFICACY, PENDING_OBS, WAITING_MARKER,
+              *(record_key(n) for n in PERSISTED_RECORDS))
 
 
 def updating() -> bool:

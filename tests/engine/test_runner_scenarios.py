@@ -4,13 +4,10 @@ import logging
 import pytest
 
 from custom_components.geodrops_rachio.brain import plan as brain_plan
-from custom_components.geodrops_rachio.config_writer import build_config
 from custom_components.geodrops_rachio.engine.io import IOMixin
 from custom_components.geodrops_rachio.engine.runner import RunnerMixin
-from tests.engine.diff import (
-    ENGINE_LOGGER_PREFIX, freeze, legacy_calls, log_trail_legacy, log_trail_native, prime,
-)
-from tests.engine.legacy_harness import load_legacy
+from tests.engine import golden
+from tests.engine.helpers import ENGINE_LOGGER_PREFIX, log_trail_native, prime
 from tests.engine.scenario import entry_data, native_engine, populate
 from tests.engine.world import FakeWorld
 
@@ -78,12 +75,13 @@ SCENARIOS = {
         "2026-07-02 02:10:00", lambda: f.__setitem__("rain", True)),
 }
 
-# Expected-outcome table: what the LEGACY oracle's aborted_reason must be for
-# each (scenario, runner), pinning that the scenario actually reaches its
-# named branch rather than silently degrading to another one (e.g. "normal").
-# collapse=True -> run_collapsed, collapse=False -> run_plan. run_plan has no
-# recovery path, so a drop it cannot absorb into a full recovery is the same
-# observable failure as an external stop.
+# Expected-outcome table: the aborted_reason each (scenario, runner) must reach,
+# pinning that the scenario actually lands on its named branch rather than
+# silently degrading to another one (e.g. "normal") -- otherwise a timing change
+# could make two scenarios collapse onto the same result and a regenerated
+# fixture would hide it. collapse=True -> run_collapsed, collapse=False ->
+# run_plan. run_plan has no recovery path, so a drop it cannot absorb into a
+# full recovery is the same observable failure as an external stop.
 EXPECTED = {
     ("normal", True): {"aborted_reason": None},
     ("normal", False): {"aborted_reason": None},
@@ -100,66 +98,48 @@ EXPECTED = {
 }
 
 
+def _run_effects(eng, world, caplog) -> dict:
+    return {"calls": [list(c) for c in world.calls],
+            "counters": [eng.api_calls, eng.state_polls],
+            "logs": [list(e) for e in log_trail_native(caplog)]}
+
+
 @pytest.mark.parametrize("collapse", [True, False], ids=["collapsed", "run_plan"])
 @pytest.mark.parametrize("name", list(SCENARIOS))
-async def test_runner_matches_legacy(freezer, name, collapse, caplog):
+async def test_runner_scenario(freezer, name, collapse, caplog):
     caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
 
     overrides = "" if collapse else "use_pause_collapse: false"
     data = entry_data(overrides=overrides)
     runner = "run_collapsed" if collapse else "run_plan"
 
-    lw, _lflags, lpreds = _setup_world(freezer, data, SCENARIOS[name], collapse)
-    ns = load_legacy(lw, build_config(data))
-    cfg = ns["config"].parse_config(build_config(data))
-    prime(ns, cfg)
-    legacy_out = ns[runner](_slots(cfg), dict(SWITCHES), *lpreds)
-
-    # Pin the branch: the legacy oracle itself must reach the scenario's
-    # named outcome, not just "whatever it happens to produce" -- otherwise a
-    # timing regression could make two scenarios collapse onto the same
-    # result and still pass the native==legacy comparison below.
-    expected = EXPECTED[(name, collapse)]
-    assert legacy_out["aborted_reason"] == expected["aborted_reason"], (name, collapse)
-    if "recoveries_at_least" in expected:
-        assert legacy_out["recoveries"] >= expected["recoveries_at_least"], (name, collapse)
-
-    nw, _nflags, npreds = _setup_world(freezer, data, SCENARIOS[name], collapse)
-    eng = native_engine(nw, data, RunnerMixin, IOMixin)
+    world, _flags, preds = _setup_world(freezer, data, SCENARIOS[name], collapse)
+    eng = native_engine(world, data, RunnerMixin, IOMixin)
     prime(eng, eng._load_cfg())
-    native_out = await getattr(eng, runner)(_slots(eng._current_cfg), dict(SWITCHES), *npreds)
+    out = await getattr(eng, runner)(_slots(eng._current_cfg), dict(SWITCHES), *preds)
 
-    assert native_out == legacy_out
-    assert nw.calls == legacy_calls(lw)
-    assert (eng.api_calls, eng.state_polls) == (ns["api_calls"], ns["state_polls"])
-    assert log_trail_native(caplog) == log_trail_legacy(lw)
-    freeze(f"runner/{name}-{runner}",
-           {"out": legacy_out, "calls": [list(c) for c in legacy_calls(lw)],
-            "counters": [ns["api_calls"], ns["state_polls"]],
-            "logs": [list(e) for e in log_trail_legacy(lw)]},
-           {"out": native_out, "calls": [list(c) for c in nw.calls],
-            "counters": [eng.api_calls, eng.state_polls],
-            "logs": [list(e) for e in log_trail_native(caplog)]})
+    expected = EXPECTED[(name, collapse)]
+    assert out["aborted_reason"] == expected["aborted_reason"], (name, collapse)
+    if "recoveries_at_least" in expected:
+        assert out["recoveries"] >= expected["recoveries_at_least"], (name, collapse)
+    golden.check(f"runner/{name}-{runner}",
+                 {"out": out, **_run_effects(eng, world, caplog)})
 
 
 @pytest.mark.parametrize("collapse", [True, False], ids=["collapsed", "run_plan"])
-async def test_missing_zone_switch_raises_like_legacy(freezer, collapse, caplog):
-    """Legacy `poll_zone_running` (`state.get(zone_switch) == "on"`, legacy line
-    234) has NO `except NameError:` guard — a switch entity that does not exist
-    (e.g. a renamed/deleted Rachio zone switch) raises NameError straight out of
-    the poll-verify loop that runs before every block/segment, up through
-    `run_plan`/`run_collapsed`'s own `except Exception: stop_all(...); raise`.
-    Native must match: `poll_zone_running` uses `self._state_get`, not
-    `self.port.state` (which would silently read as "off" and water the other
-    zones as if nothing were wrong). See "Controller ruling (after Task 8):
-    missing entities" in global-constraints-and-port-rules.md.
+async def test_missing_zone_switch_raises(freezer, collapse, caplog):
+    """A zone switch entity that does not exist (e.g. a renamed/deleted Rachio
+    zone switch) raises NameError straight out of the poll-verify loop that runs
+    before every block/segment, through `run_plan`/`run_collapsed`'s own
+    `except Exception: stop_all(...); raise` -- as v0.9.15's `poll_zone_running`
+    did (it had no `except NameError:` guard). `poll_zone_running` uses
+    `self._state_get`, not `self.port.state`, which would silently read "off"
+    and water the other zones as if nothing were wrong.
 
     "front"'s switch is the normal, populated entity; "back" is pointed at
-    "switch.ghost_zone", an entity nothing in this test ever registers (not
-    added to FakeWorld.rachio.zone_switches, never `set()`), so it genuinely
-    does not exist in the sim -- this is possible to construct (contra the
-    brief's "if it cannot occur in the sim, skip it" allowance), so it is
-    covered rather than skipped, for both runners.
+    "switch.ghost_zone", an entity nothing in this test ever registers, so it
+    genuinely does not exist in the sim. The stop_all/stop_device cleanup that
+    runs before the re-raise is pinned by the fixture.
     """
     caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
     overrides = "" if collapse else "use_pause_collapse: false"
@@ -167,30 +147,11 @@ async def test_missing_zone_switch_raises_like_legacy(freezer, collapse, caplog)
     runner = "run_collapsed" if collapse else "run_plan"
     switches = {"front": "switch.front_zone", "back": "switch.ghost_zone"}
 
-    lw, _lflags, lpreds = _setup_world(freezer, data, SCENARIOS["normal"], collapse)
-    ns = load_legacy(lw, build_config(data))
-    cfg = ns["config"].parse_config(build_config(data))
-    prime(ns, cfg)
-    with pytest.raises(NameError) as legacy_exc:
-        ns[runner](_slots(cfg), dict(switches), *lpreds)
-
-    nw, _nflags, npreds = _setup_world(freezer, data, SCENARIOS["normal"], collapse)
-    eng = native_engine(nw, data, RunnerMixin, IOMixin)
+    world, _flags, preds = _setup_world(freezer, data, SCENARIOS["normal"], collapse)
+    eng = native_engine(world, data, RunnerMixin, IOMixin)
     prime(eng, eng._load_cfg())
-    with pytest.raises(NameError) as native_exc:
-        await getattr(eng, runner)(_slots(eng._current_cfg), dict(switches), *npreds)
+    with pytest.raises(NameError) as exc:
+        await getattr(eng, runner)(_slots(eng._current_cfg), dict(switches), *preds)
 
-    assert str(native_exc.value) == str(legacy_exc.value) == "switch.ghost_zone"
-    # Both sides run the SAME stop_all/stop_device cleanup out of their own
-    # `except Exception:` net before re-raising, so calls/counters/logs up to
-    # and including that cleanup must still match exactly.
-    assert nw.calls == legacy_calls(lw)
-    assert (eng.api_calls, eng.state_polls) == (ns["api_calls"], ns["state_polls"])
-    assert log_trail_native(caplog) == log_trail_legacy(lw)
-    freeze(f"runner/missing_zone_switch-{runner}",
-           {"calls": [list(c) for c in legacy_calls(lw)],
-            "counters": [ns["api_calls"], ns["state_polls"]],
-            "logs": [list(e) for e in log_trail_legacy(lw)]},
-           {"calls": [list(c) for c in nw.calls],
-            "counters": [eng.api_calls, eng.state_polls],
-            "logs": [list(e) for e in log_trail_native(caplog)]})
+    assert str(exc.value) == "switch.ghost_zone"
+    golden.check(f"runner/missing_zone_switch-{runner}", _run_effects(eng, world, caplog))

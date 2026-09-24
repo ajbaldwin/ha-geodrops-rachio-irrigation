@@ -2,14 +2,10 @@ import logging
 
 import pytest
 
-from custom_components.geodrops_rachio.config_writer import build_config
-from custom_components.geodrops_rachio.engine.store import LEGACY_FILE_KEYS
-from tests.engine.diff import (
-    ENGINE_LOGGER_PREFIX, assert_same_effects, freeze, legacy_effects, log_trail_legacy, log_trail_native,
-)
-from tests.engine.legacy_harness import LegacyFiles, load_legacy
-from tests.engine.scenario import ALL_MIXINS, entry_data, native_engine, populate
+from custom_components.geodrops_rachio.engine.store import EFFICACY, PENDING_OBS
 from tests.engine import golden
+from tests.engine.helpers import ENGINE_LOGGER_PREFIX, log_trail_native
+from tests.engine.scenario import ALL_MIXINS, entry_data, native_engine, populate
 from tests.engine.world import FakeWorld
 
 RUN_END = "2026-07-02T04:30:00+00:00"
@@ -52,16 +48,12 @@ def _world(freezer, data, readings, statics):
     return w
 
 
-def _front_rec(lf):
-    return lf.files["irrigation_efficacy.json"]["front"]
-
-
-def _assert_settle_branch(name, lf):
-    """Confirm the legacy side actually reached the outcome the scenario is
-    named for — equivalence alone would not catch a scenario that silently
-    landed on the wrong calibration branch (see task-10-brief.md Step 4)."""
-    front = _front_rec(lf)
-    pending = lf.files["irrigation_pending_obs.json"]
+def _assert_settle_branch(name, eng):
+    """Confirm the run actually reached the outcome the scenario is named for —
+    matching the fixture alone would not catch a scenario that silently landed
+    on the wrong calibration branch (or a regenerated fixture that moved it)."""
+    front = eng.store.read(EFFICACY)["front"]
+    pending = eng.store.read(PENDING_OBS)
     if name == "accept":
         assert front["n_obs"] == 1
         assert front["last_reject_reason"] is None
@@ -83,70 +75,43 @@ def _assert_settle_branch(name, lf):
 
 
 @pytest.mark.parametrize("name", list(SETTLE))
-async def test_settle_matches_legacy(freezer, name, caplog):
+async def test_settle_scenario(freezer, name, caplog):
     # INFO, not WARNING: _settle_and_learn logs a summary at info level, and
-    # the log-trail comparison below must see it on both sides too.
+    # the fixture's log trail pins it.
     caplog.set_level(logging.INFO, logger=ENGINE_LOGGER_PREFIX)
     readings, statics = SETTLE[name]
     data = entry_data(self_cal=True)
-    files = {"irrigation_pending_obs.json": [_obs("front")],
-             "irrigation_efficacy.json": {"front": {"state": "calibrating"}}}
+    docs = {PENDING_OBS: [_obs("front")], EFFICACY: {"front": {"state": "calibrating"}}}
 
-    lw = _world(freezer, data, readings, statics)
-    lf = LegacyFiles()
-    lf.files.update(files)
-    ns = load_legacy(lw, build_config(data), lf)
+    world = _world(freezer, data, readings, statics)
+    eng = native_engine(world, data, *ALL_MIXINS, docs=docs)
     for _ in range(80):                 # 40 h of 30-min polls
-        lw.advance(1800)
-        ns["_settle_and_learn"]()
-
-    nw = _world(freezer, data, readings, statics)
-    eng = native_engine(nw, data, *ALL_MIXINS,
-                        docs={LEGACY_FILE_KEYS[f]: v for f, v in files.items()})
-    for _ in range(80):
-        for coro in nw.advance(1800):
+        for coro in world.advance(1800):
             await coro
         await eng._settle_and_learn()
 
-    assert_same_effects(lw, lf, nw, eng)
-    assert log_trail_native(caplog) == log_trail_legacy(lw)
-    freeze(f"settle/{name}", legacy_effects(lw, lf),
-           golden.engine_effects(nw, eng, log_trail_native(caplog)))
-    _assert_settle_branch(name, lf)
+    golden.check(f"settle/{name}",
+                 golden.engine_effects(world, eng, log_trail_native(caplog)))
+    _assert_settle_branch(name, eng)
 
 
 @pytest.mark.parametrize("has_nightly", [True, False])
-async def test_calibrate_matches_legacy(freezer, has_nightly, caplog):
+async def test_calibrate_scenario(freezer, has_nightly, caplog):
     caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
     data = entry_data()
     nightly_attrs = {"pressure_forecast": {"warm": False, "humid": True,
                                            "stagnant": False, "count": 1}}
 
     freezer.move_to("2026-07-02 06:00:00")
-    lw = FakeWorld(freezer)
-    populate(lw, data)
-    lf = LegacyFiles()
-    ns = load_legacy(lw, build_config(data), lf)
-    if has_nightly:
-        lw.publish("pyscript.geodrops_rachio_last_nightly", 2, nightly_attrs)
-    ns["irrigation_calibrate"]()
-
-    freezer.move_to("2026-07-02 06:00:00")
-    nw = FakeWorld(freezer)
-    populate(nw, data)
-    eng = native_engine(nw, data, *ALL_MIXINS)
+    world = FakeWorld(freezer)
+    populate(world, data)
+    eng = native_engine(world, data, *ALL_MIXINS)
     if has_nightly:
         eng._publish("last_nightly", 2, nightly_attrs)
     await eng.irrigation_calibrate()
 
-    assert_same_effects(lw, lf, nw, eng)
-    assert log_trail_native(caplog) == log_trail_legacy(lw)
-    freeze("calibrate/" + ("with_nightly" if has_nightly else "no_nightly"), legacy_effects(lw, lf),
-           golden.engine_effects(nw, eng, log_trail_native(caplog)))
-    # Step 4: has_nightly True vs False must visibly differ in the published
+    golden.check("calibrate/" + ("with_nightly" if has_nightly else "no_nightly"),
+                 golden.engine_effects(world, eng, log_trail_native(caplog)))
+    # has_nightly True vs False must visibly differ in the published
     # calibration record (present only when a nightly forecast was available).
-    cal = lw.published.get("pyscript.geodrops_rachio_calibration")
-    if has_nightly:
-        assert cal is not None
-    else:
-        assert cal is None
+    assert ("calibration" in eng.records) is has_nightly

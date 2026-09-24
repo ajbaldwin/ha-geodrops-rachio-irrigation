@@ -1,6 +1,6 @@
 """Engine base: the former pyscript app's module globals as instance state.
 
-Ported from tests/legacy/geodrops_rachio_legacy.py lines 121-213 and 1535-1571. The
+Ported from v0.9.15 bundled_app/geodrops_rachio.py lines 121-213 and 1535-1571. The
 app kept its run state in module globals because pyscript callbacks could not
 close over locals; here it is plain instance state on one object.
 """

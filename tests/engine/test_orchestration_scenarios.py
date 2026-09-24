@@ -4,14 +4,10 @@ import random
 
 import pytest
 
-from custom_components.geodrops_rachio.config_writer import build_config
-from custom_components.geodrops_rachio.engine.store import LEGACY_FILE_KEYS
-from tests.engine.diff import (
-    ENGINE_LOGGER_PREFIX, assert_same_effects, freeze, legacy_effects, log_trail_legacy, log_trail_native,
-)
-from tests.engine.legacy_harness import LegacyFiles, load_legacy
-from tests.engine.scenario import ALL_MIXINS, T_PLAN, entry_data, native_engine, populate
+from custom_components.geodrops_rachio.engine.store import EFFICACY
 from tests.engine import golden
+from tests.engine.helpers import ENGINE_LOGGER_PREFIX, log_trail_native
+from tests.engine.scenario import ALL_MIXINS, entry_data, native_engine, populate
 from tests.engine.world import FakeWorld
 
 _Random = random.Random
@@ -22,8 +18,8 @@ def seeded_rng(monkeypatch):
     monkeypatch.setattr(random, "Random", lambda *a: _Random(1234))
 
 
-CAL = {"irrigation_efficacy.json": {"front": {"state": "calibrating"},
-                                    "back": {"state": "calibrating"}}}
+CAL = {EFFICACY: {"front": {"state": "calibrating"},
+                  "back": {"state": "calibrating"}}}
 
 
 def _set(entity, value):
@@ -31,7 +27,7 @@ def _set(entity, value):
 
 
 # name -> (self_cal, seed files, [(time, action)], wait, trigger)
-# action(world, target) where target is the legacy ns (dict) or the native engine.
+# action(world) scripts a world change; the string "preview" presses Preview.
 SCENARIOS = {
     "normal_night": (False, {}, [], True, "nightly"),
     "standby": (False, {}, [("2026-07-01 22:59:59", _set("switch.geodrops_rachio_standby", "on"))], True, "nightly"),
@@ -58,11 +54,10 @@ SCENARIOS = {
 }
 
 
-def _schedule(world, events, target):
+def _schedule(world, events, eng):
     for when, action in events:
         if action == "preview":
-            fn = (lambda t=target: t["_preview"]()) if isinstance(target, dict) \
-                else (lambda t=target: t._preview())
+            fn = eng._preview
         else:
             fn = (lambda a=action: a(world))
         world.at(when, fn)
@@ -77,18 +72,19 @@ def _prepare(freezer, name, data):
     return w
 
 
-def _legacy_last_run(lw):
-    return lw.published["pyscript.geodrops_rachio_last_run"]
+def _record(eng, name):
+    rec = eng.records.get(name)
+    return None if rec is None else (rec["value"], rec["attributes"])
 
 
-def _assert_branch(name, lw):
-    """Pin, on the LEGACY side, that each scenario reaches the branch it is
-    named for — so no scenario silently degrades to `normal_night` and passes
-    the differential comparison vacuously."""
-    value, attrs = _legacy_last_run(lw)
-    nightly = lw.published.get("pyscript.geodrops_rachio_last_nightly")
-    preview = lw.published.get("pyscript.geodrops_rachio_preview")
-    warnings = [m for lvl, m in lw.logs if lvl == "warning"]
+def _assert_branch(name, eng, logs):
+    """Pin that each scenario reaches the branch it is named for — so no
+    scenario silently degrades to `normal_night` and matches (or regenerates)
+    its fixture vacuously."""
+    value, attrs = _record(eng, "last_run")
+    nightly = _record(eng, "last_nightly")
+    preview = _record(eng, "preview")
+    warnings = [m for lvl, m in logs if lvl == "warning"]
     if name == "normal_night":
         assert "skipped" not in attrs
         assert attrs["aborted_reason"] is None
@@ -137,32 +133,22 @@ def _assert_branch(name, lw):
 
 
 @pytest.mark.parametrize("name", list(SCENARIOS))
-async def test_night_matches_legacy(freezer, name, caplog):
+async def test_night_scenario(freezer, name, caplog):
     caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
     self_cal, files, events, wait, trigger = SCENARIOS[name]
     data = entry_data(self_cal=self_cal)
 
-    lw = _prepare(freezer, name, data)
-    lf = LegacyFiles()
-    lf.files.update(files)
-    ns = load_legacy(lw, build_config(data), lf)
-    _schedule(lw, events, ns)
-    lw.advance(2)                      # fire the 22:59:59 setup events; now 23:00:00
-    ns["_plan_and_run"](wait, trigger)
-
-    nw = _prepare(freezer, name, data)
-    eng = native_engine(nw, data, *ALL_MIXINS,
-                        docs={LEGACY_FILE_KEYS[f]: v for f, v in files.items()})
-    _schedule(nw, events, eng)
-    for coro in nw.advance(2):
+    world = _prepare(freezer, name, data)
+    eng = native_engine(world, data, *ALL_MIXINS,
+                        docs=files)
+    _schedule(world, events, eng)
+    for coro in world.advance(2):      # fire the 22:59:59 setup events; now 23:00:00
         await coro
     await eng._plan_and_run(wait, trigger)
 
-    assert_same_effects(lw, lf, nw, eng)
-    assert log_trail_native(caplog) == log_trail_legacy(lw)
-    freeze(f"night/{name}", legacy_effects(lw, lf),
-           golden.engine_effects(nw, eng, log_trail_native(caplog)))
-    _assert_branch(name, lw)
+    logs = log_trail_native(caplog)
+    golden.check(f"night/{name}", golden.engine_effects(world, eng, logs))
+    _assert_branch(name, eng, logs)
 
 
 async def test_preview_refused_while_watering(freezer):

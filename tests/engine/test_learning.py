@@ -1,11 +1,11 @@
-"""Learning branches the scenario suites do not reach, asserted on the engine's
-own effects (no legacy oracle)."""
+"""Learning branches the scenario suites do not reach, asserted directly on the
+engine's own effects (no golden fixture)."""
 import logging
 
 import pytest
 
 from custom_components.geodrops_rachio.engine.store import EFFICACY, PENDING_OBS
-from tests.engine.diff import ENGINE_LOGGER_PREFIX
+from tests.engine.helpers import ENGINE_LOGGER_PREFIX
 from tests.engine.scenario import ALL_MIXINS, entry_data, native_engine, populate
 from tests.engine.world import FakeWorld
 
