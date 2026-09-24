@@ -1,0 +1,24 @@
+{
+ "calls": [],
+ "logs": [],
+ "records": {},
+ "status_trail": [],
+ "store": {
+  "efficacy": {
+   "front": {
+    "efficacy": null,
+    "last_reject_reason": "training",
+    "miss_streak": 0,
+    "recent": [],
+    "span_pts": 0,
+    "state": "recalibrating"
+   }
+  },
+  "pending_obs": [],
+  "record.calibration": null,
+  "record.last_nightly": null,
+  "record.preview": null,
+  "record.targets": null,
+  "waiting_marker": null
+ }
+}

@@ -1,0 +1,36 @@
+{
+ "calls": [],
+ "logs": [
+  [
+   "info",
+   "irrigation: settle-and-learn updated 1 zone(s), dropped 0 inconclusive"
+  ]
+ ],
+ "records": {},
+ "status_trail": [],
+ "store": {
+  "efficacy": {
+   "front": {
+    "efficacy": 0.4,
+    "last_reject_reason": null,
+    "last_rise": 8.0,
+    "last_updated": "2026-07-02T10:30:00+00:00",
+    "miss_streak": 0,
+    "n_obs": 1,
+    "prior_minutes": 20,
+    "recent": [
+     0.4
+    ],
+    "retention": null,
+    "span_pts": 16.0,
+    "state": "calibrating"
+   }
+  },
+  "pending_obs": [],
+  "record.calibration": null,
+  "record.last_nightly": null,
+  "record.preview": null,
+  "record.targets": null,
+  "waiting_marker": null
+ }
+}

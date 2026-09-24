@@ -1,0 +1,25 @@
+{
+ "calls": [
+  [
+   "logbook",
+   "log",
+   {
+    "entity_id": "sensor.geodrops_rachio_status",
+    "message": "Calibration skipped — no nightly run to compare against",
+    "name": "Irrigation"
+   }
+  ]
+ ],
+ "logs": [],
+ "records": {},
+ "status_trail": [],
+ "store": {
+  "efficacy": null,
+  "pending_obs": null,
+  "record.calibration": null,
+  "record.last_nightly": null,
+  "record.preview": null,
+  "record.targets": null,
+  "waiting_marker": null
+ }
+}

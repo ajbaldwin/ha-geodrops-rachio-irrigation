@@ -1,0 +1,220 @@
+{
+ "calls": [
+  [
+   "switch",
+   "turn_on",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ],
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "12,12,12,12,6",
+    "entity_id": [
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone"
+    ]
+   }
+  ],
+  [
+   "rachio",
+   "pause_watering",
+   {
+    "devices": "Main House",
+    "duration": 8
+   }
+  ],
+  [
+   "rachio",
+   "resume_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "rachio",
+   "stop_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "12,12,6",
+    "entity_id": [
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone"
+    ]
+   }
+  ],
+  [
+   "rachio",
+   "pause_watering",
+   {
+    "devices": "Main House",
+    "duration": 8
+   }
+  ],
+  [
+   "rachio",
+   "resume_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ]
+ ],
+ "counters": [
+  7,
+  296
+ ],
+ "logs": [
+  [
+   "warning",
+   "irrigation: Rachio dropped the schedule after 24 min; re-issuing for the remaining water (recovery 1)"
+  ]
+ ],
+ "out": {
+  "aborted_reason": null,
+  "blocks": [
+   {
+    "minutes": 54,
+    "runs": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      6
+     ]
+    ]
+   },
+   {
+    "minutes": 30,
+    "runs": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      6
+     ]
+    ]
+   }
+  ],
+  "breadcrumbs": [
+   {
+    "detail": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      6
+     ]
+    ],
+    "event": "start",
+    "t": "02:00:00"
+   },
+   {
+    "detail": 8,
+    "event": "pause",
+    "t": "02:24:00"
+   },
+   {
+    "event": "resume",
+    "t": "02:32:00"
+   },
+   {
+    "detail": 24,
+    "event": "drop-detected",
+    "t": "02:33:30"
+   },
+   {
+    "detail": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      6
+     ]
+    ],
+    "event": "recover",
+    "t": "02:33:30"
+   },
+   {
+    "detail": 8,
+    "event": "pause",
+    "t": "02:57:30"
+   },
+   {
+    "event": "resume",
+    "t": "03:05:30"
+   },
+   {
+    "event": "end",
+    "t": "03:11:30"
+   }
+  ],
+  "delivered_minutes": {
+   "back": 24,
+   "front": 30
+  },
+  "recoveries": 1,
+  "watered": [
+   "front",
+   "back"
+  ]
+ }
+}

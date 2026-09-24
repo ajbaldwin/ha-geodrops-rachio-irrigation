@@ -1,6 +1,6 @@
 """Plan execution: hand Rachio its schedule, then watch it (poll-verify + aborts).
 
-Ported from tests/legacy/geodrops_rachio_legacy.py lines 70-113 (constants) and
+Ported from v0.9.15 bundled_app/geodrops_rachio.py lines 70-113 (constants) and
 522-938. Every sleep goes through the HAPort, so a test clock drives it.
 """
 from __future__ import annotations
@@ -55,6 +55,13 @@ BLOCK_START_CONFIRM_S = 90
 # window false positive on a healthy-but-slow resume. 90 is also a multiple
 # of CHECK_INTERVAL_S (30), so the wait bound is exact.
 RESUME_PROBE_S = 90
+# How long the valves must have been seen off, continuously, at the end of a water
+# step for that step to count as stopped rather than handed off. Rachio's own
+# zone-to-zone hand-off reads all-off for up to about two polls (the 2026-08-10
+# notes), so three is past it. This evidence is only ever used to VETO a drop
+# recovery on the next water step: if the next valve comes on, it is dropped,
+# so it can never end a healthy night.
+STOP_EVIDENCE_POLLS = 3
 
 
 class RunnerMixin:
@@ -91,7 +98,7 @@ class RunnerMixin:
                             "delivered_minutes": delivered, "blocks": sent}
 
                 if block.kind == "idle":  # soak: nothing running
-                    aborted, _idle = await self._sleep_watching(
+                    aborted, _idle, _s = await self._sleep_watching(
                         block.minutes * 60, is_standby, is_manual_stop, is_rain
                     )
                     if aborted:
@@ -137,7 +144,7 @@ class RunnerMixin:
                 # stops us from outside — the adverse-conditions automation, the
                 # stuck-zone automation, a manual stop in the app — goes through the
                 # controller and stops all watering.
-                aborted, elapsed = await self._sleep_watching(
+                aborted, elapsed, _s = await self._sleep_watching(
                     block_seconds, is_standby, is_manual_stop, is_rain,
                     watch_switches=all_switches,
                 )
@@ -310,7 +317,7 @@ class RunnerMixin:
                 await self._await_block_end(all_switches)
 
                 if seg.gap_after > 0:  # between-segment idle (bounded fallback only)
-                    idle_aborted, _e = await self._sleep_watching(
+                    idle_aborted, _e, _s = await self._sleep_watching(
                         seg.gap_after * 60, is_standby, is_manual_stop, is_rain)
                     if idle_aborted:
                         await self.stop_device()
@@ -359,18 +366,24 @@ class RunnerMixin:
         """
         watering_seconds = 0
         just_resumed = False
+        # Seconds the last water step was credited past the point its valves were
+        # seen going off for good, or None if they were on to the end.
+        overcredit = None
         for i, step in enumerate(steps):
             if step.kind == "water":
                 if just_resumed and not await self._resume_took_hold(all_switches):
-                    return "never-started", watering_seconds, i
+                    return self._non_start(overcredit, watering_seconds, i)
                 just_resumed = False
-                aborted, elapsed = await self._sleep_watching(
+                aborted, elapsed, stopped_at = await self._sleep_watching(
                     step.minutes * 60, is_standby, is_manual_stop, is_rain,
                     watch_switches=all_switches,
                 )
+                if aborted == "never-started":
+                    return self._non_start(overcredit, watering_seconds, i)
                 watering_seconds += elapsed
                 if aborted:
                     return aborted, watering_seconds, i
+                overcredit = None if stopped_at is None else elapsed - stopped_at
             else:  # pause: keep the schedule alive across an idle soak gap
                 remaining = step.minutes
                 aborted = None
@@ -382,7 +395,7 @@ class RunnerMixin:
                     span = max(1, min(60, self._current_cfg.tunables.max_pause_minutes, remaining))
                     await self.pause_device(span)
                     self._crumb(crumbs, "pause", detail=span)
-                    aborted, _p = await self._sleep_watching(
+                    aborted, _p, _s = await self._sleep_watching(
                         span * 60, is_standby, is_manual_stop, is_rain,
                         watch_switches=all_switches, paused=True,
                     )
@@ -397,6 +410,19 @@ class RunnerMixin:
                 self._crumb(crumbs, "resume")
                 just_resumed = True
         return None, watering_seconds, len(steps)
+
+    def _non_start(self, overcredit, watering_seconds, index):
+        """A water step that never started: a Rachio drop, unless the previous
+        water step's valves were seen going off for good before it ended — then
+        it was an external stop the end grace absorbed, credited only up to where
+        the water stopped (see recovery.classify_non_start)."""
+        reason = recovery.classify_non_start("never-started", overcredit is not None)
+        if reason == "external-stop":
+            _LOGGER.warning(
+                "irrigation: watering stopped externally near the end of a step; "
+                "not re-issuing the schedule")
+            return reason, watering_seconds - overcredit, index
+        return reason, watering_seconds, index
 
     async def _await_block_end(self, zone_switches):
         """Wait for a finished block to actually close before moving on.
@@ -424,8 +450,11 @@ class RunnerMixin:
                               watch_switches=None, paused=False):
         """Sleep in CHECK_INTERVAL_S chunks while watching for aborts.
 
-        Returns (reason, elapsed_seconds); reason is None when the full duration
-        elapsed normally.
+        Returns (reason, elapsed_seconds, stopped_at); reason is None when the full
+        duration elapsed normally. `stopped_at` is set only then, and only when the
+        watched valves had been seen on and then read off for the last
+        STOP_EVIDENCE_POLLS or more polls: the elapsed seconds at the first of
+        those empty polls (a stop the end grace absorbed). Otherwise None.
 
         When `watch_switches` is given, also verify that watering is still going.
         Plenty outside this scheduler can stop it: the HA "Detect Adverse Watering
@@ -445,16 +474,19 @@ class RunnerMixin:
         seen_on = False
         misses = 0
         stopped_at = 0
+        off_polls = 0
+        off_since = 0
         while elapsed < seconds:
             chunk = min(CHECK_INTERVAL_S, seconds - elapsed)
             await self.port.sleep(chunk)
             elapsed += chunk
             reason = self._abort_now(is_standby, is_manual_stop, is_rain)
             if reason:
-                return reason, elapsed
+                return reason, elapsed, None
             if watch_switches:
+                running = self.any_zone_running(watch_switches)
                 verdict, seen_on, new_misses = abort.watch_step(
-                    self.any_zone_running(watch_switches), seen_on, misses,
+                    running, seen_on, misses,
                     elapsed, seconds,
                     BLOCK_START_CONFIRM_S, BLOCK_END_GRACE_S, EXTERNAL_STOP_POLLS,
                     paused=paused,
@@ -462,8 +494,15 @@ class RunnerMixin:
                 if misses == 0 and new_misses == 1:
                     stopped_at = elapsed
                 misses = new_misses
+                if not paused:
+                    new_off = abort.off_run(running, seen_on, off_polls)
+                    if off_polls == 0 and new_off == 1:
+                        off_since = elapsed
+                    off_polls = new_off
                 if verdict == "never-started":
-                    return verdict, 0
+                    return verdict, 0, None
                 if verdict:
-                    return verdict, stopped_at
-        return None, elapsed
+                    return verdict, stopped_at, None
+        if off_polls >= STOP_EVIDENCE_POLLS:
+            return None, elapsed, off_since
+        return None, elapsed, None

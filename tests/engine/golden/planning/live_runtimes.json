@@ -1,0 +1,486 @@
+{
+ "calls": [],
+ "ctx": {
+  "api_depths": {
+   "id-front": 8.0
+  },
+  "api_runtimes": {
+   "id-front": 33.0
+  },
+  "cap_minutes": 355.0,
+  "cap_source": "forecast",
+  "cfg": {
+   "$dataclass": "custom_components.geodrops_rachio.brain.config.Config",
+   "fields": {
+    "bands": {
+     "dry": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.Band",
+      "fields": {
+       "high": 62,
+       "low": 0
+      }
+     },
+     "dry_plus": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.Band",
+      "fields": {
+       "high": 67,
+       "low": 62
+      }
+     },
+     "moist": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.Band",
+      "fields": {
+       "high": 76,
+       "low": 67
+      }
+     },
+     "moist_plus": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.Band",
+      "fields": {
+       "high": 87,
+       "low": 76
+      }
+     },
+     "wet": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.Band",
+      "fields": {
+       "high": 95,
+       "low": 87
+      }
+     },
+     "wet_plus": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.Band",
+      "fields": {
+       "high": 100,
+       "low": 95
+      }
+     }
+    },
+    "bindings": {
+     "$dataclass": "custom_components.geodrops_rachio.brain.config.HABindings",
+     "fields": {
+      "calendar_entity": "calendar.lawn",
+      "derived": {
+       "$dataclass": "custom_components.geodrops_rachio.brain.config.DerivedSensors",
+       "fields": {
+        "forecast_overnight": {
+         "humidity": "sensor.forecast_overnight_humidity",
+         "temp": "sensor.forecast_overnight_temp",
+         "wind": "sensor.forecast_overnight_wind"
+        },
+        "observed_overnight": {
+         "humidity": "sensor.observed_overnight_humidity",
+         "temp": "sensor.observed_overnight_temp",
+         "wind": "sensor.observed_overnight_wind"
+        },
+        "precipitation_amount_prefix": "sensor.precipitation_amount_",
+        "precipitation_chance_prefix": "sensor.precipitation_chance_"
+       }
+      },
+      "dew_formed_boolean": "switch.geodrops_rachio_dew_formed",
+      "drought_level_select": "select.geodrops_rachio_drought_level",
+      "notify_service": "notify.phone",
+      "rachio_api_key_secret": "rachio_api_key",
+      "rachio_device_name": "Main House",
+      "run_active_boolean": "switch.geodrops_rachio_run_active",
+      "standby_boolean": "switch.geodrops_rachio_standby",
+      "standby_switch": "switch.rachio_standby",
+      "sun": {
+       "$dataclass": "custom_components.geodrops_rachio.brain.config.SunAnchors",
+       "fields": {
+        "dawn": "sensor.sun_next_dawn",
+        "sunrise": "sensor.sun_next_rising"
+       }
+      },
+      "weather": {
+       "$dataclass": "custom_components.geodrops_rachio.brain.config.WeatherEntities",
+       "fields": {
+        "humidity": "sensor.tempest_sensor_humidity",
+        "precip_type": "sensor.tempest_sensor_precipitation_type",
+        "rain_last_hour": "sensor.tempest_rain_last_hour",
+        "rain_today": "sensor.tempest_precipitation_today",
+        "temperature": "sensor.tempest_sensor_temperature",
+        "wind": "sensor.tempest_sensor_wind_speed_average"
+       }
+      }
+     }
+    },
+    "drought_profiles": {
+     "Level 0 - Normal": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.DroughtProfile",
+      "fields": {
+       "end_anchor": "sunrise",
+       "end_offset_minutes": null,
+       "rain_skip_horizon_hours": 12,
+       "runtime_scale": 1.0,
+       "target_offset": 0,
+       "trigger_margin": 0
+      }
+     },
+     "Level 1 - Mild": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.DroughtProfile",
+      "fields": {
+       "end_anchor": "sunrise",
+       "end_offset_minutes": null,
+       "rain_skip_horizon_hours": 18,
+       "runtime_scale": 0.9,
+       "target_offset": 0,
+       "trigger_margin": 2
+      }
+     },
+     "Level 2 - Significant": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.DroughtProfile",
+      "fields": {
+       "end_anchor": "sunrise",
+       "end_offset_minutes": null,
+       "rain_skip_horizon_hours": 24,
+       "runtime_scale": 0.8,
+       "target_offset": -1,
+       "trigger_margin": 4
+      }
+     },
+     "Level 3 - Critical": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.DroughtProfile",
+      "fields": {
+       "end_anchor": "dawn",
+       "end_offset_minutes": null,
+       "rain_skip_horizon_hours": 24,
+       "runtime_scale": 0.7,
+       "target_offset": -1,
+       "trigger_margin": 6
+      }
+     },
+     "Level 4 - Emergency": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.DroughtProfile",
+      "fields": {
+       "end_anchor": "dawn",
+       "end_offset_minutes": null,
+       "rain_skip_horizon_hours": 24,
+       "runtime_scale": 0.5,
+       "target_offset": -2,
+       "trigger_margin": 0
+      }
+     }
+    },
+    "tunables": {
+     "$dataclass": "custom_components.geodrops_rachio.brain.config.Tunables",
+     "fields": {
+      "calibration_ewma_alpha": 0.3,
+      "convergence_samples": 3,
+      "convergence_tolerance": 0.1,
+      "cycle_minutes": 12,
+      "end_offset_minutes": 5,
+      "field_capacity_pct": 87.0,
+      "humid_rh_pct": 90.0,
+      "max_pause_minutes": 60,
+      "max_pauses_per_schedule": 0,
+      "max_schedule_retries": 2,
+      "measurable_rise_pts": 3.0,
+      "probe_floor_minutes": 10.0,
+      "probe_fraction": 0.3333333333333333,
+      "probe_growth": 1.5,
+      "probe_headroom_ceiling": 85.0,
+      "probe_shrink": 1.5,
+      "rain_confounder_mm": 0.5,
+      "rain_last_hour_mm": 0.2,
+      "rain_skip_probability_pct": 70.0,
+      "rain_skip_refill_fraction": 0.5,
+      "rain_sustain_seconds": 150,
+      "recalibrate_after_exclusion_hours": 48.0,
+      "recovery_poll_seconds": 1800.0,
+      "retain_hours": 6.0,
+      "retention_floor": 0.1,
+      "saturation_reject": 95.0,
+      "self_calibration_enabled": false,
+      "settle_hours": 4.0,
+      "settle_max_wait_hours": 12.0,
+      "soak_minutes": 20,
+      "span_max": 60.0,
+      "span_min": 1.0,
+      "stagnant_wind_mph": 2.0,
+      "use_pause_collapse": true,
+      "warm_temp_f": 68.0,
+      "window_base_cap_hours": 6.0,
+      "window_disease_cap_hours": 3.0
+     }
+    },
+    "zones": {
+     "back": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.ZoneConfig",
+      "fields": {
+       "adjacency": {
+        "$tuple": []
+       },
+       "dominant_sensor": "sensor.back_dominant",
+       "exclude_boolean": "switch.geodrops_rachio_back_exclude",
+       "geography": "back",
+       "key": "back",
+       "quality_sensors": {
+        "$tuple": [
+         "sensor.back_q1",
+         "sensor.back_q2",
+         "sensor.back_q3"
+        ]
+       },
+       "rachio_switch": "switch.back_zone",
+       "rachio_zone_id": "id-back",
+       "refill_depth_mm": 7.5,
+       "refill_span_pts": 0.0,
+       "refill_target_pct": null,
+       "runtime_minutes": 40.0,
+       "spray": false,
+       "state_sensor": "sensor.back_state",
+       "target_range": "moist"
+      }
+     },
+     "front": {
+      "$dataclass": "custom_components.geodrops_rachio.brain.config.ZoneConfig",
+      "fields": {
+       "adjacency": {
+        "$tuple": []
+       },
+       "dominant_sensor": "sensor.front_dominant",
+       "exclude_boolean": "switch.geodrops_rachio_front_exclude",
+       "geography": "front",
+       "key": "front",
+       "quality_sensors": {
+        "$tuple": [
+         "sensor.front_q1",
+         "sensor.front_q2",
+         "sensor.front_q3"
+        ]
+       },
+       "rachio_switch": "switch.front_zone",
+       "rachio_zone_id": "id-front",
+       "refill_depth_mm": 7.5,
+       "refill_span_pts": 0.0,
+       "refill_target_pct": null,
+       "runtime_minutes": 40.0,
+       "spray": false,
+       "state_sensor": "sensor.front_state",
+       "target_range": "moist"
+      }
+     }
+    }
+   }
+  },
+  "dominant_by_zone": {
+   "back": 60.0,
+   "front": 60.0
+  },
+  "doses": {
+   "back": {
+    "$dataclass": "custom_components.geodrops_rachio.brain.dosing.DoseResult",
+    "fields": {
+     "deficit_pts": 27.0,
+     "effective_depth_mm": 7.5,
+     "frac": 1.0,
+     "minutes": 36.0,
+     "source": "fallback",
+     "span_pts": 0.0
+    }
+   },
+   "front": {
+    "$dataclass": "custom_components.geodrops_rachio.brain.dosing.DoseResult",
+    "fields": {
+     "deficit_pts": 27.0,
+     "effective_depth_mm": 8.0,
+     "frac": 1.0,
+     "minutes": 29.7,
+     "source": "live",
+     "span_pts": 20.0
+    }
+   }
+  },
+  "dosing_sources": {
+   "back": "fallback",
+   "front": "live"
+  },
+  "earliest_start": {
+   "$datetime": "2026-07-01T23:00:00+00:00"
+  },
+  "end": {
+   "$datetime": "2026-07-02T04:55:00+00:00"
+  },
+  "end_anchor": "sunrise",
+  "end_offset_minutes": 5,
+  "floors": {
+   "back": 65,
+   "front": 65
+  },
+  "forecast_wx": {
+   "$dataclass": "custom_components.geodrops_rachio.brain.weather.WeatherReading",
+   "fields": {
+    "dew_formed": false,
+    "precip_type": "none",
+    "rain_last_hour_mm": 0.0,
+    "rh_pct": 80.0,
+    "temp_f": 60.0,
+    "wind_mph": 3.0
+   }
+  },
+  "horizon_hours": 18,
+  "level": "Level 1 - Mild",
+  "minutes": {
+   "back": 36.0,
+   "front": 29.7
+  },
+  "priority": [
+   "back",
+   "front"
+  ],
+  "recovery_candidates": [],
+  "runtime_sources": {
+   "back": "static",
+   "front": "live"
+  },
+  "start": {
+   "$datetime": "2026-07-02T03:33:18+00:00"
+  },
+  "the_plan": {
+   "$dataclass": "custom_components.geodrops_rachio.brain.plan.Plan",
+   "fields": {
+    "dropped": [],
+    "slots": [
+     {
+      "$dataclass": "custom_components.geodrops_rachio.brain.plan.Slot",
+      "fields": {
+       "minutes": 12,
+       "zone_key": "back"
+      }
+     },
+     {
+      "$dataclass": "custom_components.geodrops_rachio.brain.plan.Slot",
+      "fields": {
+       "minutes": 12,
+       "zone_key": "front"
+      }
+     },
+     {
+      "$dataclass": "custom_components.geodrops_rachio.brain.plan.Slot",
+      "fields": {
+       "minutes": 8,
+       "zone_key": null
+      }
+     },
+     {
+      "$dataclass": "custom_components.geodrops_rachio.brain.plan.Slot",
+      "fields": {
+       "minutes": 12,
+       "zone_key": "back"
+      }
+     },
+     {
+      "$dataclass": "custom_components.geodrops_rachio.brain.plan.Slot",
+      "fields": {
+       "minutes": 12,
+       "zone_key": "front"
+      }
+     },
+     {
+      "$dataclass": "custom_components.geodrops_rachio.brain.plan.Slot",
+      "fields": {
+       "minutes": 8,
+       "zone_key": null
+      }
+     },
+     {
+      "$dataclass": "custom_components.geodrops_rachio.brain.plan.Slot",
+      "fields": {
+       "minutes": 12,
+       "zone_key": "back"
+      }
+     },
+     {
+      "$dataclass": "custom_components.geodrops_rachio.brain.plan.Slot",
+      "fields": {
+       "minutes": 5.699999999999999,
+       "zone_key": "front"
+      }
+     }
+    ],
+    "span_minutes": 81.7,
+    "watered": [
+     "back",
+     "front"
+    ]
+   }
+  },
+  "tun": {
+   "$dataclass": "custom_components.geodrops_rachio.brain.config.Tunables",
+   "fields": {
+    "calibration_ewma_alpha": 0.3,
+    "convergence_samples": 3,
+    "convergence_tolerance": 0.1,
+    "cycle_minutes": 12,
+    "end_offset_minutes": 5,
+    "field_capacity_pct": 87.0,
+    "humid_rh_pct": 90.0,
+    "max_pause_minutes": 60,
+    "max_pauses_per_schedule": 0,
+    "max_schedule_retries": 2,
+    "measurable_rise_pts": 3.0,
+    "probe_floor_minutes": 10.0,
+    "probe_fraction": 0.3333333333333333,
+    "probe_growth": 1.5,
+    "probe_headroom_ceiling": 85.0,
+    "probe_shrink": 1.5,
+    "rain_confounder_mm": 0.5,
+    "rain_last_hour_mm": 0.2,
+    "rain_skip_probability_pct": 70.0,
+    "rain_skip_refill_fraction": 0.5,
+    "rain_sustain_seconds": 150,
+    "recalibrate_after_exclusion_hours": 48.0,
+    "recovery_poll_seconds": 1800.0,
+    "retain_hours": 6.0,
+    "retention_floor": 0.1,
+    "saturation_reject": 95.0,
+    "self_calibration_enabled": false,
+    "settle_hours": 4.0,
+    "settle_max_wait_hours": 12.0,
+    "soak_minutes": 20,
+    "span_max": 60.0,
+    "span_min": 1.0,
+    "stagnant_wind_mph": 2.0,
+    "use_pause_collapse": true,
+    "warm_temp_f": 68.0,
+    "window_base_cap_hours": 6.0,
+    "window_disease_cap_hours": 3.0
+   }
+  },
+  "uncompleted": {},
+  "wx": {
+   "$dataclass": "custom_components.geodrops_rachio.brain.weather.WeatherReading",
+   "fields": {
+    "dew_formed": false,
+    "precip_type": "none",
+    "rain_last_hour_mm": 0.0,
+    "rh_pct": 70.0,
+    "temp_f": 60.0,
+    "wind_mph": 5.0
+   }
+  }
+ },
+ "efficacy": null,
+ "logs": [],
+ "skip": {
+  "$tuple": [
+   false,
+   {
+    "amount_mm": 0.0,
+    "horizon_hours": 18,
+    "mean_effective_depth_mm": 7.75,
+    "probability_pct": 10.0,
+    "threshold_mm": 3.88
+   }
+  ]
+ },
+ "targets": {
+  "friendly_name": "Irrigation Target Floors",
+  "target_floors": {
+   "back": 65,
+   "front": 65
+  },
+  "updated": "2026-07-01T23:00:00"
+ }
+}

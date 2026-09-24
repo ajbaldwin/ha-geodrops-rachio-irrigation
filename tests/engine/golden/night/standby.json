@@ -1,0 +1,138 @@
+{
+ "calls": [
+  [
+   "logbook",
+   "log",
+   {
+    "entity_id": "sensor.geodrops_rachio_status",
+    "message": "Standby — nothing watered tonight",
+    "name": "Irrigation"
+   }
+  ],
+  [
+   "notify",
+   "phone",
+   {
+    "message": "Irrigation Standby — system paused, no zones watered.",
+    "title": "Irrigation Recap"
+   }
+  ],
+  [
+   "calendar",
+   "create_event",
+   {
+    "description": "System in standby — no watering performed.",
+    "end_date_time": "2026-07-02T04:26:00+00:00",
+    "entity_id": "calendar.lawn",
+    "start_date_time": "2026-07-02T04:25:00+00:00",
+    "summary": "Irrigation Standby"
+   }
+  ]
+ ],
+ "logs": [],
+ "records": {
+  "last_nightly": [
+   0,
+   {
+    "delivered_minutes": {},
+    "end": "",
+    "end_iso": "",
+    "friendly_name": "Irrigation Last Nightly Run",
+    "rachio_calls": 0,
+    "skipped": "standby",
+    "start": "",
+    "state_polls": 0,
+    "trigger": "nightly",
+    "uncompleted": {},
+    "updated": "2026-07-01T23:00:00",
+    "watered": [],
+    "window_end": "",
+    "window_start": ""
+   }
+  ],
+  "last_run": [
+   0,
+   {
+    "delivered_minutes": {},
+    "end": "",
+    "end_iso": "",
+    "friendly_name": "Irrigation Last Run",
+    "rachio_calls": 0,
+    "skipped": "standby",
+    "start": "",
+    "state_polls": 0,
+    "trigger": "nightly",
+    "uncompleted": {},
+    "updated": "2026-07-01T23:00:00",
+    "watered": [],
+    "window_end": "",
+    "window_start": ""
+   }
+  ],
+  "status": [
+   "standby",
+   {
+    "friendly_name": "Irrigation Status",
+    "updated": "2026-07-01T23:00:00"
+   }
+  ],
+  "targets": [
+   2,
+   {
+    "friendly_name": "Irrigation Target Floors",
+    "target_floors": {
+     "back": 65,
+     "front": 65
+    },
+    "updated": "2026-07-01T23:00:00"
+   }
+  ]
+ },
+ "status_trail": [
+  [
+   "planning",
+   null
+  ],
+  [
+   "standby",
+   null
+  ]
+ ],
+ "store": {
+  "efficacy": null,
+  "pending_obs": null,
+  "record.calibration": null,
+  "record.last_nightly": {
+   "attributes": {
+    "delivered_minutes": {},
+    "end": "",
+    "end_iso": "",
+    "friendly_name": "Irrigation Last Nightly Run",
+    "rachio_calls": 0,
+    "skipped": "standby",
+    "start": "",
+    "state_polls": 0,
+    "trigger": "nightly",
+    "uncompleted": {},
+    "updated": "2026-07-01T23:00:00",
+    "watered": [],
+    "window_end": "",
+    "window_start": ""
+   },
+   "value": 0
+  },
+  "record.preview": null,
+  "record.targets": {
+   "attributes": {
+    "friendly_name": "Irrigation Target Floors",
+    "target_floors": {
+     "back": 65,
+     "front": 65
+    },
+    "updated": "2026-07-01T23:00:00"
+   },
+   "value": 2
+  },
+  "waiting_marker": null
+ }
+}
