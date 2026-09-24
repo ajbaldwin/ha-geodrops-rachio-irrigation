@@ -1,0 +1,89 @@
+{
+ "calls": [
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "12,12",
+    "entity_id": [
+     "switch.front_zone",
+     "switch.back_zone"
+    ]
+   }
+  ],
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "12,12",
+    "entity_id": [
+     "switch.front_zone",
+     "switch.back_zone"
+    ]
+   }
+  ],
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "6",
+    "entity_id": [
+     "switch.front_zone"
+    ]
+   }
+  ]
+ ],
+ "counters": [
+  3,
+  228
+ ],
+ "logs": [],
+ "out": {
+  "aborted_reason": null,
+  "blocks": [
+   {
+    "minutes": 24,
+    "runs": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ]
+    ]
+   },
+   {
+    "minutes": 24,
+    "runs": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ]
+    ]
+   },
+   {
+    "minutes": 6,
+    "runs": [
+     [
+      "front",
+      6
+     ]
+    ]
+   }
+  ],
+  "delivered_minutes": {
+   "back": 24,
+   "front": 30
+  },
+  "watered": [
+   "front",
+   "back"
+  ]
+ }
+}

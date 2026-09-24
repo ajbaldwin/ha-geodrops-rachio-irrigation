@@ -1,0 +1,159 @@
+{
+ "calls": [
+  [
+   "switch",
+   "turn_on",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ],
+  [
+   "rachio",
+   "start_multiple_zone_schedule",
+   {
+    "duration": "12,12,12,12,6",
+    "entity_id": [
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone",
+     "switch.back_zone",
+     "switch.front_zone"
+    ]
+   }
+  ],
+  [
+   "rachio",
+   "pause_watering",
+   {
+    "devices": "Main House",
+    "duration": 8
+   }
+  ],
+  [
+   "rachio",
+   "resume_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "rachio",
+   "stop_watering",
+   {
+    "devices": "Main House"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.front_zone"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.back_zone"
+   }
+  ],
+  [
+   "switch",
+   "turn_off",
+   {
+    "entity_id": "switch.geodrops_rachio_run_active"
+   }
+  ]
+ ],
+ "counters": [
+  6,
+  138
+ ],
+ "logs": [
+  [
+   "warning",
+   "irrigation: watering stopped externally near the end of a step; not re-issuing the schedule"
+  ]
+ ],
+ "out": {
+  "aborted_reason": "external-stop",
+  "blocks": [
+   {
+    "minutes": 54,
+    "runs": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      6
+     ]
+    ]
+   }
+  ],
+  "breadcrumbs": [
+   {
+    "detail": [
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      12
+     ],
+     [
+      "back",
+      12
+     ],
+     [
+      "front",
+      6
+     ]
+    ],
+    "event": "start",
+    "t": "02:00:00"
+   },
+   {
+    "detail": 8,
+    "event": "pause",
+    "t": "02:24:00"
+   },
+   {
+    "event": "resume",
+    "t": "02:32:00"
+   },
+   {
+    "detail": "external-stop",
+    "event": "give-up",
+    "t": "02:33:30"
+   }
+  ],
+  "delivered_minutes": {
+   "back": 8.0,
+   "front": 12
+  },
+  "recoveries": 0,
+  "watered": [
+   "front",
+   "back"
+  ]
+ }
+}
