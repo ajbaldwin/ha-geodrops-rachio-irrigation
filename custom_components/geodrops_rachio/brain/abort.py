@@ -62,3 +62,19 @@ def watch_step(running, seen_on, misses, elapsed_seconds, total_seconds,
     if misses >= stop_polls:
         return "external-stop", seen_on, misses
     return None, seen_on, misses
+
+
+def off_run(running, seen_on, off_polls):
+    """Consecutive empty polls since watering was last seen.
+
+    Unlike `watch_step`'s misses this keeps counting inside the end grace, so
+    once a step ends the runner can tell whether its valves had gone off for
+    good before the end (a stop the grace absorbed) or were on to the last.
+    Zero before water was ever seen: a step that has not started yet has not
+    stopped either.
+    """
+    if running:
+        return 0
+    if not seen_on:
+        return off_polls
+    return off_polls + 1

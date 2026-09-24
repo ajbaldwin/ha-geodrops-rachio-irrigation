@@ -218,3 +218,40 @@ async def test_collapsed_standby_before_second_segment(freezer):
 @pytest.fixture(autouse=True)
 def _warnings_captured(caplog):
     caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
+
+
+# --- late external stop vs Rachio drop (collapsed) ------------------------
+# WITH_SOAK collapses to: water front 10 (02:00-02:10), pause 30, water back 10
+# (02:40-02:50). A stop in the last ~270 s of a step never reaches
+# EXTERNAL_STOP_POLLS before the end grace, so the step itself ends "cleanly".
+
+async def test_late_stop_before_a_pause_is_an_external_stop_not_a_drop(freezer):
+    w, eng, _flags, preds = _engine(freezer, collapse=True)
+    w.at("2026-07-02 02:07:00", w.rachio._clear)       # 180 s before front ends
+    out = await _run(eng, True, WITH_SOAK, preds)
+    assert out["aborted_reason"] == "external-stop"
+    assert out["recoveries"] == 0
+    assert len(_starts(w)) == 1                         # not re-issued
+    # Credited to the first empty poll (02:07:00, where the water stopped), not
+    # the full 10 minutes.
+    assert out["delivered_minutes"] == {"front": 7.0}
+
+
+async def test_drop_during_a_pause_is_still_recovered(freezer):
+    w, eng, _flags, preds = _engine(freezer, collapse=True)
+    w.rachio.drop_at = w.now().replace(minute=20)      # 02:20, mid-pause
+    out = await _run(eng, True, WITH_SOAK, preds)
+    assert out["aborted_reason"] is None
+    assert out["recoveries"] == 1
+    assert len(_starts(w)) == 2
+    assert out["delivered_minutes"] == {"front": 10, "back": 10}
+
+
+async def test_late_stop_in_the_last_step_still_ends_the_night_cleanly(freezer):
+    # Nothing follows the last water step, so the stop evidence is never used:
+    # it can only ever veto a re-issue, never end a night on its own.
+    w, eng, _flags, preds = _engine(freezer, collapse=True)
+    w.at("2026-07-02 02:47:00", w.rachio._clear)       # 180 s before back ends
+    out = await _run(eng, True, WITH_SOAK, preds)
+    assert out["aborted_reason"] is None
+    assert out["recoveries"] == 0 and len(_starts(w)) == 1

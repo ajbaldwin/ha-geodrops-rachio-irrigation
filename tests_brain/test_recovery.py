@@ -182,3 +182,21 @@ def test_nothing_owed_is_recorded_not_resumed():
 def test_a_previous_nights_leftover_is_ignored():
     assert recovery.resume_action(progress("2026-07-01T04:15:00+00:00"), NOW) == (
         recovery.IGNORE, {})
+
+
+# ─── classify_non_start ──────────────────────────────────────────────────────
+# A water step that "never started" right after the previous water step's valves
+# were seen switching off (and staying off) was stopped, not dropped: a Rachio
+# drop happens while the device is paused, with water running right up to it.
+
+def test_non_start_after_an_observed_stop_is_an_external_stop():
+    assert recovery.classify_non_start("never-started", True) == "external-stop"
+
+
+def test_non_start_without_an_observed_stop_stays_a_possible_drop():
+    assert recovery.classify_non_start("never-started", False) == "never-started"
+
+
+def test_other_reasons_pass_through():
+    for reason in (None, "rain-abort", "manual-abort", "external-stop", "standby"):
+        assert recovery.classify_non_start(reason, True) == reason
