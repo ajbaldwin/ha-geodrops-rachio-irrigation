@@ -35,8 +35,10 @@ section per released version, newest first.
   running (for example after a failed reload), even if you changed nothing.
   Before, it could stay stopped until Home Assistant restarted.
 - Removing the integration now deletes its stored calibration history and run
-  records instead of leaving them in Home Assistant's storage. Re-adding the
-  integration starts fresh, as it did before.
+  records instead of leaving them in Home Assistant's storage. If you upgraded
+  from v0.9.x and `/config/pyscript/geodrops_rachio_state/` is still there,
+  re-adding the integration imports that folder's calibration history and
+  records again. Delete the folder first if you want to start fresh.
 - Internal: the test suite now runs against Home Assistant 2026.9 and checks
   the scheduler against recorded expected outcomes instead of the old
   pyscript app. This has no effect on behaviour.
