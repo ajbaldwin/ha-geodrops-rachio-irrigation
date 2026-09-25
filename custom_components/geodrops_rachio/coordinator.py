@@ -4,7 +4,7 @@ import logging
 
 from homeassistant.core import HomeAssistant, callback
 
-from .engine.store import EFFICACY
+from .engine.store import EFFICACY, ZONE_WATERED
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -133,6 +133,12 @@ class ZoneStateCoordinator:
         ln = self._attrs("last_nightly")
         if ln is not None:
             out.update(parse_last_nightly(ln, key))
+        # The zone's latest watering from any source (our runs, Rachio-native ones)
+        # wins; a zone with no entry yet keeps last night's values.
+        zw = (self._scheduler.store.read(ZONE_WATERED) or {}).get(key)
+        if zw:
+            out["last_watered"] = zw.get("end_iso")
+            out["last_delivered_runtime"] = zw.get("minutes")
         # Effective target floor (need-water line) for the live Deficit sensor.
         tg = self._attrs("targets")
         if tg is not None:

@@ -11,13 +11,15 @@ import logging
 from typing import Callable, Coroutine
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import (async_track_state_change_event,
+                                         async_track_time_change)
 from homeassistant.helpers.start import async_at_started
 
 from ..brain import recovery
 from .base import EngineBase
 from .io import IOMixin
 from .learning import LearningMixin
+from .native import NativeRunMixin
 from .orchestration import OrchestrationMixin
 from .planning import PlanningMixin
 from .runner import RunnerMixin
@@ -63,8 +65,8 @@ def _log_task_failure(task: asyncio.Task) -> None:
         _LOGGER.error(f"irrigation: {task.get_name()} failed ({exc!r})", exc_info=exc)
 
 
-class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
-                IOMixin, EngineBase):
+class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin,
+                RunnerMixin, IOMixin, EngineBase):
     def __init__(self, port, store, load_raw_config, fetch_zone_data,
                  create_task: Callable[[Coroutine, str], asyncio.Task]) -> None:
         super().__init__(port, store, load_raw_config, fetch_zone_data)
@@ -80,6 +82,11 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
         # calls it last is the one survivor).
         self._run_lock = asyncio.Lock()
         self._run_gen = 0
+        # Rachio-native run tracking (see native.py): managed zone switch ->
+        # zone key, the open session, and its pending all-off close.
+        self._native_switches: dict[str, str] = {}
+        self._native_session: dict | None = None
+        self._native_close_task: asyncio.Task | None = None
 
     # --- the one run task (replaces task.unique("geodrops_rachio_run")) -------
     async def _cancel_run(self) -> None:
@@ -399,6 +406,10 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
                                     minute=[0, 30], second=0),
             async_at_started(hass, self._on_ha_started),
         ]
+        self._init_native_tracking()
+        if self._native_switches:
+            self._unsubs.append(async_track_state_change_event(
+                hass, list(self._native_switches), self._on_switch_event))
 
     async def _on_calibrate_time(self, _now) -> None:
         self._spawn_job(self.irrigation_calibrate(), "geodrops_rachio_calibrate")
@@ -406,10 +417,11 @@ class Scheduler(LearningMixin, OrchestrationMixin, PlanningMixin, RunnerMixin,
     async def _on_settle_time(self, _now) -> None:
         self._spawn_job(self._settle_and_learn(), "geodrops_rachio_settle")
 
-    def _spawn_job(self, coro: Coroutine, name: str) -> None:
+    def _spawn_job(self, coro: Coroutine, name: str) -> asyncio.Task:
         task = self._spawn(coro, name)
         self._jobs.add(task)
         task.add_done_callback(self._jobs.discard)
+        return task
 
     async def _on_ha_started(self, _hass) -> None:
         self.startup_task = self._spawn(
