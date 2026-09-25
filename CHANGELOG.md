@@ -4,6 +4,31 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.2.0-beta.1 — Watering from the Rachio app is recorded
+
+### Changes
+
+- **Runs started from the Rachio app or a Rachio schedule are now recorded.**
+  *Last run* gets an entry with `trigger: rachio`, including start, end, the
+  zones watered, and minutes per zone. *Last nightly run* still covers only
+  the scheduler's own nightly runs. This is tracking only: planning is
+  unchanged, because the moisture sensors already see that water.
+- **Per-zone *Last watered* and *Last delivered runtime* follow any
+  watering**, whether it came from the nightly run, *Run irrigation now*, or
+  Rachio. Until a zone waters again, they keep showing what *Last nightly
+  run* had, so nothing goes blank after updating.
+- **Fix: calibration ignores Rachio-started watering.** If a Rachio run waters
+  a zone while that zone's calibration sample is still settling, the sample is
+  dropped instead of crediting the Rachio water to the scheduler's run.
+- Known limits: a Rachio run that is already underway when Home Assistant
+  starts, or one in progress across a restart, is not recorded. Timing comes
+  from Rachio's webhooks, so if a webhook is missed, the recorded run can be
+  wrong.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.1.0 → restart. Nothing is lost. The
+per-zone *Last watered* sensors go back to reading *Last nightly run*.
+
 ## v1.1.0 — Run active is an indicator; Dew formed is gone
 
 ### Breaking changes
