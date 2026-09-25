@@ -142,6 +142,9 @@ class OrchestrationMixin:
         attributes["state_polls"] = self.state_polls
         value = len(result.watered) if result is not None else 0
         self._publish("last_run", value, attributes)
+        if result is not None and result.watered and result.end_iso:
+            await self._record_zone_watering(
+                result.watered, result.per_zone_minutes, result.end_iso, trigger)
         # The unattended run keeps its OWN copy. `last_run` is literally the last
         # one, so a manual re-run overwrites it — which is exactly what happened
         # while diagnosing the 2026-08-09 abort: the run_now erased the night we

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from ..brain import blocks
-from .store import EFFICACY, PENDING_OBS, RUN_ACTIVE
+from .store import EFFICACY, PENDING_OBS, RUN_ACTIVE, ZONE_WATERED
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -191,3 +191,34 @@ class IOMixin:
             existing = []
         existing.extend(records)
         await self.store.write(PENDING_OBS, existing)
+
+    async def _drop_pending_obs(self, zones):
+        """Drop the pending calibration samples of `zones`, watered again inside
+        their settle window. Returns the zones that had one."""
+        existing = self.store.read(PENDING_OBS)
+        if not isinstance(existing, list):
+            return []
+        keep = [rec for rec in existing if rec.get("zone") not in zones]
+        if len(keep) == len(existing):
+            return []
+        await self.store.write(PENDING_OBS, keep)
+        dropped = []
+        for rec in existing:
+            zone = rec.get("zone")
+            if zone in zones and zone not in dropped:
+                dropped.append(zone)
+        return dropped
+
+    async def _record_zone_watering(self, zones, minutes, end_iso, trigger):
+        """Record each zone's latest watering (see ZONE_WATERED). A persistence
+        failure must never take down the run that watered, so it only warns."""
+        try:
+            doc = self.store.read(ZONE_WATERED)
+            if not isinstance(doc, dict):
+                doc = {}
+            for k in zones:
+                doc[k] = {"end_iso": end_iso, "minutes": minutes.get(k),
+                          "trigger": trigger}
+            await self.store.write(ZONE_WATERED, doc)
+        except Exception as err:
+            _LOGGER.warning(f"irrigation: could not record zone watering ({err})")

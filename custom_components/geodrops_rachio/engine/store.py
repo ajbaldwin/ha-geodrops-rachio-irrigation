@@ -33,6 +33,9 @@ RUN_PROGRESS = "run_progress"
 # True while a collapsed run is in flight; absent otherwise. Survives a restart
 # so startup can detect the interrupted run. Shown by the Run active indicator.
 RUN_ACTIVE = "run_active"
+# {zone: {end_iso, minutes, trigger}}: each zone's latest watering, from our runs
+# and Rachio-native ones alike. Feeds the per-zone Last watered sensors.
+ZONE_WATERED = "zone_watered"
 PERSISTED_RECORDS = ("last_nightly", "calibration", "targets", "preview")
 LEGACY_STATE_DIRNAME = "geodrops_rachio_state"
 DELIVERED_PATHS = (

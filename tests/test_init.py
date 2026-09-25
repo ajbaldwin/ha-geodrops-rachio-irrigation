@@ -456,3 +456,27 @@ async def test_stop_button_works_without_logbook(hass, enable_pyscript_and_rachi
     await hass.services.async_call(
         "button", "press", {"entity_id": "button.geodrops_rachio_stop"}, blocking=True)
     assert hass.data[DOMAIN][entry.entry_id]["scheduler"]._manual_stop is True
+
+
+async def test_rachio_native_run_is_tracked_through_state_events(
+        hass, enable_pyscript_and_rachio):
+    """A zone switch flipping in HA's state machine, outside our runs, reaches
+    the scheduler as a Rachio session; unloading stops listening."""
+    hass.states.async_set("switch.front_zone", "off")
+    entry = MockConfigEntry(domain=DOMAIN, data=_full_entry_data())
+    entry.add_to_hass(hass)
+    with patch("custom_components.geodrops_rachio.engine.native.NATIVE_GAP_S", 0):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+        hass.states.async_set("switch.front_zone", "on")
+        await hass.async_block_till_done()
+        assert set(scheduler._native_session["zones"]) == {"front"}
+        hass.states.async_set("switch.front_zone", "off")
+        await hass.async_block_till_done()
+    rec = scheduler.records["last_run"]["attributes"]
+    assert rec["trigger"] == "rachio" and rec["watered"] == ["front"]
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass.states.async_set("switch.front_zone", "on")
+    await hass.async_block_till_done()
+    assert scheduler._native_session is None
