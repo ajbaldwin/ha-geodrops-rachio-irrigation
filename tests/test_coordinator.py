@@ -160,3 +160,22 @@ def test_data_for_reads_scheduler_records(hass):
     assert out["planned_runtime"] == 30
     assert out["efficacy"] == 0.4
     assert out["calibration_state"] == "Calibrating (2/3)"
+
+
+def test_zone_watered_wins_over_last_nightly(hass):
+    entry = SimpleNamespace(data={"zones": [{"key": "front"}, {"key": "back"}]})
+    sched = _scheduler_stub(
+        records={"last_nightly": {"value": 2, "attributes": {
+            "watered": ["front", "back"],
+            "delivered_minutes": {"front": 42.0, "back": 30.0},
+            "end_iso": "2026-09-13T06:00:00+00:00"}}},
+        # A Rachio run watered front after the night; back has no entry yet
+        # (an install upgraded since its last run) and keeps the nightly values.
+        docs={"zone_watered": {"front": {"end_iso": "2026-09-13T17:05:00+00:00",
+                                         "minutes": 6.0, "trigger": "rachio"}}})
+    c = ZoneStateCoordinator(hass, entry, sched)
+    front, back = c.data_for("front"), c.data_for("back")
+    assert front["last_watered"] == "2026-09-13T17:05:00+00:00"
+    assert front["last_delivered_runtime"] == 6.0
+    assert back["last_watered"] == "2026-09-13T06:00:00+00:00"
+    assert back["last_delivered_runtime"] == 30.0

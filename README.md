@@ -118,7 +118,19 @@ per zone, with these entities (all prefixed `geodrops_rachio_`):
   any kind, including *Run irrigation now*), and `sensor.geodrops_rachio_plan`
   (the most recent *Preview irrigation plan* output). The state of the last
   three is a zone count (zones watered, or zones the preview would water), and
-  each carries the run's full detail as attributes.
+  each carries the run's full detail as attributes. A `trigger` attribute says
+  which kind of run it was: `nightly`, `run_now`, a startup recovery, or
+  `rachio` for watering started from the Rachio app or a Rachio schedule.
+
+**Rachio app and schedule runs** are recorded, not managed. When a zone switch
+turns on while the scheduler is not watering, the run is published to *Last run*
+(`trigger: rachio`) once every zone has been off for 2 minutes, with each zone's
+minutes timed from its switch. It updates the zones' *last watered* and
+*last-delivered runtime* sensors, and drops any calibration sample still
+settling for those zones (the extra water would skew it). It does not change
+planning: the moisture sensors already see the water. Timing relies on Rachio's
+webhooks, so a missed one can lose or stretch a run, and a run in progress when
+Home Assistant restarts is not recorded.
 
 **Per-zone (one device each)**
 
@@ -126,7 +138,9 @@ per zone, with these entities (all prefixed `geodrops_rachio_`):
   plan and calibration probing.
 - **Status sensors** — soil moisture (mirrors the zone's dominant sensor),
   planned runtime, last-delivered runtime, last watered, efficacy, and
-  calibration state.
+  calibration state. Last watered and last-delivered runtime follow the zone's
+  most recent watering from any source: nightly, *Run irrigation now*, or a
+  Rachio app/schedule run.
 
 **Weather (main device)**
 
