@@ -92,6 +92,10 @@ if [ -z "$ci" ]; then
   problem "no CI runs found for ${SHA:0:7}"
 else
   while IFS='|' read -r name status conclusion; do
+    # inside .github/workflows/publish.yml, that run is itself in progress
+    if [ -n "${GITHUB_WORKFLOW:-}" ] && [ "$name" = "$GITHUB_WORKFLOW" ]; then
+      continue
+    fi
     if [ "$status" != completed ]; then
       problem "CI '$name' is still $status"
     elif [ "$conclusion" != success ]; then
@@ -158,4 +162,10 @@ git tag "$TAG"
 git push origin "$TAG"
 gh release create "$TAG" --verify-tag "$FLAG" --title "$TITLE" --notes-file "$NOTES_FILE"
 bash tools/check_release.sh "$TAG" "$PRERELEASE"
-echo "Published $TAG. release-guard.yml re-checks it on GitHub."
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  # a release made with a workflow's token doesn't trigger release-guard.yml;
+  # check_release.sh just above is the check
+  echo "Published $TAG."
+else
+  echo "Published $TAG. release-guard.yml re-checks it on GitHub."
+fi
