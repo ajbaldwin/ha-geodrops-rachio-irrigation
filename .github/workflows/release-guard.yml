@@ -1,0 +1,31 @@
+name: Release guard
+# A published release is what HACS delivers. If its tag doesn't match
+# manifest.json, or its pre-release flag doesn't match the version (a beta
+# shown to every user, or a stable hidden behind HACS's "Pre-release" switch), turn it
+# back into a draft so HACS stops offering it, and fail loudly.
+on:
+  release:
+    types: [published, edited]
+
+permissions:
+  contents: write
+
+jobs:
+  guard:
+    if: ${{ !github.event.release.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: bash tools/check_release.sh "$TAG" "$PRERELEASE"
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+      - name: Unpublish the release (back to draft)
+        if: failure() && steps.check.outcome == 'failure'
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}

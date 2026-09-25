@@ -24,6 +24,37 @@ anymore (that was a pyscript-delivery mechanism, removed in v1.0.0). Don't
 write release notes implying otherwise; every CHANGELOG entry and release
 body should assume a restart is required.
 
+## Beta and stable
+
+Releases go out on two channels, both as GitHub releases:
+
+- **Beta — `X.Y.Z-beta.N`**, published as a GitHub *pre-release*. HACS offers
+  it only to users who turned on this integration's **Pre-release** switch —
+  since HACS 2.0 a per-repository switch entity, disabled by default (see the
+  README's *Beta versions*). You run it on your own box first.
+- **Stable — `X.Y.Z`**, the release every HACS user is offered.
+
+**By default, merged changes ship as a beta.** Fixes found while a beta is out
+go into the next beta (`-beta.2`, `-beta.3`, ...), not into a string of stable
+patches. Promote to stable when you judge the beta ready — typically once it
+has run through the nights that exercise the change. Nothing enforces the
+wait, so the discipline is yours. A direct stable (no beta) is still allowed
+for an urgent fix to a bug in the current stable.
+
+Version numbers: betas carry the version the stable will get — the first beta
+after v1.1.0 is `1.2.0-beta.1` (or `1.1.1-beta.1` for fixes only), and
+promoting it is `1.2.0`. Never publish a beta of a version that is already
+stable; it would sort below it (`tools/release.sh` refuses).
+
+CHANGELOG sections:
+
+- **Each beta** gets its own section, `## v1.2.0-beta.2 — Title`, covering
+  what changed since the previous beta. Beta users read it as that release's
+  notes.
+- **The stable** gets `## v1.2.0 — Title` summarizing *everything* since the
+  previous stable, written for users who skipped every beta. Don't just point
+  at the beta sections. The beta sections stay in the file.
+
 ## Release steps
 
 1. **Make your changes.** Edit `custom_components/geodrops_rachio/brain/`
@@ -72,37 +103,45 @@ body should assume a restart is required.
 
    Both suites must pass before releasing.
 
-3. **Bump the version.** Edit
-   `custom_components/geodrops_rachio/manifest.json` and increment
-   `"version"`. Do this on every release.
+3. **Open a release PR** (`release: vX.Y.Z`) with two changes:
 
-4. **Commit.**
+   - **Bump the version** in `custom_components/geodrops_rachio/manifest.json`:
+     the next beta (`1.2.0-beta.1`, `1.2.0-beta.2`, ...) or the stable
+     (`1.2.0`). See *Beta and stable* above.
+   - **Write the release notes** as a new top section in `CHANGELOG.md`,
+     headed `## vX.Y.Z — Title`. `tools/release.sh` publishes that section
+     verbatim as the GitHub release body, and HACS shows the body as the
+     changelog for that version — it is how users see what a pending update
+     contains before they install it. Keep it short and user-facing: what
+     changed and what got fixed. Every release requires a restart — say so.
 
-   ```bash
-   git add custom_components/geodrops_rachio and any other changed files
-   git commit -m "release: vX.Y.Z"
-   ```
-
-5. **Write the release notes.** HACS shows the GitHub release **body** as the
-   changelog for that version, so it is how users see what a pending update
-   contains before they install it — always write real notes, never
-   `--generate-notes`. Keep them short and user-facing: what changed and what
-   got fixed. Every release requires a restart — say so. Add the same summary
-   as a new top section in `CHANGELOG.md`.
-
-6. **Tag and release** from `main`.
+4. **Merge it**, then publish from an up-to-date `main`:
 
    ```bash
-   git tag vX.Y.Z
-   git push origin main vX.Y.Z
-   gh release create vX.Y.Z --title vX.Y.Z --notes-file <notes.md>
+   git checkout main && git pull
+   bash tools/release.sh publish --dry-run
+   bash tools/release.sh publish
    ```
+
+   The script refuses unless you are on a clean `main` that matches
+   `origin/main`, CI passed on that commit, the tag is new, and `CHANGELOG.md`
+   has the version's section. It then tags `vX.Y.Z` and creates the GitHub
+   release — a pre-release for `-beta.N`, the latest release for a stable —
+   titled from the CHANGELOG heading. `--dry-run` runs every check and shows
+   the notes without publishing.
 
    HACS installs updates from GitHub releases, so the release is what makes the
    new version — and its notes — visible to users' HACS instances; the
    `manifest.json` bump alone does not distribute anything. Because `hacs.json`
    sets `hide_default_branch`, HACS only ever offers tagged releases, not raw
    `main`.
+
+**Release guard.** `.github/workflows/release-guard.yml` re-checks every
+published or edited release — including ones made by hand in the GitHub UI —
+with `tools/check_release.sh`: the tag must equal `v` + the manifest version at
+that tag, and the pre-release flag must match the version. On a mismatch it
+turns the release back into a draft (HACS stops offering it) and the run
+fails. Fix the cause, then publish the draft again.
 
 ## Golden fixtures
 
@@ -135,9 +174,13 @@ friends), so a regeneration cannot quietly turn, say, the rain-abort scenario
 into a normal night. The engine tests run with the process timezone pinned to
 UTC (`tests/engine/conftest.py`), so fixtures are identical on any machine.
 
-## Sanity check before tagging
+## Sanity check before publishing
 
+- Beta or stable? Default to a beta; a stable should promote a beta that has
+  already run on your box, unless it's an urgent fix.
 - `custom_components/geodrops_rachio/manifest.json`'s `"version"` was bumped.
+- A stable's CHANGELOG section covers everything since the previous stable,
+  not just the last beta.
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests_brain` passes.
 - `bash tools/test.sh` passes.
 - The release notes and CHANGELOG entry say a restart is required (every
