@@ -134,8 +134,8 @@ Home Assistant restarts is not recorded.
 
 **Per-zone (one device each)**
 
-- **Exclude** (`switch`) — when on, the zone is skipped from both the nightly
-  plan and calibration probing.
+- **Exclude from Watering/Calibration** (`switch`) — when on, the zone is
+  skipped from both the nightly plan and calibration probing.
 - **Status sensors** — soil moisture (mirrors the zone's dominant sensor),
   planned runtime, last-delivered runtime, last watered, efficacy, and
   calibration state. Last watered and last-delivered runtime follow the zone's

@@ -41,7 +41,7 @@ class FlagSwitch(RestoreEntity, SwitchEntity):
 class ZoneExcludeSwitch(RestoreEntity, SwitchEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True
-    _attr_name = "Exclude from watering"
+    _attr_name = "Exclude from Watering/Calibration"
 
     def __init__(self, entry: ConfigEntry, key: str) -> None:
         s = slug(key)
