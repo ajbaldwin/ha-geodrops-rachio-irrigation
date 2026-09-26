@@ -4,6 +4,38 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.2.0-beta.2 — Ready for GeoDrops' new state names; calibration runs every morning
+
+### Changes
+
+- **Works with both the current and the upcoming GeoDrops integration.** A
+  GeoDrops update will report its Moisture State and Quality sensors as
+  `moist_plus` / `good` instead of `Moist+` / `Good`. This version reads
+  either. **Install this before that GeoDrops update**: older versions of this
+  integration read every zone as low quality with the new names and water
+  nothing.
+- **Per-zone *Last watered* is when that zone finished**, not when the whole
+  run ended. In a multi-zone night the first zone used to show the last zone's
+  time. *Last run* and *Last nightly run* gain a `zone_end_iso` attribute with
+  each zone's time.
+- **Observed overnight sensors now measure 23:00–06:00**, the hours the
+  nightly plan's forecast covers (was 20:00–06:00), weighted by how long each
+  reading held. They keep their readings across a restart. Expect their values
+  to differ from before.
+- **Fix: forecast calibration was skipped every morning** once the watering
+  window started closing after 06:00 (late September onward), with a
+  "calibration skipped — an irrigation run is in progress" warning in the
+  system log. It now waits for the run to finish.
+- **Fix: pressing *Run irrigation now* late in the evening** and letting the
+  23:00 nightly take over could leave the Rachio schedule to resume on its own
+  with nothing watching it. The nightly now stops it first.
+- **Fix: a calibration sample could be lost** if a run finished during the
+  half-hourly calibration check.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.2.0-beta.1 → restart. The observed
+overnight sensors go back to their old window.
+
 ## v1.2.0-beta.1 — Watering from the Rachio app is recorded
 
 ### Changes
