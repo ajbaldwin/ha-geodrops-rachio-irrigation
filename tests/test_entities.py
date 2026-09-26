@@ -158,6 +158,10 @@ async def test_zone_exclude_switch_created_per_zone(hass, enable_pyscript_and_ra
     state = hass.states.get("switch.geodrops_rachio_front_slope_exclude")
     assert state is not None
     assert state.state == "off"
+    # It gates calibration probing too, so the name says both. The entity id is
+    # pinned, so renaming it breaks no automation.
+    assert state.attributes["friendly_name"] == (
+        "Front Slope Exclude from Watering/Calibration")
 
 
 async def test_zone_exclude_switch_restores_state(hass, enable_pyscript_and_rachio):
