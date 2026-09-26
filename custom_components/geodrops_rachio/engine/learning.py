@@ -4,25 +4,30 @@ Ported from v0.9.15 bundled_app/geodrops_rachio.py lines 2372-2459 and 2467-2601
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 
+from .. import weather_derive
 from ..brain import calibration, sensors, weather
 from .base import STATUS_ENTITY
 from .store import PENDING_OBS
 
 _LOGGER = logging.getLogger(__name__)
 
+# How old the last_nightly record may be and still count as the night being
+# scored: it is stamped when the 23:00 plan starts (later for a startup heal).
+NIGHTLY_MAX_AGE = dt.timedelta(hours=12)
+
 
 class LearningMixin:
     async def irrigation_calibrate(self):
         """Score last night's forecast against what actually happened.
 
-        Runs at 06:00 for a reason: `sensor.observed_overnight_*` are rolling
-        6-hour means, so at 06:00 they cover 00:00-06:00 — exactly the window
-        `sensor.forecast_overnight_*` averages (`dt.hour < 6`). Same window, same
-        statistic, so the two are actually comparable. Reading them at any other
-        hour silently compares different periods.
+        Runs at 06:00 for a reason: `sensor.observed_overnight_*` are time-weighted
+        means over 23:00-06:00 (weather_derive.observed_overnight_window) — the
+        span the forecast read by the 23:00 plan covers, hour by hour. Same
+        window, same statistic, so the two are actually comparable.
 
         The forecast side is NOT recomputed here: by 06:00 the forecast sensors
         describe the hours before TOMORROW's dawn. It is read back from the record
@@ -32,29 +37,27 @@ class LearningMixin:
         entries answers the threshold question on its own. Nothing is auto-tuned —
         these thresholds encode turf pathology, not a fitted parameter, and a loop
         quietly adjusting them would change watering with nothing to catch it.
+
+        From late September the watering window closes after 06:00, so the
+        nightly is often still in progress now. The observed side is read at
+        06:00 regardless (it is the window being scored); the comparison then
+        waits for the run to finish, since the run's own record is the forecast
+        side. It reads its config into locals, never the run-scoped globals a live
+        run reads through.
         """
-        if self._run_in_progress:
-            _LOGGER.warning(
-                "irrigation: calibration skipped — an irrigation run is in "
-                "progress and owns the shared config globals"
-            )
-            return
         cfg = self._load_cfg()
-        # Runs on its own cron, outside _plan_and_run, so it must load these
-        # globals itself before _read_observed_overnight() can use them.
-        self._current_cfg = cfg
-        self._current_bindings = cfg.bindings
         tun = cfg.tunables
-        observed_wx = self._read_observed_overnight()
+        observed_wx = self._read_observed_overnight(cfg.bindings)
         if observed_wx is None:
             _LOGGER.warning(
                 "irrigation: overnight observed means unavailable; skipping "
                 "calibration for last night"
             )
             return
+        await self._await_run_finished()
         attrs = (self.records.get("last_nightly") or {}).get("attributes")
         forecast_pb = attrs.get("pressure_forecast") if attrs is not None else None
-        if not forecast_pb:
+        if not forecast_pb or not self._nightly_is_recent(attrs):
             await self._activity("Calibration skipped — no nightly run to compare against")
             return
 
@@ -67,7 +70,7 @@ class LearningMixin:
             {
                 "friendly_name": "Irrigation Forecast Calibration",
                 "updated": stamp,
-                "window": "00:00-06:00",
+                "window": weather_derive.OBSERVED_WINDOW_LABEL,
                 "pressure_forecast": forecast_pb,
                 "pressure_observed": observed_pb,
                 "observed_temp_f": observed_wx.temp_f,
@@ -97,6 +100,30 @@ class LearningMixin:
             entity_id=STATUS_ENTITY,
         )
 
+    async def _await_run_finished(self):
+        """Return once no run is in progress. Follows a replacement run too (a
+        reset followed by Run Now), since that one publishes the record."""
+        while self._run_in_progress:
+            task = getattr(self, "run_task", None)
+            if task is None or task.done():
+                return
+            await asyncio.wait({task})
+
+    def _nightly_is_recent(self, attrs):
+        """Is the last_nightly record from the night just ended? A night with no
+        record of its own (HA down, a reset) must not be scored against an older
+        night's forecast. A record without a stamp is given the benefit."""
+        stamp = attrs.get("updated")
+        if not stamp:
+            return True
+        try:
+            planned = dt.datetime.fromisoformat(stamp)
+        except (TypeError, ValueError):
+            return False
+        if planned.tzinfo is not None:
+            planned = planned.astimezone(self.port.now().tzinfo).replace(tzinfo=None)
+        return self._naive_now() - planned <= NIGHTLY_MAX_AGE
+
     async def _settle_and_learn(self):
         """Read settled dominant for runs whose settle window has elapsed, reject
         confounded observations, and update per-zone efficacy (feeds the learned span)."""
@@ -108,6 +135,13 @@ class LearningMixin:
         tun = cfg.tunables
         if not tun.self_calibration_enabled:
             return
+        # The pass reads the queue, awaits a runtime fetch, then rewrites it; a
+        # run appending (or a Rachio run dropping) an obs in between would be
+        # undone. Every read-modify-write of the queue holds this lock.
+        async with self._obs_lock:
+            await self._settle_pending(cfg, tun)
+
+    async def _settle_pending(self, cfg, tun):
         pending = self.store.read(PENDING_OBS)
         if not isinstance(pending, list) or not pending:
             return
@@ -170,9 +204,7 @@ class LearningMixin:
                 minutes = rec.get("minutes")
                 if pre is None or not minutes:
                     continue
-                quals = [(q or "").strip() for q in signals.qualities]
-                qcn_training = (len(quals) == 3 and quals[0] == "Training"
-                                and quals[1] == "Training" and quals[2] == "Training")
+                qcn_training = sensors.all_training(signals.qualities)
                 # settled_dominant = PEAK: classify's no_rise (rise<=0) and saturated
                 # (>=95) both key off the max the soil reached.
                 obs = calibration.Observation(

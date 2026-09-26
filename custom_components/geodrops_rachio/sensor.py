@@ -2,7 +2,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from homeassistant.components.sensor import (
-    SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
+    RestoreSensor, SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.const import (
     MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfLength)
 from homeassistant.config_entries import ConfigEntry
@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
     async_track_state_change_event, async_track_time_interval)
+from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.util import dt as dt_util
 from . import weather_derive
 from .const import DOMAIN
@@ -19,6 +20,9 @@ from .util import slug
 _LOGGER = logging.getLogger(__name__)
 
 _FORECAST_INTERVAL = dt.timedelta(hours=1)
+# How often the observed means recompute with nothing changing: a steady reading
+# is still accruing time, and the 06:00 read should see the window's tail.
+_OBSERVED_RECOMPUTE_INTERVAL = dt.timedelta(minutes=5)
 # (key suffix, forecast field, unit)
 _FIELDS = [("temp", "temperature", "°F"), ("humidity", "humidity", "%"),
            ("wind", "wind_speed", "mph")]
@@ -65,7 +69,39 @@ def _pretty_status(value):
     return value.replace("_", " ").title()
 
 
-class ObservedOvernightSensor(SensorEntity):
+class _ObservedSamples(ExtraStoredData):
+    """The observed sensor's samples, kept across a restart."""
+
+    def __init__(self, samples: list[tuple[dt.datetime, float]]) -> None:
+        self.samples = samples
+
+    def as_dict(self) -> dict:
+        return {"samples": [[t.isoformat(), v] for t, v in self.samples]}
+
+    @staticmethod
+    def parse(data: dict | None) -> list[tuple[dt.datetime, float]]:
+        out = []
+        for item in (data or {}).get("samples") or []:
+            try:
+                t = dt_util.parse_datetime(item[0])
+                v = float(item[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if t is not None and t.tzinfo is not None:
+                out.append((t, v))
+        return sorted(out)
+
+
+class ObservedOvernightSensor(RestoreSensor):
+    """Time-weighted mean of a weather reading over last night's window
+    (weather_derive.observed_overnight_window), the observed side of the 06:00
+    forecast calibration.
+
+    Samples survive a restart (restore data), the source's reading at startup
+    counts from then, and the value is recomputed on a timer as well as on each
+    change — a steady reading is still accruing time when nothing changes.
+    """
+
     _attr_should_poll = False
     _attr_suggested_display_precision = 1
 
@@ -79,31 +115,49 @@ class ObservedOvernightSensor(SensorEntity):
         self._samples: list[tuple[dt.datetime, float]] = []
         self._attr_device_info = device_info(entry)
 
+    @property
+    def extra_restore_state_data(self) -> ExtraStoredData:
+        return _ObservedSamples(self._samples)
+
     async def async_added_to_hass(self) -> None:
-        if self._source:
-            self.async_on_remove(async_track_state_change_event(
-                self.hass, [self._source], self._on_source))
+        await super().async_added_to_hass()
+        if not self._source:
+            return
+        last = await self.async_get_last_extra_data()
+        self._samples = _ObservedSamples.parse(last.as_dict() if last else None)
+        self._add_sample(self.hass.states.get(self._source))
+        self.async_on_remove(async_track_state_change_event(
+            self.hass, [self._source], self._on_source))
+        self.async_on_remove(async_track_time_interval(
+            self.hass, self._on_tick, _OBSERVED_RECOMPUTE_INTERVAL))
+        self._recompute()
+
+    def _add_sample(self, state) -> None:
+        if state is None:
+            return
+        try:
+            val = float(state.state)
+        except (ValueError, TypeError):
+            return
+        # Local time: the window is in the home's timezone (the scheduler
+        # calibrates at 06:00 local), not UTC.
+        self._samples.append((dt_util.now(), val))
+
+    def _recompute(self) -> None:
+        now = dt_util.now()
+        self._samples = weather_derive.prune_observed(self._samples, now)
+        self._attr_native_value = weather_derive.observed_overnight_mean(
+            self._samples, now)
 
     @callback
     def _on_source(self, event) -> None:
-        new = event.data.get("new_state")
-        if new is None:
-            return
-        try:
-            val = float(new.state)
-        except (ValueError, TypeError):
-            return
-        # Local time: "overnight" is 20:00→06:00 in the home's timezone (the
-        # scheduler calibrates at 06:00 local), not UTC — a UTC window would be
-        # offset by hours for any non-UTC install.
-        now = dt_util.now()
-        self._samples.append((now, val))
-        # Retain only samples from the current overnight window onward, then
-        # average that window (the true 20:00→06:00 span, not a rolling 12h).
-        start, _end = weather_derive.observed_overnight_window(now)
-        self._samples = [(t, v) for t, v in self._samples if t >= start]
-        self._attr_native_value = weather_derive.observed_overnight_mean(
-            self._samples, now)
+        self._add_sample(event.data.get("new_state"))
+        self._recompute()
+        self.async_write_ha_state()
+
+    @callback
+    def _on_tick(self, _now) -> None:
+        self._recompute()
         self.async_write_ha_state()
 
 

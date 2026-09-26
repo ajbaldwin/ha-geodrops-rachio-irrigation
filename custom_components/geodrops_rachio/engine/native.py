@@ -88,6 +88,7 @@ class NativeRunMixin:
         if span is not None and span["on_since"] is not None:
             span["seconds"] += (now - span["on_since"]).total_seconds()
             span["on_since"] = None
+            span["last_off"] = now
             session["last_off"] = now
         if all(s["on_since"] is None for s in session["zones"].values()):
             self._cancel_native_close()
@@ -100,6 +101,7 @@ class NativeRunMixin:
             if span["on_since"] is not None:
                 span["seconds"] += (now - span["on_since"]).total_seconds()
                 span["on_since"] = None
+                span["last_off"] = now
                 session["last_off"] = now
 
     def _cancel_native_close(self) -> None:
@@ -120,6 +122,9 @@ class NativeRunMixin:
             return
         minutes = {k: round(zones[k]["seconds"] / 60.0, 1) for k in watered}
         start, end = session["start"], session["last_off"]
+        # Each zone's own last valve close: a multi-zone schedule's first zone
+        # finished long before the session did.
+        zone_end_iso = {k: (zones[k].get("last_off") or end).isoformat() for k in watered}
         self._publish("last_run", len(watered), {
             "friendly_name": "Irrigation Last Run",
             "updated": self._naive_now().isoformat(timespec="seconds"),
@@ -129,8 +134,10 @@ class NativeRunMixin:
             "end_iso": end.isoformat(),
             "watered": watered,
             "delivered_minutes": minutes,
+            "zone_end_iso": zone_end_iso,
         })
-        await self._record_zone_watering(watered, minutes, end.isoformat(), "rachio")
+        await self._record_zone_watering(watered, minutes, end.isoformat(), "rachio",
+                                         zone_end_iso)
         dropped = await self._drop_pending_obs(watered)
         detail = ", ".join([f"{k} {minutes[k]} min" for k in watered])
         await self._activity(

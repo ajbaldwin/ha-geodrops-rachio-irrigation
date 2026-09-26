@@ -140,12 +140,21 @@ Home Assistant restarts is not recorded.
   planned runtime, last-delivered runtime, last watered, efficacy, and
   calibration state. Last watered and last-delivered runtime follow the zone's
   most recent watering from any source: nightly, *Run irrigation now*, or a
-  Rachio app/schedule run.
+  Rachio app/schedule run. Last watered is when that zone's own valve last
+  closed, not when the whole run ended (for the scheduler's runs, to within
+  the 30-second poll).
+- Works with GeoDrops' moisture-state and quality sensors whether they report
+  labels (`Moist+`, `Good`) or the translation keys newer GeoDrops versions use
+  (`moist_plus`, `good`).
 
 **Weather (main device)**
 
-- **Observed** and **forecast overnight** sensors for temperature, humidity and
-  wind — averaged over the local 20:00→06:00 overnight window.
+- **Forecast overnight** sensors for temperature, humidity and wind — the
+  forecast averaged over the local overnight hours up to 06:00.
+- **Observed overnight** sensors for the same three — what the weather station
+  actually measured over last night's 23:00→06:00 (local), weighted by how long
+  each reading held. They keep their readings across a restart. The 06:00
+  forecast calibration compares the two.
 
 ## Active Watering Calibration (Beta)
 
