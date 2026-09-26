@@ -251,6 +251,9 @@
       "dominant": 80.0,
       "reason": "above-floor"
      }
+    },
+    "zone_end_iso": {
+     "back": "2026-07-02T04:43:00+00:00"
     }
    }
   ],
@@ -396,6 +399,9 @@
       "dominant": 80.0,
       "reason": "above-floor"
      }
+    },
+    "zone_end_iso": {
+     "back": "2026-07-02T04:43:00+00:00"
     }
    }
   ],
@@ -581,6 +587,9 @@
       "dominant": 80.0,
       "reason": "above-floor"
      }
+    },
+    "zone_end_iso": {
+     "back": "2026-07-02T04:43:00+00:00"
     }
    },
    "value": 1

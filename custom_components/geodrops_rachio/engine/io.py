@@ -43,7 +43,32 @@ class IOMixin:
         calls that were never made.
         """
         self.state_polls += 1
-        return self._state_get(zone_switch) == "on"
+        running = self._state_get(zone_switch) == "on"
+        self._note_valve(zone_switch, running)
+        return running
+
+    def _note_valve(self, zone_switch, running):
+        """Remember when a polled valve closed: the first poll that sees it off
+        after one saw it on. Rachio steps zones inside one schedule on its own,
+        so these polls are the only per-zone record of when each finished — at
+        most one poll interval late."""
+        if running:
+            self._valve_on.add(zone_switch)
+        elif zone_switch in self._valve_on:
+            self._valve_on.discard(zone_switch)
+            self._valve_closed[zone_switch] = self.port.now()
+
+    def _reset_valve_closes(self):
+        self._valve_on = set()
+        self._valve_closed = {}
+
+    def _valve_close_iso(self, zone_switch, finished):
+        """When `zone_switch` last closed this run, as ISO. A valve still seen on
+        at the end (an abort's stop) or never seen closing closed with the run."""
+        closed = self._valve_closed.get(zone_switch)
+        if zone_switch in self._valve_on or closed is None or closed > finished:
+            closed = finished
+        return closed.isoformat()
 
     def any_zone_running(self, zone_switches):
         # pyscript has no generator expressions; use a list comprehension.
@@ -186,22 +211,24 @@ class IOMixin:
 
     async def _append_pending_obs(self, records):
         """Append calibration observation stubs to the pending queue (restart-safe)."""
-        existing = self.store.read(PENDING_OBS)
-        if not isinstance(existing, list):
-            existing = []
-        existing.extend(records)
-        await self.store.write(PENDING_OBS, existing)
+        async with self._obs_lock:
+            existing = self.store.read(PENDING_OBS)
+            if not isinstance(existing, list):
+                existing = []
+            existing.extend(records)
+            await self.store.write(PENDING_OBS, existing)
 
     async def _drop_pending_obs(self, zones):
         """Drop the pending calibration samples of `zones`, watered again inside
         their settle window. Returns the zones that had one."""
-        existing = self.store.read(PENDING_OBS)
-        if not isinstance(existing, list):
-            return []
-        keep = [rec for rec in existing if rec.get("zone") not in zones]
-        if len(keep) == len(existing):
-            return []
-        await self.store.write(PENDING_OBS, keep)
+        async with self._obs_lock:
+            existing = self.store.read(PENDING_OBS)
+            if not isinstance(existing, list):
+                return []
+            keep = [rec for rec in existing if rec.get("zone") not in zones]
+            if len(keep) == len(existing):
+                return []
+            await self.store.write(PENDING_OBS, keep)
         dropped = []
         for rec in existing:
             zone = rec.get("zone")
@@ -209,15 +236,19 @@ class IOMixin:
                 dropped.append(zone)
         return dropped
 
-    async def _record_zone_watering(self, zones, minutes, end_iso, trigger):
-        """Record each zone's latest watering (see ZONE_WATERED). A persistence
-        failure must never take down the run that watered, so it only warns."""
+    async def _record_zone_watering(self, zones, minutes, end_iso, trigger,
+                                    zone_end_iso=None):
+        """Record each zone's latest watering (see ZONE_WATERED): its own valve
+        close from `zone_end_iso` when known, else the run's `end_iso`. A
+        persistence failure must never take down the run that watered, so it
+        only warns."""
         try:
             doc = self.store.read(ZONE_WATERED)
             if not isinstance(doc, dict):
                 doc = {}
             for k in zones:
-                doc[k] = {"end_iso": end_iso, "minutes": minutes.get(k),
+                doc[k] = {"end_iso": (zone_end_iso or {}).get(k) or end_iso,
+                          "minutes": minutes.get(k),
                           "trigger": trigger}
             await self.store.write(ZONE_WATERED, doc)
         except Exception as err:

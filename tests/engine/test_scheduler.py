@@ -6,7 +6,8 @@ import random
 
 import pytest
 
-from custom_components.geodrops_rachio.engine.store import RUN_ACTIVE, WAITING_MARKER
+from custom_components.geodrops_rachio.engine.store import (RUN_ACTIVE, RUN_PROGRESS,
+                                                             WAITING_MARKER)
 from tests.engine import golden
 from tests.engine.helpers import ENGINE_LOGGER_PREFIX, log_trail_native
 from tests.engine.scenario import entry_data, native_scheduler, populate
@@ -229,6 +230,65 @@ async def test_unload_mid_pause_stops_the_device(freezer):
     ]
 
 
+async def test_nightly_superseding_a_watering_run_stops_rachio(freezer):
+    """A Run Now still watering at 23:00 is replaced by the nightly. Cancelling
+    it skips the runner's teardown, so without a stop Rachio auto-resumes the
+    paused schedule with nobody watching — and its leftover progress would make
+    a restart during the nightly's wait water those minutes again."""
+    w, eng = await _run_to_pause(freezer)
+    assert eng.store.read(RUN_PROGRESS) is not None
+    n = len(w.calls)
+    await eng.irrigation_nightly()
+    after = w.calls[n:]
+    assert STOP in after
+    assert ("switch", "turn_off", {"entity_id": "switch.front_zone"}) in after
+    assert eng.store.read(RUN_PROGRESS) is None
+    await eng._cancel_run()
+
+
+async def test_superseding_still_starts_the_new_run_if_progress_cannot_be_cleared(
+        freezer, caplog):
+    """Dropping the replaced run's progress is bookkeeping; a store failure
+    there must not cost the night its nightly run."""
+    w, eng = await _run_to_pause(freezer)
+    real_write = eng.store.write
+
+    async def write(key, value):
+        if key == RUN_PROGRESS and value is None:
+            raise OSError("disk full")
+        await real_write(key, value)
+    eng.store.write = write
+    await eng.irrigation_nightly()
+    assert eng.run_task is not None and not eng.run_task.done()
+    assert STOP in w.calls
+    assert any("could not clear the replaced run's progress (disk full)"
+               in r.getMessage() for r in caplog.records)
+    await eng._cancel_run()
+
+
+async def test_superseding_a_waiting_run_issues_no_stop(freezer):
+    """Replacing a run that has not started watering must not touch Rachio: a
+    stop there could cut off someone's manual run from the app."""
+    data = entry_data()
+    freezer.move_to("2026-07-01 23:00:00")
+    w = FakeWorld(freezer)
+    populate(w, data)
+    eng = native_scheduler(w, data)
+    gate = asyncio.Event()
+
+    async def blocking_sleep(_s):
+        await gate.wait()
+    eng.port.sleep = blocking_sleep
+    await eng.irrigation_nightly()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert eng.records["status"]["value"] == "waiting"
+    n = len(w.calls)
+    await eng.async_run_now()
+    assert STOP not in w.calls[n:]
+    await eng._cancel_run()
+
+
 async def test_unload_safety_stop_is_bounded(freezer, caplog):
     w, eng = await _run_to_pause(freezer)
     calls = _record_blocking(eng)
@@ -412,3 +472,117 @@ async def test_safety_stop_fires_while_startup_task_still_running(freezer):
         ("switch", "turn_off", {"entity_id": "switch.front_zone"}, True),
         ("switch", "turn_off", {"entity_id": "switch.back_zone"}, True),
     ]
+
+
+def _night_scheduler(freezer, when="2026-07-02 02:00:00"):
+    data = entry_data()
+    freezer.move_to(when)
+    w = FakeWorld(freezer)
+    populate(w, data)
+    return w, native_scheduler(w, data)
+
+
+async def test_startup_survives_a_config_that_will_not_load(freezer, caplog):
+    """A restart with broken overrides must still publish a status and must not
+    crash the startup task (nothing else would report it)."""
+    w, eng = _night_scheduler(freezer)
+
+    def broken():
+        raise ValueError("bad overrides")
+    eng._load_raw_config = broken
+    await eng._on_startup()
+    assert eng.records["status"]["value"] == "idle" and eng.run_task is None
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("startup target-floor publish skipped (bad overrides)" in m for m in msgs)
+    assert any("startup safety check skipped; config load failed" in m for m in msgs)
+
+
+async def test_startup_closes_an_open_valve_when_another_zone_is_unreadable(freezer):
+    """One renamed/missing zone switch must not stop the orphan-valve check for
+    the others."""
+    w, eng = _night_scheduler(freezer)
+    w.rachio.start_direct([("switch.back_zone", 30)])
+    w.remove("switch.front_zone")
+    started = []
+
+    async def fake_start(wait, trigger, resume=None):
+        started.append(trigger)
+    eng._start_run = fake_start
+    await eng._on_startup()
+    assert ("switch", "turn_off", {"entity_id": "switch.back_zone"}) in w.calls
+    assert started == ["startup-heal"]
+
+
+async def test_reset_before_any_config_is_loaded_still_goes_idle(freezer, caplog):
+    """Reset pressed in the 30 s before startup has loaded a config."""
+    w, eng = _night_scheduler(freezer)
+    assert eng._current_cfg is None
+    await eng.async_reset()
+    assert eng.records["status"] == {"value": "idle", "attributes": {
+        "friendly_name": "Irrigation Status", "updated": "2026-07-02T02:00:00",
+        "detail": "reset"}}
+    assert any("stop_device (rachio.stop_watering) failed" in r.getMessage()
+               for r in caplog.records)
+
+
+async def test_reset_marker_cleanup_failure_is_logged_not_raised(freezer, caplog):
+    w, eng = _night_scheduler(freezer)
+    eng._current_cfg = eng._load_cfg()
+    eng._current_bindings = eng._current_cfg.bindings
+
+    async def failing_write(_key, _value):
+        raise OSError("disk full")
+    eng.store.write = failing_write
+    await eng.async_reset()
+    assert STOP in w.calls
+    assert eng.records["status"]["value"] == "idle"
+    assert any("reset — marker cleanup skipped: disk full" in r.getMessage()
+               for r in caplog.records)
+
+
+def _to_translation_keys(world, data):
+    """Rewrite the GeoDrops states the way ha-geodrops-hacs PR #12 reports
+    them: translation keys instead of UI labels."""
+    for z in data["zones"]:
+        world.set(z["state_sensor"], world.get(z["state_sensor"]).lower()
+                  .replace("+", "_plus"))
+        for q in z["quality_sensors"]:
+            world.set(q, world.get(q).lower())
+
+
+@pytest.mark.parametrize("keys", [False, True], ids=["labels", "translation_keys"])
+async def test_a_night_waters_the_same_with_either_geodrops_state_format(
+        freezer, keys):
+    data = entry_data()
+    freezer.move_to("2026-07-01 23:00:00")
+    w = FakeWorld(freezer)
+    populate(w, data)
+    if keys:
+        _to_translation_keys(w, data)
+    eng = native_scheduler(w, data)
+    await eng.irrigation_nightly()
+    await eng.run_task
+    a = eng.records["last_run"]["attributes"]
+    assert sorted(a["watered"]) == ["back", "front"]
+    assert a["delivered_minutes"] == {"front": 36, "back": 36}
+
+
+async def test_each_zone_records_its_own_last_valve_close(freezer):
+    """Two zones alternate 12-min cycles (…back 04:31-04:43, front 04:43-04:55).
+    Per-zone Last watered is when THAT zone's valve last closed, not when the
+    whole run ended."""
+    from custom_components.geodrops_rachio.engine.store import ZONE_WATERED
+    data = entry_data()
+    freezer.move_to("2026-07-01 23:00:00")
+    w = FakeWorld(freezer)
+    populate(w, data)
+    eng = native_scheduler(w, data)
+    await eng.irrigation_nightly()
+    await eng.run_task
+    zw = eng.store.read(ZONE_WATERED)
+    assert zw["back"]["end_iso"] == "2026-07-02T04:43:00+00:00"
+    assert zw["front"]["end_iso"] == "2026-07-02T04:55:00+00:00"
+    a = eng.records["last_run"]["attributes"]
+    assert a["end_iso"] == "2026-07-02T04:55:00+00:00"       # the run's own end
+    assert a["zone_end_iso"] == {"back": "2026-07-02T04:43:00+00:00",
+                                 "front": "2026-07-02T04:55:00+00:00"}

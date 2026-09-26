@@ -7,19 +7,21 @@ import yaml
 
 BAND_ORDER = ["dry", "dry_plus", "moist", "moist_plus", "wet", "wet_plus"]
 
-STATE_RANK = {
-    "Dry": 0, "Dry+": 1, "Moist": 2, "Moist+": 3, "Wet": 4, "Wet+": 5,
-}
-
-
 def band_rank(name: str) -> int:
     return BAND_ORDER.index(name)
 
 
+def enum_key(text: str | None) -> str:
+    """A GeoDrops enum state as its translation key: "Moist+" -> "moist_plus",
+    "Good" -> "good". GeoDrops reported the labels until ha-geodrops-hacs PR #12
+    and the keys since (the label is display only); the two integrations update
+    independently, so every comparison goes through this."""
+    return (text or "").strip().lower().replace("+", "_plus")
+
+
 def state_rank(text: str) -> int:
-    if text is None:
-        return -1
-    return STATE_RANK.get(text.strip(), -1)
+    key = enum_key(text)
+    return BAND_ORDER.index(key) if key in BAND_ORDER else -1
 
 
 @dataclass(frozen=True)

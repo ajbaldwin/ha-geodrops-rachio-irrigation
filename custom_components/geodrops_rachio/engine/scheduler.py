@@ -115,7 +115,21 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         async with self._run_lock:
             if gen != self._run_gen:
                 return
+            # Replacing a run that was WATERING stops Rachio first: cancellation
+            # skips the runners' teardown, so a collapsed schedule parked in a
+            # device pause would auto-resume with nobody watching. Its progress
+            # goes too — the night was superseded, not interrupted, so a restart
+            # must not resume it. Read before the cancel: the run's `finally`
+            # clears the flag while unwinding.
+            was_watering = self._watering_active
             await self._cancel_current_run()
+            if was_watering:
+                await self._safety_stop()
+                try:
+                    await self.store.write(RUN_PROGRESS, None)
+                except Exception as err:
+                    _LOGGER.warning(
+                        f"irrigation: could not clear the replaced run's progress ({err})")
             if gen != self._run_gen:
                 return
             run = (self._plan_and_run(wait, trigger) if resume is None

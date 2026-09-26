@@ -101,3 +101,67 @@ async def test_async_fetch_zone_data(hass, aioclient_mock):
     assert runtimes == {"z1": 30.0}
     assert round(depths["z1"], 1) == 12.7
     assert isinstance(spans, dict)
+
+
+def test_resolve_secret_text_numeric_value_is_stringified():
+    assert resolve_secret_text("rachio_api_key: 12345\n", "rachio_api_key") == "12345"
+
+
+def test_resolve_secret_text_non_mapping_returns_none():
+    assert resolve_secret_text("- just\n- a list\n", "rachio_api_key") is None
+
+
+async def test_resolve_secret_reads_the_config_secrets_file(hass, tmp_path):
+    from custom_components.geodrops_rachio.rachio_client import resolve_secret
+    hass.config.config_dir = str(tmp_path)
+    assert await resolve_secret(hass, "rachio_api_key") is None      # no file yet
+    (tmp_path / "secrets.yaml").write_text("rachio_api_key: K1\n", encoding="utf-8")
+    assert await resolve_secret(hass, "rachio_api_key") == "K1"
+
+
+async def test_async_fetch_devices_and_device_zones(hass, aioclient_mock):
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from custom_components.geodrops_rachio.rachio_client import (
+        RACHIO_BASE, async_fetch_device_zones, async_fetch_devices)
+    aioclient_mock.get(RACHIO_BASE + "person/info", json={"id": "p1"})
+    aioclient_mock.get(RACHIO_BASE + "person/p1", json={"devices": [
+        {"id": "d1", "name": "Main House"}, {"name": "no id"}]})
+    aioclient_mock.get(RACHIO_BASE + "device/d1", json={"zones": [
+        {"id": "z1", "name": "Front", "zoneNumber": 1, "runtime": 600,
+         "depthOfWater": 1.0, "enabled": True}]})
+    session = async_get_clientsession(hass)
+    assert await async_fetch_devices(session, "key") == [{"id": "d1", "name": "Main House"}]
+    zones = await async_fetch_device_zones(session, "key", "d1")
+    assert [(z["id"], z["runtime_minutes"]) for z in zones] == [("z1", 10.0)]
+    # The API key travels as a bearer token on every hop.
+    assert all(call[3]["Authorization"] == "Bearer key"
+               for call in aioclient_mock.mock_calls)
+
+
+async def test_async_fetch_zone_data_merges_every_controller(hass, aioclient_mock):
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from custom_components.geodrops_rachio.rachio_client import (
+        RACHIO_BASE, async_fetch_zone_data)
+    aioclient_mock.get(RACHIO_BASE + "person/info", json={"id": "p1"})
+    aioclient_mock.get(RACHIO_BASE + "person/p1",
+                       json={"devices": [{"id": "d1"}, {"id": "d2"}]})
+    aioclient_mock.get(RACHIO_BASE + "device/d1", json={"zones": [
+        {"id": "z1", "runtime": 1800, "enabled": True}]})
+    aioclient_mock.get(RACHIO_BASE + "device/d2", json={"zones": [
+        {"id": "z2", "runtime": 600, "enabled": True}]})
+    runtimes, _depths, _spans = await async_fetch_zone_data(
+        async_get_clientsession(hass), "key")
+    assert runtimes == {"z1": 30.0, "z2": 10.0}
+
+
+async def test_async_fetch_zone_data_raises_on_an_http_error(hass, aioclient_mock):
+    """A rejected key must raise, not return empty maps: the engine's fallback
+    to static runtimes (and its warning) keys off the exception."""
+    import aiohttp
+    import pytest
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from custom_components.geodrops_rachio.rachio_client import (
+        RACHIO_BASE, async_fetch_zone_data)
+    aioclient_mock.get(RACHIO_BASE + "person/info", status=401)
+    with pytest.raises(aiohttp.ClientResponseError):
+        await async_fetch_zone_data(async_get_clientsession(hass), "bad")

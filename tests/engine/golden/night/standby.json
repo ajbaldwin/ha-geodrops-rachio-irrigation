@@ -47,7 +47,8 @@
     "updated": "2026-07-01T23:00:00",
     "watered": [],
     "window_end": "",
-    "window_start": ""
+    "window_start": "",
+    "zone_end_iso": {}
    }
   ],
   "last_run": [
@@ -66,7 +67,8 @@
     "updated": "2026-07-01T23:00:00",
     "watered": [],
     "window_end": "",
-    "window_start": ""
+    "window_start": "",
+    "zone_end_iso": {}
    }
   ],
   "status": [
@@ -117,7 +119,8 @@
     "updated": "2026-07-01T23:00:00",
     "watered": [],
     "window_end": "",
-    "window_start": ""
+    "window_start": "",
+    "zone_end_iso": {}
    },
    "value": 0
   },

@@ -108,7 +108,8 @@
       "dominant": 80.0,
       "reason": "above-floor"
      }
-    }
+    },
+    "zone_end_iso": {}
    }
   ],
   "last_run": [
@@ -170,7 +171,8 @@
       "dominant": 80.0,
       "reason": "above-floor"
      }
-    }
+    },
+    "zone_end_iso": {}
    }
   ],
   "status": [
@@ -269,7 +271,8 @@
       "dominant": 80.0,
       "reason": "above-floor"
      }
-    }
+    },
+    "zone_end_iso": {}
    },
    "value": 0
   },

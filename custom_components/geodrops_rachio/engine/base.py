@@ -6,8 +6,10 @@ close over locals; here it is plain instance state on one object.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
+from collections import deque
 from typing import Any, Awaitable, Callable
 
 from homeassistant.exceptions import ServiceNotFound
@@ -20,6 +22,8 @@ _LOGGER = logging.getLogger(__name__)
 
 STATUS_ENTITY = "sensor.geodrops_rachio_status"
 LOGBOOK_NAME = "Irrigation"
+# A night publishes a few dozen records; this holds several nights' worth.
+RECORD_HISTORY_MAX = 500
 
 
 class EngineBase:
@@ -40,8 +44,19 @@ class EngineBase:
         self._run_in_progress = False
         self._watering_active = False
         self._rain_since = None
+        # Serialises read-modify-writes of the pending calibration queue (the
+        # settle poll awaits a fetch between its read and its write).
+        self._obs_lock = asyncio.Lock()
+        # Valve closes the runner's polls have seen during the current run
+        # (see IOMixin._note_valve): switches last seen on, and switch -> when
+        # it was first seen off after that.
+        self._valve_on: set[str] = set()
+        self._valve_closed: dict[str, dt.datetime] = {}
         self.records: dict[str, dict] = {}
-        self.record_history: list[tuple[str, Any, dict]] = []
+        # Recent publishes, oldest first — a debugging/test trail, so bounded: the
+        # engine lives as long as Home Assistant does.
+        self.record_history: deque[tuple[str, Any, dict]] = deque(
+            maxlen=RECORD_HISTORY_MAX)
         self._listeners: list[Callable[[], None]] = []
         self.store.on_write = self._notify_listeners
         # Sensors get last night's records immediately, not 30 s after startup.

@@ -122,3 +122,13 @@ async def test_failing_record_listener_does_not_break_publish(freezer, caplog):
     assert len(errors) == 4
     assert all("record listener" in r.getMessage() for r in errors)
     caplog.clear()                                # expected errors; keep output clean
+
+
+async def test_record_history_is_bounded(freezer):
+    """The history is a debugging trail; in a process that runs for months it
+    must not grow with every status change forever."""
+    _w, eng = _eng(freezer)
+    for i in range(5000):
+        eng._set_status("idle", detail=str(i))
+    assert len(eng.record_history) <= 500
+    assert eng.record_history[-1][2]["detail"] == "4999"

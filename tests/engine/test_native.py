@@ -294,3 +294,20 @@ async def test_zone_watered_write_failure_only_warns(freezer, caplog):
     await _settle(eng)
     assert eng.records["last_run"]["attributes"]["trigger"] == "rachio"
     assert any("could not record zone watering" in r.getMessage() for r in caplog.records)
+
+
+async def test_each_zone_of_a_rachio_session_keeps_its_own_close_time(freezer):
+    w, eng = _scheduler(freezer)
+    _flip(eng, FRONT, "off", "on")
+    w.advance(5 * 60)
+    _flip(eng, FRONT, "on", "off")                 # front closes 13:05
+    w.advance(60)
+    _flip(eng, BACK, "off", "on")
+    w.advance(8 * 60)
+    _flip(eng, BACK, "on", "off")                  # back closes 13:14
+    await _settle(eng)
+    zw = eng.store.read(ZONE_WATERED)
+    assert zw["front"]["end_iso"] == "2026-07-02T13:05:00+00:00"
+    assert zw["back"]["end_iso"] == "2026-07-02T13:14:00+00:00"
+    assert eng.records["last_run"]["attributes"]["zone_end_iso"] == {
+        "front": "2026-07-02T13:05:00+00:00", "back": "2026-07-02T13:14:00+00:00"}

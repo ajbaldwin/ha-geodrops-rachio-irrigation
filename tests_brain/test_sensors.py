@@ -66,3 +66,23 @@ def test_offline_when_dominant_not_numeric():
     r = sensors.read_zone(ZONE, sig(dominant="n/a"))
     assert r.online is False
     assert r.offline_reason == "unavailable"
+
+
+def test_translation_key_states_and_qualities_read_the_same():
+    """GeoDrops PR #12: `good`/`poor`/`training` and `moist_plus` instead of the
+    labels. Before this, every zone read `low_quality` and nothing watered."""
+    old = sensors.read_zone(ZONE, sig(state="Moist+", qualities=("Good", "Poor", "Good")))
+    new = sensors.read_zone(ZONE, sig(state="moist_plus", qualities=("good", "poor", "good")))
+    assert new.online is True and new.index_rank == old.index_rank == 3
+
+
+def test_translation_key_bad_and_training_depths_are_unusable():
+    r = sensors.read_zone(ZONE, sig(qualities=("good", "training", "bad")))
+    assert r.online is False and r.offline_reason == "low_quality"
+
+
+def test_all_training_recognises_both_forms():
+    assert sensors.all_training(("Training", "Training", "Training"))
+    assert sensors.all_training(("training", " training", "training"))
+    assert not sensors.all_training(("training", "good", "training"))
+    assert not sensors.all_training(("training", "training"))

@@ -179,3 +179,14 @@ def test_zone_watered_wins_over_last_nightly(hass):
     assert front["last_delivered_runtime"] == 6.0
     assert back["last_watered"] == "2026-09-13T06:00:00+00:00"
     assert back["last_delivered_runtime"] == 30.0
+
+
+def test_parse_last_nightly_prefers_the_zones_own_close_time():
+    attrs = {"delivered_minutes": {"front": 36, "back": 36},
+             "watered": ["back", "front"],
+             "end_iso": "2026-07-02T04:55:00+00:00",
+             "zone_end_iso": {"back": "2026-07-02T04:43:00+00:00"}}
+    assert parse_last_nightly(attrs, "back")["last_watered"] == "2026-07-02T04:43:00+00:00"
+    # A record from before zone_end_iso existed (or missing this zone) keeps
+    # the run's end.
+    assert parse_last_nightly(attrs, "front")["last_watered"] == "2026-07-02T04:55:00+00:00"

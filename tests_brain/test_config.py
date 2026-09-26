@@ -361,3 +361,14 @@ def test_recovery_poll_seconds_default():
 
 def test_recovery_poll_seconds_override():
     assert config.Tunables(recovery_poll_seconds=600).recovery_poll_seconds == 600
+
+
+def test_state_rank_accepts_geodrops_translation_keys():
+    """GeoDrops (ha-geodrops-hacs PR #12) reports enum states as translation
+    keys; the UI label is only display. Both forms must rank the same, since
+    the two integrations can be updated on different days."""
+    for label, key in (("Dry", "dry"), ("Dry+", "dry_plus"), ("Moist", "moist"),
+                       ("Moist+", "moist_plus"), ("Wet", "wet"), ("Wet+", "wet_plus")):
+        assert config.state_rank(key) == config.state_rank(label) >= 0
+    assert config.state_rank("unknown") == -1
+    assert config.state_rank(None) == -1

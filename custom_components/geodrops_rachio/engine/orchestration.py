@@ -123,6 +123,7 @@ class OrchestrationMixin:
                 # wrapper's Last Watered TIMESTAMP sensor parses this; `end` is the
                 # time-only human string, which a TIMESTAMP sensor cannot read.
                 "end_iso": result.end_iso,
+                "zone_end_iso": result.zone_end_iso,
                 "window_start": result.window_start, "window_end": result.window_end,
                 "watered": result.watered,
                 "delivered_minutes": result.per_zone_minutes,
@@ -144,7 +145,8 @@ class OrchestrationMixin:
         self._publish("last_run", value, attributes)
         if result is not None and result.watered and result.end_iso:
             await self._record_zone_watering(
-                result.watered, result.per_zone_minutes, result.end_iso, trigger)
+                result.watered, result.per_zone_minutes, result.end_iso, trigger,
+                result.zone_end_iso)
         # The unattended run keeps its OWN copy. `last_run` is literally the last
         # one, so a manual re-run overwrites it — which is exactly what happened
         # while diagnosing the 2026-08-09 abort: the run_now erased the night we
@@ -460,6 +462,7 @@ class OrchestrationMixin:
                 "stamp": stamp, "trigger": trigger,
                 "window_end": ctx["end"].isoformat()})
             self._set_status("watering", detail=f"{len(the_plan.watered)} zone(s)")
+            self._reset_valve_closes()
             if cfg.tunables.use_pause_collapse:
                 outcome = await self.run_collapsed(
                     the_plan.slots, zone_switches,
@@ -498,6 +501,8 @@ class OrchestrationMixin:
                 window_end=end_anchor.astimezone().strftime("%H:%M"),
                 window_hours=round(ctx["cap_minutes"] / 60.0, 2),
                 recoveries=outcome.get("recoveries", 0),
+                zone_end_iso={k: self._valve_close_iso(zone_switches[k], finished)
+                              for k in watered},
             )
             # Record what happened BEFORE announcing it. The recap talks to notify and
             # calendar — external services whose failure modes this app does not own —

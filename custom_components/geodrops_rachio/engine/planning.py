@@ -206,15 +206,19 @@ class PlanningMixin:
             rain_last_hour_mm=0.0, precip_type="none",
         )
 
-    def _read_observed_overnight(self):
+    def _read_observed_overnight(self, bindings):
         """WeatherReading from the OBSERVED overnight means, or None if unusable.
 
         Deliberately mirrors _read_forecast_overnight: precipitation fields
         zeroed, so the two readings differ only in whether the numbers
         were predicted or measured. Anything else would compare two models rather
         than one model against reality.
+
+        Takes `bindings` explicitly: its only caller runs outside _plan_and_run,
+        and must not install its config over a live run's globals to read three
+        sensors.
         """
-        d = self._current_bindings.derived.observed_overnight
+        d = bindings.derived.observed_overnight
         temp_f = self._forecast_num(d["temp"])
         rh_pct = self._forecast_num(d["humidity"])
         wind_mph = self._forecast_num(d["wind"])

@@ -1,12 +1,14 @@
 """Learning branches the scenario suites do not reach, asserted directly on the
 engine's own effects (no golden fixture)."""
+import asyncio
 import logging
 
 import pytest
 
 from custom_components.geodrops_rachio.engine.store import EFFICACY, PENDING_OBS
 from tests.engine.helpers import ENGINE_LOGGER_PREFIX
-from tests.engine.scenario import ALL_MIXINS, entry_data, native_engine, populate
+from tests.engine.scenario import (ALL_MIXINS, entry_data, native_engine,
+                                   native_scheduler, populate)
 from tests.engine.world import FakeWorld
 
 RUN_END = "2026-07-02T04:30:00+00:00"
@@ -126,6 +128,46 @@ async def test_obs_finalizing_together_fetch_runtimes_once(freezer):
     assert len(fetches) == 1
 
 
+def _during_runtime_fetch(eng, coro_fn):
+    """Run `coro_fn()` as its own task while the settle poll is awaiting its
+    runtime fetch (the one await between reading and rewriting pending_obs);
+    returns the list the task is recorded in."""
+    tasks = []
+    real = eng.get_runtimes
+
+    async def fetch_with_concurrent_writer():
+        tasks.append(asyncio.ensure_future(coro_fn()))
+        for _ in range(5):
+            await asyncio.sleep(0)
+        return await real()
+    eng.get_runtimes = fetch_with_concurrent_writer
+    return tasks
+
+
+async def test_an_obs_appended_during_the_settle_poll_is_kept(freezer):
+    """A run that finishes while the poll is fetching runtimes appends its obs;
+    the poll's rewrite of the queue must not erase it."""
+    w, eng = _engine(freezer, pending=[_obs("front")])
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    late = _obs("back", run_end="2026-07-02T10:30:00+00:00")
+    tasks = _during_runtime_fetch(eng, lambda: eng._append_pending_obs([late]))
+    await _poll(w, eng, 14)
+    await asyncio.gather(*tasks)
+    assert tasks and eng.store.read(PENDING_OBS) == [late]
+
+
+async def test_an_obs_dropped_during_the_settle_poll_stays_dropped(freezer):
+    """A Rachio run recorded while the poll is fetching drops the zone's sample
+    (it would credit the wrong watering); the poll must not write it back."""
+    w, eng = _engine(freezer, pending=[
+        _obs("front"), _obs("back", run_end="2026-07-02T10:00:00+00:00")])
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    tasks = _during_runtime_fetch(eng, lambda: eng._drop_pending_obs(["back"]))
+    await _poll(w, eng, 14)
+    await asyncio.gather(*tasks)
+    assert tasks and eng.store.read(PENDING_OBS) == []
+
+
 @pytest.mark.parametrize("field, value", [("pre_dominant", None), ("minutes", 0)])
 async def test_obs_without_a_pre_reading_or_minutes_is_dropped_unlearned(
         freezer, field, value):
@@ -180,6 +222,8 @@ async def test_calibrate_reports_agreement(freezer):
     await eng.irrigation_calibrate()
     cal = eng.records["calibration"]["attributes"]
     assert cal["mismatches"] == []
+    # The span the observed sensors actually average (weather_derive).
+    assert cal["window"] == "23:00-06:00"
     assert any("forecast 0/3 vs observed 0/3 — all signals agree" in m
                for m in _logbook(w))
 
@@ -193,13 +237,71 @@ async def test_calibrate_names_each_mismatch(freezer):
     assert any("— humid forecast-high" in m for m in _logbook(w))
 
 
-async def test_calibrate_waits_for_a_run_in_progress(freezer, caplog):
+HUMID_FORECAST = {"warm": False, "humid": True, "stagnant": False, "count": 1}
+
+
+def _run_holding_until(eng, gate, attrs):
+    """A stand-in nightly that is still in progress (waiting or watering) at
+    06:00 and publishes its last_nightly record only when `gate` opens."""
+    async def fake_plan_and_run(wait, trigger):
+        eng._run_in_progress = True
+        try:
+            await gate.wait()
+            eng._publish("last_nightly", 0, attrs)
+        finally:
+            eng._run_in_progress = False
+    eng._plan_and_run = fake_plan_and_run
+
+
+async def test_calibrate_waits_for_a_run_in_progress_then_compares(freezer, caplog):
+    """From late September the watering window closes after 06:00, so the nightly
+    is still in progress when calibration fires. Calibration must wait for it
+    (its record is the forecast side) rather than skip every morning."""
+    freezer.move_to("2026-07-02 06:00:00")
+    data = entry_data()
+    w = FakeWorld(freezer)
+    populate(w, data)
+    eng = native_scheduler(w, data)
+    gate = asyncio.Event()
+    _run_holding_until(eng, gate, {"updated": "2026-07-01T23:00:00",
+                                   "pressure_forecast": HUMID_FORECAST})
+    await eng.irrigation_nightly()
+    await asyncio.sleep(0)
+    cal = asyncio.ensure_future(eng.irrigation_calibrate())
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert not cal.done() and "calibration" not in eng.records
+    # The observed side is the 06:00 snapshot, not a later reading.
+    w.set("sensor.observed_overnight_humidity", "97")
+    gate.set()
+    await cal
+    rec = eng.records["calibration"]["attributes"]
+    assert rec["mismatches"] == ["humid"] and rec["observed_rh_pct"] == 80.0
+    assert not any("calibration skipped" in r.getMessage() for r in caplog.records)
+
+
+async def test_calibrate_leaves_the_run_scoped_config_alone(freezer):
+    """Calibration reads its own config; it must not overwrite the globals a
+    live run reads through (the reason it used to refuse to run at all)."""
     w, eng = _calibrate_engine(freezer)
-    eng._run_in_progress = True
+    eng._publish("last_nightly", 0, {"pressure_forecast": HUMID_FORECAST})
+    sentinel_cfg, sentinel_bindings = object(), object()
+    eng._current_cfg, eng._current_bindings = sentinel_cfg, sentinel_bindings
     await eng.irrigation_calibrate()
-    assert "calibration" not in eng.records and _logbook(w) == []
-    assert any("calibration skipped — an irrigation run is in progress" in r.getMessage()
-               for r in caplog.records)
+    assert "calibration" in eng.records
+    assert eng._current_cfg is sentinel_cfg
+    assert eng._current_bindings is sentinel_bindings
+
+
+async def test_calibrate_ignores_a_stale_nightly_record(freezer):
+    """A night with no nightly record of its own (HA down, a reset) must not be
+    scored against an older night's forecast."""
+    w, eng = _calibrate_engine(freezer)
+    eng._publish("last_nightly", 0, {"updated": "2026-06-29T23:00:00",
+                                     "pressure_forecast": HUMID_FORECAST})
+    await eng.irrigation_calibrate()
+    assert "calibration" not in eng.records
+    assert any("no nightly run to compare against" in m for m in _logbook(w))
 
 
 async def test_calibrate_skips_without_observed_means(freezer, caplog):
@@ -210,3 +312,36 @@ async def test_calibrate_skips_without_observed_means(freezer, caplog):
     assert "calibration" not in eng.records
     assert any("overnight observed means unavailable" in r.getMessage()
                for r in caplog.records)
+
+
+async def test_calibrate_without_a_run_task_does_not_wait(freezer):
+    """An engine with the flag set but no run task (nothing to wait on) scores
+    the night rather than hanging."""
+    w, eng = _calibrate_engine(freezer)
+    eng._run_in_progress = True
+    eng._publish("last_nightly", 0, {"pressure_forecast": HUMID_FORECAST})
+    await eng.irrigation_calibrate()
+    assert eng.records["calibration"]["attributes"]["mismatches"] == ["humid"]
+
+
+@pytest.mark.parametrize("stamp, scored", [
+    ("2026-07-01T23:00:00+00:00", True),     # aware, 7 h old
+    ("2026-07-01T17:59:00+00:00", False),    # aware, just past 12 h
+    ("not a time", False),
+])
+async def test_calibrate_nightly_stamp_freshness(freezer, stamp, scored):
+    w, eng = _calibrate_engine(freezer)
+    eng._publish("last_nightly", 0, {"updated": stamp,
+                                     "pressure_forecast": HUMID_FORECAST})
+    await eng.irrigation_calibrate()
+    assert ("calibration" in eng.records) is scored
+
+
+async def test_all_training_depths_reject_the_sample_in_either_format(freezer):
+    w, eng = _engine(freezer, pending=[_obs("front")])
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    for q in ("sensor.front_q1", "sensor.front_q2", "sensor.front_q3"):
+        w.at("2026-07-02 10:00:00", lambda q=q: w.set(q, "training"))
+    await _poll(w, eng, 14)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["last_reject_reason"] == "training" and front["efficacy"] is None

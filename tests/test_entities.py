@@ -1,8 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from freezegun import freeze_time
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.core import State
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry, async_fire_time_changed, mock_restore_cache_with_extra_data)
 
 from custom_components.geodrops_rachio.const import DOMAIN
 
@@ -179,46 +180,80 @@ async def test_zone_exclude_switch_restores_state(hass, enable_pyscript_and_rach
         "switch.geodrops_rachio_front_slope_exclude").state == "on"
 
 
-async def test_observed_sensor_buffers_and_averages(hass, enable_pyscript_and_rachio):
-    data = {**ENTRY_DATA, "bindings": {
-        "weather": {"temperature": "sensor.station_temp"}}}
-    # The sensor stamps and windows samples against local time, so pin both the
-    # timezone and the clock: 23:00 in UTC is inside the 20:00->06:00 window.
+TEMP_DATA = {**ENTRY_DATA, "bindings": {"weather": {"temperature": "sensor.station_temp"}}}
+OBSERVED_TEMP = "sensor.geodrops_rachio_observed_overnight_temp"
+
+
+async def _setup_observed(hass, data=TEMP_DATA):
+    """Set the entry up without the scheduler's 23:00 / 06:00 triggers: these
+    tests move the clock across both."""
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
+    entry.add_to_hass(hass)
+    with patch("custom_components.geodrops_rachio.engine.scheduler.Scheduler.async_start"):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def _tick(hass, freezer, when):
+    """Move the clock and fire the sensor's periodic recompute."""
+    freezer.move_to(when)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def test_observed_sensor_is_time_weighted(hass, enable_pyscript_and_rachio, freezer):
+    """10 held from before the window until 05:00, then 30 for the last hour:
+    the 06:00 value is weighted by time (~12.9), not the event average (20)."""
     await hass.config.async_set_time_zone("UTC")
-    with freeze_time("2026-06-15 23:00:00"):
-        entry = MockConfigEntry(domain=DOMAIN, data=data)
-        entry.add_to_hass(hass)
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-        hass.states.async_set("sensor.station_temp", "10.0")
-        await hass.async_block_till_done()
-        hass.states.async_set("sensor.station_temp", "30.0")
-        await hass.async_block_till_done()
-        s = hass.states.get("sensor.geodrops_rachio_observed_overnight_temp")
-        assert s is not None and float(s.state) == 20.0
+    freezer.move_to("2026-06-15 22:00:00")
+    await _setup_observed(hass)
+    hass.states.async_set("sensor.station_temp", "10.0")
+    await hass.async_block_till_done()
+    freezer.move_to("2026-06-16 05:00:00")
+    hass.states.async_set("sensor.station_temp", "30.0")
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, "2026-06-16 06:00:00")
+    assert float(hass.states.get(OBSERVED_TEMP).state) == pytest.approx(90.0 / 7)
 
 
-async def test_observed_window_is_local_not_utc(hass, enable_pyscript_and_rachio):
-    """The overnight window follows the home's timezone, not UTC. Pinned at a
-    moment that is inside local overnight (05:00 US-Eastern) but OUTSIDE the
-    UTC overnight window (10:00 UTC) — a UTC-based window would drop the samples
-    and read 'unknown'."""
-    data = {**ENTRY_DATA, "bindings": {
-        "weather": {"temperature": "sensor.station_temp"}}}
+async def test_observed_window_is_local_not_utc(hass, enable_pyscript_and_rachio, freezer):
+    """The overnight window follows the home's timezone, not UTC. 10:00 UTC is
+    05:00 EST: inside the local 23:00->06:00 window, outside the UTC one — a
+    UTC-based window would read 'unknown'."""
     await hass.config.async_set_time_zone("America/New_York")
-    # 2026-01-15 10:00 UTC == 05:00 EST (winter, UTC-5): inside 20:00->06:00
-    # local, outside 20:00->06:00 UTC.
-    with freeze_time("2026-01-15 10:00:00"):
-        entry = MockConfigEntry(domain=DOMAIN, data=data)
-        entry.add_to_hass(hass)
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-        hass.states.async_set("sensor.station_temp", "10.0")
-        await hass.async_block_till_done()
-        hass.states.async_set("sensor.station_temp", "30.0")
-        await hass.async_block_till_done()
-        s = hass.states.get("sensor.geodrops_rachio_observed_overnight_temp")
-        assert s is not None and float(s.state) == 20.0
+    freezer.move_to("2026-01-15 09:00:00")          # 04:00 EST
+    await _setup_observed(hass)
+    hass.states.async_set("sensor.station_temp", "10.0")
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, "2026-01-15 10:00:00")
+    assert float(hass.states.get(OBSERVED_TEMP).state) == 10.0
+
+
+async def test_observed_sensor_seeds_from_the_source_at_startup(
+        hass, enable_pyscript_and_rachio, freezer):
+    """A steady source may not change all night; its current reading at startup
+    still counts from then on."""
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-06-15 23:30:00")
+    hass.states.async_set("sensor.station_temp", "15.0")
+    await _setup_observed(hass)
+    await _tick(hass, freezer, "2026-06-16 00:30:00")
+    assert float(hass.states.get(OBSERVED_TEMP).state) == 15.0
+
+
+async def test_observed_sensor_keeps_its_samples_across_a_restart(
+        hass, enable_pyscript_and_rachio, freezer):
+    """A restart mid-night must not reduce the window to the hours after it."""
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-06-16 01:00:00")
+    mock_restore_cache_with_extra_data(hass, [(
+        State(OBSERVED_TEMP, "10.0"),
+        {"samples": [["2026-06-15T23:00:00+00:00", 10.0],
+                     ["2026-06-16T00:00:00+00:00", 40.0]]})])
+    await _setup_observed(hass)       # source sensor absent: nothing to seed
+    await _tick(hass, freezer, "2026-06-16 02:00:00")
+    # 10 for 1h, then 40 carried from 00:00 to 02:00.
+    assert float(hass.states.get(OBSERVED_TEMP).state) == pytest.approx(30.0)
 
 
 async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
@@ -473,3 +508,70 @@ async def test_record_sensor_attributes_stay_out_of_the_recorder(
     await hass.async_block_till_done()
     entity = hass.data[DATA_INSTANCES]["sensor"].get_entity(entity_id)
     assert MATCH_ALL in entity._state_info["unrecorded_attributes"]
+
+
+async def test_standby_switch_turns_back_off(hass, enable_pyscript_and_rachio):
+    """Standby is the operator's kill switch for tonight's run; turning it back
+    off must take, or the system stays silently parked."""
+    await _setup_observed(hass, ENTRY_DATA)
+    for service, state in (("turn_on", "on"), ("turn_off", "off")):
+        await hass.services.async_call(
+            "switch", service, {"entity_id": "switch.geodrops_rachio_standby"},
+            blocking=True)
+        assert hass.states.get("switch.geodrops_rachio_standby").state == state
+
+
+async def test_zone_exclude_switch_toggles(hass, enable_pyscript_and_rachio):
+    await _setup_observed(hass, {**ENTRY_DATA, "zones": [{
+        "key": "front", "rachio_switch": "switch.x", "dominant_sensor": "sensor.d",
+        "state_sensor": "sensor.s", "quality_sensors": [], "target_range": "moist",
+        "runtime_minutes": 20, "refill_depth_mm": 10}]})
+    ent = "switch.geodrops_rachio_front_exclude"
+    for service, state in (("turn_on", "on"), ("turn_off", "off")):
+        await hass.services.async_call("switch", service, {"entity_id": ent},
+                                       blocking=True)
+        assert hass.states.get(ent).state == state
+
+
+async def test_drought_level_select_changes_and_restores(hass, enable_pyscript_and_rachio):
+    from pytest_homeassistant_custom_component.common import mock_restore_cache
+    ent = "select.geodrops_rachio_drought_level"
+    mock_restore_cache(hass, [State(ent, "not a level")])   # ignored: not an option
+    await _setup_observed(hass, ENTRY_DATA)
+    assert hass.states.get(ent).state == "Level 1 - Mild"
+    options = hass.states.get(ent).attributes["options"]
+    await hass.services.async_call("select", "select_option",
+                                   {"entity_id": ent, "option": options[-1]},
+                                   blocking=True)
+    assert hass.states.get(ent).state == options[-1]
+
+
+async def test_observed_sensor_ignores_non_numeric_readings(
+        hass, enable_pyscript_and_rachio, freezer):
+    """An 'unavailable' station must not end the night's mean: the last good
+    reading carries until a number returns."""
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-06-15 23:00:00")
+    await _setup_observed(hass)
+    hass.states.async_set("sensor.station_temp", "10.0")
+    await hass.async_block_till_done()
+    freezer.move_to("2026-06-16 01:00:00")
+    hass.states.async_set("sensor.station_temp", "unavailable")
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, "2026-06-16 02:00:00")
+    assert float(hass.states.get(OBSERVED_TEMP).state) == 10.0
+
+
+async def test_observed_sensor_skips_corrupt_restored_samples(
+        hass, enable_pyscript_and_rachio, freezer):
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-06-16 01:00:00")
+    mock_restore_cache_with_extra_data(hass, [(
+        State(OBSERVED_TEMP, "10.0"),
+        {"samples": [["not a time", 1.0], ["2026-06-15T23:00:00", 2.0],
+                     ["2026-06-15T23:00:00+00:00", "x"], ["short"],
+                     ["2026-06-15T23:30:00+00:00", 20.0]]})])
+    await _setup_observed(hass)
+    await _tick(hass, freezer, "2026-06-16 01:30:00")
+    # Only the one well-formed, tz-aware sample survives.
+    assert float(hass.states.get(OBSERVED_TEMP).state) == 20.0
