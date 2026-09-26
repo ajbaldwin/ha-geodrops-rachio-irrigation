@@ -4,6 +4,53 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.2.0 — Rachio app runs recorded; ready for GeoDrops' new state names
+
+Everything since v1.1.0, including both 1.2.0 betas.
+
+### Changes
+
+- **Works with both the current and the upcoming GeoDrops integration.** A
+  GeoDrops update will report its Moisture State and Quality sensors as
+  `moist_plus` / `good` instead of `Moist+` / `Good`. This version reads
+  either. **Install this before that GeoDrops update**: v1.1.0 and earlier
+  read every zone as low quality with the new names and water nothing.
+- **Runs started from the Rachio app or a Rachio schedule are recorded.**
+  *Last run* gets an entry with `trigger: rachio` (start, end, zones, minutes
+  per zone); *Last nightly run* still covers only the scheduler's own nightly
+  runs. Tracking only: planning is unchanged, since the moisture sensors
+  already see that water. A Rachio run already underway when Home Assistant
+  starts, or in progress across a restart, is not recorded, and timing is only
+  as good as Rachio's webhooks.
+- **Per-zone *Last watered* and *Last delivered runtime* follow any watering**
+  (nightly, *Run irrigation now*, or Rachio), and *Last watered* is when that
+  zone's own valve closed, not when the whole run ended. *Last run* and *Last
+  nightly run* gain a `zone_end_iso` attribute with each zone's time.
+- **Observed overnight sensors now measure 23:00–06:00**, the hours the
+  nightly plan's forecast covers (was 20:00–06:00), weighted by how long each
+  reading held, and keep their readings across a restart. Expect their values
+  to differ from before.
+- **The zone exclude switch is now named *Exclude from Watering/Calibration***,
+  since it also stops calibration probing. Its entity ID is unchanged; a name
+  you set yourself in Home Assistant is kept.
+- **Fix: forecast calibration was skipped every morning** once the watering
+  window started closing after 06:00 (late September onward), with a
+  "calibration skipped — an irrigation run is in progress" warning in the
+  system log. It now waits for the run to finish.
+- **Fix: pressing *Run irrigation now* late in the evening** and letting the
+  23:00 nightly take over could leave the Rachio schedule to resume on its own
+  with nothing watching it. The nightly now stops it first.
+- **Fix: calibration samples.** A sample is no longer lost when a run finishes
+  during the half-hourly calibration check, and a Rachio run watering a zone
+  while its sample is still settling drops that sample instead of crediting
+  the Rachio water to the scheduler.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.1.0 → restart. Nothing is lost. Per-zone
+*Last watered* goes back to reading *Last nightly run*, and the observed
+overnight sensors go back to their old window. Do not roll back once the new
+GeoDrops version is installed: v1.1.0 cannot read its states.
+
 ## v1.2.0-beta.2 — Ready for GeoDrops' new state names; calibration runs every morning
 
 ### Changes
