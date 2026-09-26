@@ -289,7 +289,11 @@
     "window_cap_hours": 5.92,
     "window_cap_source": "forecast",
     "window_end": "04:55",
-    "window_start": "23:00"
+    "window_start": "23:00",
+    "zone_end_iso": {
+     "back": "2026-07-02T04:43:00+00:00",
+     "front": "2026-07-02T04:55:00+00:00"
+    }
    }
   ],
   "last_run": [
@@ -469,7 +473,11 @@
     "window_cap_hours": 5.92,
     "window_cap_source": "forecast",
     "window_end": "04:55",
-    "window_start": "23:00"
+    "window_start": "23:00",
+    "zone_end_iso": {
+     "back": "2026-07-02T04:43:00+00:00",
+     "front": "2026-07-02T04:55:00+00:00"
+    }
    }
   ],
   "status": [
@@ -689,7 +697,11 @@
     "window_cap_hours": 5.92,
     "window_cap_source": "forecast",
     "window_end": "04:55",
-    "window_start": "23:00"
+    "window_start": "23:00",
+    "zone_end_iso": {
+     "back": "2026-07-02T04:43:00+00:00",
+     "front": "2026-07-02T04:55:00+00:00"
+    }
    },
    "value": 2
   },

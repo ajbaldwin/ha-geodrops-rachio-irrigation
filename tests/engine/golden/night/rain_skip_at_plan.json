@@ -118,7 +118,8 @@
     "window_cap_hours": 5.92,
     "window_cap_source": "forecast",
     "window_end": "04:55",
-    "window_start": "23:00"
+    "window_start": "23:00",
+    "zone_end_iso": {}
    }
   ],
   "last_run": [
@@ -208,7 +209,8 @@
     "window_cap_hours": 5.92,
     "window_cap_source": "forecast",
     "window_end": "04:55",
-    "window_start": "23:00"
+    "window_start": "23:00",
+    "zone_end_iso": {}
    }
   ],
   "status": [
@@ -331,7 +333,8 @@
     "window_cap_hours": 5.92,
     "window_cap_source": "forecast",
     "window_end": "04:55",
-    "window_start": "23:00"
+    "window_start": "23:00",
+    "zone_end_iso": {}
    },
    "value": 0
   },

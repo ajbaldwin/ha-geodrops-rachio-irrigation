@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Never zero: HA's Local Calendar enforces a minimum event duration of one
 # second, so a point-in-time entry is rejected outright.
@@ -33,6 +33,10 @@ class RunResult:
     # re-issued. 0 on a healthy night; defaulted so existing constructions stay
     # valid.
     recoveries: int = 0
+    # {zone: ISO instant that zone's valve last closed}. A zone that waters
+    # early in a long run finished well before end_iso; per-zone Last watered
+    # reads this. Empty when nothing watered.
+    zone_end_iso: dict[str, str] = field(default_factory=dict)
 
 
 def display_name(zone_key: str) -> str:

@@ -141,8 +141,8 @@ def pressure_agreement(forecast, observed):
 
     The overnight thresholds (`humid_rh_pct`, `stagnant_wind_mph`) are reasoned
     from turf pathology rather than this site's data, so they need checking
-    against reality. The valid comparison is the FORECAST mean for 00:00-06:00
-    against the OBSERVED mean for the same window — never against an
+    against reality. The valid comparison is the FORECAST mean the nightly
+    planned with (23:00-06:00) against the OBSERVED mean for the same window — never against an
     instantaneous reading, which samples one moment of the distribution the mean
     averages over, and near its extreme: humidity peaks and wind bottoms out
     just before dawn, so a 3am sample reads as more pressured than the night

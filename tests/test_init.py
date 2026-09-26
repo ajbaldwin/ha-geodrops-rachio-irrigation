@@ -480,3 +480,27 @@ async def test_rachio_native_run_is_tracked_through_state_events(
     hass.states.async_set("switch.front_zone", "on")
     await hass.async_block_till_done()
     assert scheduler._native_session is None
+
+
+async def test_zone_data_fetch_uses_the_named_secret(
+        hass, tmp_path, aioclient_mock, enable_pyscript_and_rachio, caplog):
+    """The engine's live runtime pull resolves its key from secrets.yaml; with no
+    key it falls back to static values and says so."""
+    from custom_components.geodrops_rachio.rachio_client import RACHIO_BASE
+    entry = MockConfigEntry(domain=DOMAIN, data=DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    fetch = hass.data[DOMAIN][entry.entry_id]["scheduler"]._fetch_zone_data_fn
+
+    assert await fetch("rachio_api_key") == ({}, {}, {})
+    assert any("no rachio_api_key in secrets.yaml" in r.getMessage()
+               for r in caplog.records)
+
+    (tmp_path / "secrets.yaml").write_text("rachio_api_key: K1\n", encoding="utf-8")
+    aioclient_mock.get(RACHIO_BASE + "person/info", json={"id": "p1"})
+    aioclient_mock.get(RACHIO_BASE + "person/p1", json={"devices": [{"id": "d1"}]})
+    aioclient_mock.get(RACHIO_BASE + "device/d1", json={"zones": [
+        {"id": "z1", "runtime": 1800, "enabled": True}]})
+    runtimes, _depths, _spans = await fetch("rachio_api_key")
+    assert runtimes == {"z1": 30.0}
+    assert aioclient_mock.mock_calls[0][3]["Authorization"] == "Bearer K1"

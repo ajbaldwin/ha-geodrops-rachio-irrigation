@@ -52,7 +52,10 @@ def parse_last_nightly(attrs: dict, key: str) -> dict:
     # can't parse. `end_iso` is the tz-aware valve-close instant (scheduler
     # >= v0.8.2); fall back to the plan-publish `updated` stamp only for records
     # from an older delivered brain or a no-water night (end_iso == "").
-    last_watered = (attrs.get("end_iso") or attrs.get("updated")
+    # `zone_end_iso` (v1.2+) is the zone's own last valve close, which beats
+    # the run's end for any zone that finished before the last one.
+    own_end = (attrs.get("zone_end_iso") or {}).get(key)
+    last_watered = (own_end or attrs.get("end_iso") or attrs.get("updated")
                     if key in watered else None)
     return {
         "last_delivered_runtime": delivered.get(key),
