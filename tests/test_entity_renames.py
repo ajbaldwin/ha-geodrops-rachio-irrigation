@@ -31,7 +31,7 @@ async def _setup(hass):
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    scheduler = entry.runtime_data.scheduler
     scheduler._current_cfg = scheduler._load_cfg()
     scheduler._current_bindings = scheduler._current_cfg.bindings
     return entry, scheduler
@@ -108,7 +108,7 @@ def _external(hass, entity_id, state="off"):
 
 
 def _running(hass, entry):
-    return hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    return entry.runtime_data.scheduler
 
 
 async def test_renamed_rachio_standby_is_rebound_and_applies(

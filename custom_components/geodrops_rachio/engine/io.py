@@ -153,10 +153,18 @@ class IOMixin:
         try:
             runtimes, depths, spans = await self._fetch_zone_data()
         except Exception as err:
-            _LOGGER.warning(
-                "Rachio fetch failed (%s); using static values", err
-            )
+            # Once per outage: each plan asks for runtimes, depths and spans.
+            if not self._rachio_failing:
+                self._rachio_failing = True
+                _LOGGER.warning(
+                    "Rachio fetch failed (%s); using static values until it "
+                    "succeeds", err)
+            else:
+                _LOGGER.debug("Rachio fetch failed again (%s)", err)
             return False
+        if self._rachio_failing:
+            self._rachio_failing = False
+            _LOGGER.info("Rachio fetch succeeded again")
         if runtimes:
             self._runtime_cache["ts"] = now
             self._runtime_cache["runtimes"] = runtimes

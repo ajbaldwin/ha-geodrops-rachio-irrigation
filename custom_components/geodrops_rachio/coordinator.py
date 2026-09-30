@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
+from typing import TYPE_CHECKING, Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 
 from .engine.store import EFFICACY, ZONE_WATERED
+
+if TYPE_CHECKING:
+    from .engine.scheduler import Scheduler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,10 +104,36 @@ def parse_efficacy(store: dict, key: str) -> dict:
             "last_reject_reason": rec.get("last_reject_reason")}
 
 
+@dataclass
+class GeodropsRachioData:
+    """What a running entry keeps in its runtime_data."""
+
+    data: dict[str, Any]
+    coordinator: ZoneStateCoordinator
+    scheduler: Scheduler
+    hub_device_id: str
+    # {original id: current id} of bound entities renamed while this entry
+    # runs; the engine reads through it until the reload that rebinds them.
+    renamed: dict[str, str]
+    # What this running entry was set up with; a reload that would not change
+    # it is skipped (see async_reload_if_changed).
+    setup_snapshot: dict[str, Any]
+    # An options dialog is open: its edits must not restart the scheduler.
+    suppress_reload: bool = False
+    # A bound entity was renamed; the update listener that follows rebinds.
+    rename_pending: bool = False
+    # A rebind is waiting for the in-flight run to end.
+    reload_after_run: bool = False
+
+
+type GeodropsRachioConfigEntry = ConfigEntry[GeodropsRachioData]
+
+
 class ZoneStateCoordinator:
     """Fans the scheduler's records + efficacy document out to per-zone sensors."""
 
-    def __init__(self, hass: HomeAssistant, entry, scheduler) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry,
+                 scheduler: Scheduler) -> None:
         self.hass = hass
         self.entry = entry
         self._scheduler = scheduler

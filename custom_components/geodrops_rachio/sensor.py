@@ -5,19 +5,22 @@ from homeassistant.components.sensor import (
     RestoreSensor, SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.const import (
     MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfLength)
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
     async_track_state_change_event, async_track_time_interval)
 from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.util import dt as dt_util
 from . import weather_derive
-from .const import DOMAIN
-from .entity_base import device_info, zone_device_info
-from .util import slug
+from .coordinator import GeodropsRachioConfigEntry, ZoneStateCoordinator
+from .engine.scheduler import Scheduler
+from .entity import GeodropsRachioEntity, GeodropsRachioZoneEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# Pushed by the scheduler or computed from other entities; the forecast
+# sensors call the weather entity themselves, on their own timer.
+PARALLEL_UPDATES = 0
 
 _FORECAST_INTERVAL = dt.timedelta(hours=1)
 # How often the observed means recompute with nothing changing: a steady reading
@@ -92,7 +95,7 @@ class _ObservedSamples(ExtraStoredData):
         return sorted(out)
 
 
-class ObservedOvernightSensor(RestoreSensor):
+class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
     """Time-weighted mean of a weather reading over last night's window
     (weather_derive.observed_overnight_window), the observed side of the 06:00
     forecast calibration.
@@ -102,18 +105,15 @@ class ObservedOvernightSensor(RestoreSensor):
     change — a steady reading is still accruing time when nothing changes.
     """
 
-    _attr_should_poll = False
     _attr_suggested_display_precision = 1
 
-    def __init__(self, entry, key, source, unit) -> None:
-        self._attr_unique_id = f"{entry.entry_id}_observed_overnight_{key}"
+    def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
+                 source: str | None, unit: str) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, f"observed_overnight_{key}")
         self._attr_name = f"Observed overnight {key}"
-        self.entity_id = ENTITY_ID_FORMAT.format(
-            f"geodrops_rachio_observed_overnight_{key}")
         self._attr_native_unit_of_measurement = unit
         self._source = source
         self._samples: list[tuple[dt.datetime, float]] = []
-        self._attr_device_info = device_info(entry)
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData:
@@ -161,19 +161,19 @@ class ObservedOvernightSensor(RestoreSensor):
         self.async_write_ha_state()
 
 
-class ForecastOvernightSensor(SensorEntity):
-    _attr_should_poll = False
+class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
+    """Tonight's forecast mean of one weather field, from the bound weather
+    entity's hourly forecast. Unavailable while that forecast cannot be read."""
+
     _attr_suggested_display_precision = 1
 
-    def __init__(self, entry, key, field, source, unit) -> None:
-        self._attr_unique_id = f"{entry.entry_id}_forecast_overnight_{key}"
+    def __init__(self, entry: GeodropsRachioConfigEntry, key: str, field: str,
+                 source: str | None, unit: str) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, f"forecast_overnight_{key}")
         self._attr_name = f"Forecast overnight {key}"
-        self.entity_id = ENTITY_ID_FORMAT.format(
-            f"geodrops_rachio_forecast_overnight_{key}")
         self._attr_native_unit_of_measurement = unit
         self._field = field
         self._source = source
-        self._attr_device_info = device_info(entry)
 
     async def async_added_to_hass(self) -> None:
         if self._source:
@@ -190,33 +190,39 @@ class ForecastOvernightSensor(SensorEntity):
             periods = (resp or {}).get(self._source, {}).get("forecast", [])
             value = weather_derive.overnight_forecast_mean(
                 periods, self._field, dt_util.now())
-        except Exception:
-            _LOGGER.warning(
-                "Failed to refresh forecast overnight sensor for %s",
-                self._source, exc_info=True)
+        except Exception as err:
+            # Once per outage; the hourly retries log at debug.
+            if self._attr_available:
+                _LOGGER.info("The hourly forecast of %s cannot be read (%r); "
+                             "%s is unavailable until it can", self._source,
+                             err, self.entity_id)
+            _LOGGER.debug("Forecast refresh for %s failed", self._source,
+                          exc_info=True)
+            self._attr_available = False
+            self.async_write_ha_state()
             return
+        if not self._attr_available:
+            _LOGGER.info("The hourly forecast of %s can be read again",
+                         self._source)
+        self._attr_available = True
         self._attr_native_value = value
         self.async_write_ha_state()
 
 
-class ZoneCoordinatorSensor(SensorEntity):
+class ZoneCoordinatorSensor(GeodropsRachioZoneEntity, SensorEntity):
     """Mirrors one field of the coordinator's per-zone state dict."""
 
-    _attr_should_poll = False
-    _attr_has_entity_name = True
-
-    def __init__(self, entry, key, hub_device_id, coordinator, suffix, ckey,
-                 device_class, unit, precision=None) -> None:
-        s = slug(key)
+    def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
+                 hub_device_id: str, coordinator: ZoneStateCoordinator,
+                 suffix: str, ckey: str, device_class: SensorDeviceClass | None,
+                 unit: str | None, precision: int | None = None) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, key, hub_device_id, suffix)
         self._key, self._coord, self._ckey = key, coordinator, ckey
-        self._attr_unique_id = f"{entry.entry_id}_zone_{s}_{suffix}"
-        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{s}_{suffix}")
         self._attr_name = suffix.replace("_", " ").capitalize()
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         if precision is not None:
             self._attr_suggested_display_precision = precision
-        self._attr_device_info = zone_device_info(entry, key, hub_device_id)
 
     async def async_added_to_hass(self) -> None:
         self._coord.add_listener(self._update)
@@ -241,11 +247,15 @@ class ZoneCoordinatorSensor(SensorEntity):
             self.async_write_ha_state()
 
 
-class ZoneMoistureSensor(SensorEntity):
-    """Live mirror of the zone's own GeoDrops dominant sensor."""
+def _source_down(state: State | None) -> bool:
+    """A mirrored source entity that is missing or unavailable."""
+    return state is None or state.state == STATE_UNAVAILABLE
 
-    _attr_should_poll = False
-    _attr_has_entity_name = True
+
+class ZoneMoistureSensor(GeodropsRachioZoneEntity, SensorEntity):
+    """Live mirror of the zone's own GeoDrops dominant sensor; unavailable
+    while that sensor is."""
+
     _attr_name = "Soil moisture"
     # GeoDrops dominant moisture is a 0-100 percentage; label it so readers see
     # "75.6 %" with a moisture icon instead of a bare number.
@@ -253,20 +263,21 @@ class ZoneMoistureSensor(SensorEntity):
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 1
 
-    def __init__(self, entry, key, hub_device_id, source) -> None:
-        s = slug(key)
+    def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
+                 hub_device_id: str, source: str | None) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, key, hub_device_id,
+                         "soil_moisture")
         self._source = source
-        self._attr_unique_id = f"{entry.entry_id}_zone_{s}_soil_moisture"
-        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{s}_soil_moisture")
-        self._attr_device_info = zone_device_info(entry, key, hub_device_id)
 
     async def async_added_to_hass(self) -> None:
         @callback
         def _mirror(event=None) -> None:
             st = self.hass.states.get(self._source) if self._source else None
+            # Unbound reads unknown rather than unavailable: nothing is down.
+            self._attr_available = not self._source or not _source_down(st)
             # A moisture device_class must be numeric, so coerce and let
-            # unknown/unavailable/missing sources read as no value rather than
-            # pushing a non-numeric state HA would reject.
+            # unknown/missing sources read as no value rather than pushing a
+            # non-numeric state HA would reject.
             try:
                 self._attr_native_value = float(st.state) if st else None
             except (TypeError, ValueError):
@@ -278,7 +289,7 @@ class ZoneMoistureSensor(SensorEntity):
         _mirror()
 
 
-class ZoneDeficitSensor(SensorEntity):
+class ZoneDeficitSensor(GeodropsRachioZoneEntity, SensorEntity):
     """How far below its need-water target a zone currently is, in moisture
     points (%). Live: recomputes as the zone's moisture changes and when the
     scheduler republishes target floors. Value is max(0, target_floor -
@@ -287,18 +298,15 @@ class ZoneDeficitSensor(SensorEntity):
     device_class: it's a delta, not an absolute moisture, so HA must not unit-
     convert it."""
 
-    _attr_should_poll = False
-    _attr_has_entity_name = True
     _attr_name = "Deficit"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 1
 
-    def __init__(self, entry, key, hub_device_id, coordinator, source) -> None:
-        s = slug(key)
+    def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
+                 hub_device_id: str, coordinator: ZoneStateCoordinator,
+                 source: str | None) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, key, hub_device_id, "deficit")
         self._key, self._coord, self._source = key, coordinator, source
-        self._attr_unique_id = f"{entry.entry_id}_zone_{s}_deficit"
-        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{s}_deficit")
-        self._attr_device_info = zone_device_info(entry, key, hub_device_id)
 
     async def async_added_to_hass(self) -> None:
         self._coord.add_listener(self._update)
@@ -313,6 +321,8 @@ class ZoneDeficitSensor(SensorEntity):
         floor = self._coord.data_for(self._key).get("target_floor")
         moisture = None
         st = self.hass.states.get(self._source) if self._source else None
+        # Down with the moisture sensor it is computed from.
+        self._attr_available = not self._source or not _source_down(st)
         if st is not None:
             try:
                 moisture = float(st.state)
@@ -326,19 +336,15 @@ class ZoneDeficitSensor(SensorEntity):
             self.async_write_ha_state()
 
 
-class SchedulerStatusSensor(SensorEntity):
+class SchedulerStatusSensor(GeodropsRachioEntity, SensorEntity):
     """The scheduler's overall status (idle / planning / waiting / watering /
     standby / skipped / aborted) on the main device."""
 
-    _attr_should_poll = False
-    _attr_has_entity_name = True
     _attr_name = "Status"
     _attr_icon = "mdi:sprinkler"
 
-    def __init__(self, entry, scheduler) -> None:
-        self._attr_unique_id = f"{entry.entry_id}_status"
-        self.entity_id = ENTITY_ID_FORMAT.format("geodrops_rachio_status")
-        self._attr_device_info = device_info(entry)
+    def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, "status")
         self._scheduler = scheduler
 
     async def async_added_to_hass(self) -> None:
@@ -364,24 +370,21 @@ _RECORDS = [
 ]
 
 
-class RecordSensor(SensorEntity):
+class RecordSensor(GeodropsRachioEntity, SensorEntity):
     """One scheduler record: value as state, full record as attributes
     (the same attribute names v0.9.x's pyscript.* entities carried, minus
     friendly_name).
     Attributes stay out of the recorder — they can be large."""
 
-    _attr_should_poll = False
-    _attr_has_entity_name = True
     # Each record's state is a zone count (watered, or planned for Plan).
     _attr_native_unit_of_measurement = "zones"
     _unrecorded_attributes = frozenset({MATCH_ALL})
 
-    def __init__(self, entry, scheduler, record, suffix, name, icon) -> None:
-        self._attr_unique_id = f"{entry.entry_id}_record_{record}"
-        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{suffix}")
+    def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler,
+                 record: str, suffix: str, name: str, icon: str) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, f"record_{record}", suffix)
         self._attr_name = name
         self._attr_icon = icon
-        self._attr_device_info = device_info(entry)
         self._scheduler = scheduler
         self._record = record
 
@@ -401,11 +404,11 @@ class RecordSensor(SensorEntity):
         _update()
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
+async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     weather = entry.data.get("bindings", {}).get("weather", {})
     forecast_entity = entry.data.get("bindings", {}).get("forecast_entity")
-    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    scheduler = entry.runtime_data.scheduler
     entities: list[SensorEntity] = [SchedulerStatusSensor(entry, scheduler)]
     entities += [RecordSensor(entry, scheduler, *r) for r in _RECORDS]
     for key, field, unit in _FIELDS:
@@ -414,8 +417,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
         entities.append(ForecastOvernightSensor(
             entry, key, field, forecast_entity, unit))
 
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    hub_id = hass.data[DOMAIN][entry.entry_id]["hub_device_id"]
+    coordinator = entry.runtime_data.coordinator
+    hub_id = entry.runtime_data.hub_device_id
     for z in entry.data.get("zones", []):
         entities.append(ZoneMoistureSensor(
             entry, z["key"], hub_id, z.get("dominant_sensor")))

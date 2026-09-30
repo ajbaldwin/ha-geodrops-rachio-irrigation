@@ -1,10 +1,13 @@
 from __future__ import annotations
 from homeassistant.components.button import ButtonEntity, ENTITY_ID_FORMAT
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .const import DOMAIN
-from .entity_base import device_info
+from .coordinator import GeodropsRachioConfigEntry
+from .engine.scheduler import Scheduler
+from .entity import GeodropsRachioEntity
+
+# Presses never queue behind one another: Stop must act mid-run.
+PARALLEL_UPDATES = 0
 
 # Buttons that drive the native scheduler. (key, friendly name, icon).
 _ACTIONS = [
@@ -22,29 +25,23 @@ _METHODS = {
 _BACKGROUND = {"preview", "refresh_runtimes"}
 
 
-class StopButton(ButtonEntity):
-    _attr_should_poll = False
+class StopButton(GeodropsRachioEntity, ButtonEntity):
+    _attr_name = "Stop irrigation"
 
-    def __init__(self, entry: ConfigEntry, scheduler) -> None:
-        self._attr_unique_id = f"{entry.entry_id}_stop"
-        self._attr_name = "Stop irrigation"
-        self.entity_id = ENTITY_ID_FORMAT.format("geodrops_rachio_stop")
-        self._attr_device_info = device_info(entry)
+    def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, "stop")
         self._scheduler = scheduler
 
     async def async_press(self) -> None:
         await self._scheduler.request_stop()
 
 
-class ActionButton(ButtonEntity):
-    _attr_should_poll = False
-
-    def __init__(self, entry: ConfigEntry, scheduler, key: str, name: str, icon: str) -> None:
-        self._attr_unique_id = f"{entry.entry_id}_{key}"
+class ActionButton(GeodropsRachioEntity, ButtonEntity):
+    def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler,
+                 key: str, name: str, icon: str) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, key)
         self._attr_name = name
         self._attr_icon = icon
-        self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{key}")
-        self._attr_device_info = device_info(entry)
         self._entry = entry
         self._scheduler = scheduler
         self._key = key
@@ -58,9 +55,9 @@ class ActionButton(ButtonEntity):
             await coro
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
+async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
-    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    scheduler = entry.runtime_data.scheduler
     entities: list[ButtonEntity] = [StopButton(entry, scheduler)]
     entities += [ActionButton(entry, scheduler, key, name, icon)
                  for key, name, icon in _ACTIONS]

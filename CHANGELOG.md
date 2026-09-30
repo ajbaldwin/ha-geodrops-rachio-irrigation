@@ -4,6 +4,20 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## Unreleased
+
+### Changes
+
+- **The Irrigation Controls entities' names now start with the device's
+  name**, as the zone entities' already do: *Stop irrigation* shows as
+  *Irrigation Controls Stop irrigation*. Entity IDs are unchanged, and names
+  you set yourself are kept.
+- **Forecast overnight sensors go unavailable when the weather forecast
+  cannot be read,** instead of keeping a stale value, and a zone's *Soil
+  moisture* and *Deficit* go unavailable while its moisture sensor is.
+- **A Rachio outage is logged once** rather than on every fetch, and its end
+  is logged too.
+
 ## v1.3.0-beta.1 — Renaming entities is safe; Rachio API key in the integration's settings
 
 ### Changes

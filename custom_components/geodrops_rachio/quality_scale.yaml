@@ -13,8 +13,10 @@ rules:
       forecast refreshes hourly.
   brands: done
   common-modules:
-    status: todo
-    comment: coordinator.py exists; entities still lack a shared base class (entity.py).
+    status: done
+    comment: >-
+      Entities share a base class in entity.py; the runtime data and zone
+      coordinator live in coordinator.py.
   config-flow-test-coverage:
     status: todo
     comment: Well tested, but coverage is not measured yet.
@@ -39,12 +41,8 @@ rules:
     comment: No device triggers.
   entity-event-setup: done
   entity-unique-id: done
-  has-entity-name:
-    status: todo
-    comment: Buttons, Standby, Drought level and the weather sensors do not set it yet.
-  runtime-data:
-    status: todo
-    comment: Runtime objects are still kept in hass.data.
+  has-entity-name: done
+  runtime-data: done
   test-before-configure: done
   test-before-setup:
     status: exempt
@@ -66,10 +64,22 @@ rules:
     status: todo
     comment: The tunables accepted by the advanced overrides are not documented.
   docs-installation-parameters: done
-  entity-unavailable: todo
+  entity-unavailable:
+    status: done
+    comment: >-
+      The scheduler's entities are computed locally and are always available.
+      The forecast sensors are unavailable while the weather entity cannot
+      answer, and a zone's Soil moisture and Deficit while its moisture sensor
+      is unavailable. A Rachio outage leaves nothing unavailable: zones water
+      from their stored runtimes, and the refill depths fall back to the ones
+      stored at setup.
   integration-owner: done
-  log-when-unavailable: todo
-  parallel-updates: todo
+  log-when-unavailable:
+    status: done
+    comment: >-
+      A Rachio outage and a forecast that cannot be read are each logged once
+      when they start and once when they end.
+  parallel-updates: done
   reauthentication-flow: done
   test-coverage:
     status: todo
