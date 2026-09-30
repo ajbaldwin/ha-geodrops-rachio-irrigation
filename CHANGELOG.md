@@ -17,6 +17,14 @@ section per released version, newest first.
   moisture* and *Deficit* go unavailable while its moisture sensor is.
 - **A Rachio outage is logged once** rather than on every fetch, and its end
   is logged too.
+- **Download diagnostics** from the integration's menu (⋮ → Download
+  diagnostics) to attach to a bug report. The Rachio API key is removed.
+- **Upkeep and diagnostic entities are categorized**, so new dashboards keep
+  them out of the way: *Reset irrigation*, *Refresh Rachio runtimes*,
+  *Drought level* and each zone's *Exclude* are configuration; *Efficacy*,
+  *Calibration state*, *Refill depth* and the overnight weather sensors are
+  diagnostic. Dashboards you built are not changed.
+- **Every entity has an icon**, and names and icons can now be translated.
 
 ## v1.3.0-beta.1 — Renaming entities is safe; Rachio API key in the integration's settings
 

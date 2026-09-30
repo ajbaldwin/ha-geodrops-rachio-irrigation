@@ -87,7 +87,11 @@ rules:
 
   # Gold
   devices: done
-  diagnostics: todo
+  diagnostics:
+    status: done
+    comment: >-
+      The entry (API key redacted), the scheduler's records and stored
+      documents, and the Rachio zone cache.
   discovery:
     status: exempt
     comment: A cloud account bound to entities of other integrations; nothing to discover.
@@ -104,12 +108,27 @@ rules:
   dynamic-devices:
     status: done
     comment: Zones added in Configure get their devices on the reload that follows.
-  entity-category: todo
-  entity-device-class: todo
-  entity-disabled-by-default: todo
-  entity-translations: todo
-  exception-translations: todo
-  icon-translations: todo
+  entity-category:
+    status: done
+    comment: >-
+      Reset, Refresh, Drought level and the zones' Exclude are configuration;
+      the calibration, refill-depth and overnight-weather sensors are
+      diagnostic.
+  entity-device-class:
+    status: todo
+    comment: >-
+      The overnight weather sensors could take temperature, humidity and wind
+      speed classes, but those convert the state to the home's units, and the
+      calibration reads them in °F and mph.
+  entity-disabled-by-default:
+    status: done
+    comment: >-
+      No entity qualifies: the overnight weather sensors are what the 06:00
+      calibration reads, and the rest are the integration's controls and
+      results.
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
   reconfiguration-flow: todo
   repair-issues: todo
   stale-devices:

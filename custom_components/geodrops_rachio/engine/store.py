@@ -67,6 +67,10 @@ class EngineStore:
     def read(self, key: str) -> Any | None:
         return copy.deepcopy(self._docs.get(key))
 
+    def snapshot(self) -> dict[str, Any]:
+        """Every document, for diagnostics."""
+        return copy.deepcopy(self._docs)
+
     async def write(self, key: str, value: Any) -> None:
         self._docs[key] = copy.deepcopy(value)
         await self._flush()

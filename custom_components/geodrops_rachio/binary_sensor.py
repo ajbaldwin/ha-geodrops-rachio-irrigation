@@ -17,7 +17,6 @@ class RunActiveSensor(GeodropsRachioEntity, BinarySensorEntity):
     """Read-only: on while a collapsed run is in flight. Mirrors the engine's
     persisted run marker, which only the engine sets."""
 
-    _attr_name = "Run active"
     _attr_device_class = BinarySensorDeviceClass.RUNNING
 
     def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler) -> None:
