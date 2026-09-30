@@ -62,7 +62,7 @@ def _log_task_failure(task: asyncio.Task) -> None:
         return
     exc = task.exception()
     if exc is not None:
-        _LOGGER.error(f"irrigation: {task.get_name()} failed ({exc!r})", exc_info=exc)
+        _LOGGER.error("%s failed (%r)", task.get_name(), exc, exc_info=exc)
 
 
 class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin,
@@ -129,7 +129,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
                     await self.store.write(RUN_PROGRESS, None)
                 except Exception as err:
                     _LOGGER.warning(
-                        f"irrigation: could not clear the replaced run's progress ({err})")
+                        "could not clear the replaced run's progress (%s)", err)
             if gen != self._run_gen:
                 return
             run = (self._plan_and_run(wait, trigger) if resume is None
@@ -194,7 +194,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             self._current_bindings = self._current_cfg.bindings
             await self._publish_targets(self._current_cfg)
         except Exception as err:
-            _LOGGER.warning(f"irrigation: startup target-floor publish skipped ({err})")
+            _LOGGER.warning("startup target-floor publish skipped (%s)", err)
         # Time gate: only clean up during the overnight run window (~22:00-07:00).
         # A daytime restart must not stop a syringe / pet-cleanup run that shares a
         # managed zone. (Only managed zones are ever polled — see below.)
@@ -204,7 +204,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         try:
             cfg = self._load_cfg()
         except Exception as err:
-            _LOGGER.warning(f"irrigation: startup safety check skipped; config load failed ({err})")
+            _LOGGER.warning("startup safety check skipped; config load failed (%s)",
+                            err)
             return
         self._current_cfg = cfg
         self._current_bindings = cfg.bindings
@@ -363,7 +364,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             # A reset night is over: nothing may resume it after a restart.
             await self.store.write(RUN_PROGRESS, None)
         except Exception as err:
-            _LOGGER.warning(f"irrigation: reset — marker cleanup skipped: {err}")
+            _LOGGER.warning("reset — marker cleanup skipped: %s", err)
         self._set_status("idle", detail="reset")
         await self._activity("Manual reset — planned/running run cancelled; system idle")
 
@@ -380,8 +381,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         """
         if self._run_in_progress:
             _LOGGER.warning(
-                "irrigation: runtime refresh skipped — an irrigation run is in "
-                "progress and owns the shared config globals"
+                "runtime refresh skipped — an irrigation run is in progress and owns "
+                "the shared config globals"
             )
             return
         # Standalone service, outside _plan_and_run — load config here so
@@ -484,4 +485,4 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
                     await self.port.call("switch", "turn_off", {"entity_id": sw},
                                          blocking=True)
         except Exception as err:
-            _LOGGER.warning(f"irrigation: unload safety stop failed ({err})")
+            _LOGGER.warning("unload safety stop failed (%s)", err)

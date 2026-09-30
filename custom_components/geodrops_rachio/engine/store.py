@@ -90,7 +90,7 @@ def read_legacy_state(state_dir: pathlib.Path) -> dict:
         except FileNotFoundError:
             continue
         except (OSError, ValueError) as err:
-            _LOGGER.warning("geodrops_rachio: could not import legacy %s (%s)", fname, err)
+            _LOGGER.warning("could not import legacy %s (%s)", fname, err)
     return docs
 
 
@@ -122,8 +122,8 @@ async def async_open_store(hass: HomeAssistant, entry_id: str) -> EngineStore:
             reloaded = True
         except Exception as err:
             _LOGGER.warning(
-                "geodrops_rachio: pyscript.reload failed after removing the legacy "
-                "script (%s); restart Home Assistant to be sure it is unloaded", err)
+                "pyscript.reload failed after removing the legacy script (%s); restart "
+                "Home Assistant to be sure it is unloaded", err)
     if data is None or removed:
         docs = await hass.async_add_executor_job(
             read_legacy_state, pyscript_dir / LEGACY_STATE_DIRNAME)
@@ -131,13 +131,12 @@ async def async_open_store(hass: HomeAssistant, entry_id: str) -> EngineStore:
         await store.async_save(data)
         if docs or removed:
             _LOGGER.warning(
-                "geodrops_rachio: native engine took over — imported %d legacy "
-                "document(s) (%d zone(s) of calibration history); removed %s; "
-                "pyscript reloaded: %s",
+                "native engine took over — imported %d legacy document(s) (%d zone(s) "
+                "of calibration history); removed %s; pyscript reloaded: %s",
                 len(docs), len(docs.get(EFFICACY) or {}),
                 ", ".join(removed) or "nothing", reloaded)
         else:
-            _LOGGER.info("geodrops_rachio: created a new store (no legacy state to import)")
+            _LOGGER.info("created a new store (no legacy state to import)")
 
     async def _save(docs: dict) -> None:
         await store.async_save({"docs": docs})

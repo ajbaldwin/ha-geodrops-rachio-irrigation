@@ -34,7 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         key = await rachio_client.resolve_secret(hass, key_name)
         if not key:
             _LOGGER.warning(
-                "irrigation: no %s in secrets.yaml; using static values", key_name)
+                "no %s in secrets.yaml; using static values", key_name)
             return {}, {}, {}
         return await rachio_client.async_fetch_zone_data(session, key)
 
@@ -117,7 +117,7 @@ async def async_reload_if_changed(hass: HomeAssistant, entry: ConfigEntry) -> bo
     snapshot = store.get("setup_snapshot")
     if (entry.state is ConfigEntryState.LOADED and snapshot is not None
             and snapshot == _snapshot(entry)):
-        _LOGGER.debug("geodrops_rachio: configuration unchanged; not reloading")
+        _LOGGER.debug("configuration unchanged; not reloading")
         return False
     await hass.config_entries.async_reload(entry.entry_id)
     return True
@@ -184,8 +184,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     else:
         _LOGGER.warning(
-            "geodrops_rachio: platforms did not unload; the scheduler is already "
-            "stopped, so no nightly run will fire until Home Assistant restarts")
+            "platforms did not unload; the scheduler is already stopped, so no nightly "
+            "run will fire until Home Assistant restarts")
     return ok
 
 

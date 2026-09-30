@@ -40,7 +40,7 @@ class NativeRunMixin:
             cfg = self._load_cfg()
         except Exception as err:
             _LOGGER.warning(
-                f"irrigation: Rachio-native run tracking disabled; config load failed ({err})")
+                "Rachio-native run tracking disabled; config load failed (%s)", err)
             self._native_switches = {}
             return
         self._native_switches = {z.rachio_switch: k for k, z in cfg.zones.items()}

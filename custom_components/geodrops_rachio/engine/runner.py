@@ -135,8 +135,8 @@ class RunnerMixin:
                 for switch in zone_switches.values():
                     if self.poll_zone_running(switch):
                         _LOGGER.warning(
-                            f"irrigation: {switch} was already running before a "
-                            "block; stopping it first"
+                            "%s was already running before a block; stopping it first",
+                            switch
                         )
                         await self.stop_zone(switch)
 
@@ -172,17 +172,16 @@ class RunnerMixin:
                 if aborted:
                     if aborted == "external-stop":
                         _LOGGER.warning(
-                            f"irrigation: watering stopped externally after "
-                            f"{int(elapsed)}s of a {int(block_seconds / 60)} min "
-                            "block; ending the run rather than starting more zones"
+                            "watering stopped externally after %ss of a %s min block; "
+                            "ending the run rather than starting more zones",
+                            int(elapsed), int(block_seconds / 60)
                         )
                     elif aborted == "never-started":
                         _LOGGER.warning(
-                            f"irrigation: no zone came on within "
-                            f"{BLOCK_START_CONFIRM_S}s of handing Rachio a "
-                            f"{int(block_seconds / 60)} min block; something "
-                            "stopped it at the start. Crediting no water and "
-                            "ending the run rather than starting more zones"
+                            "no zone came on within %ss of handing Rachio a %s min "
+                            "block; something stopped it at the start. Crediting no "
+                            "water and ending the run rather than starting more zones",
+                            BLOCK_START_CONFIRM_S, int(block_seconds / 60)
                         )
                     await self.stop_all(all_switches)
                     return {"watered": watered, "aborted_reason": aborted,
@@ -287,8 +286,8 @@ class RunnerMixin:
                     # schedule (start_multiple_zone_schedule does not stop current water).
                     for switch in all_switches:
                         if self.poll_zone_running(switch):
-                            _LOGGER.warning(f"irrigation: {switch} was already running before "
-                                            "a collapsed segment; stopping it first")
+                            _LOGGER.warning("%s was already running before a collapsed "
+                                            "segment; stopping it first", switch)
                             await self.stop_zone(switch)
 
                     self.api_calls += 1
@@ -327,9 +326,9 @@ class RunnerMixin:
                             retries_used, tun.max_schedule_retries)
                         if decision == recovery.RECOVER:
                             _LOGGER.warning(
-                                f"irrigation: Rachio dropped the schedule after "
-                                f"{int(delivered_since_issue)} min; re-issuing for the "
-                                f"remaining water (recovery {retries_used + 1})")
+                                "Rachio dropped the schedule after %s min; re-issuing "
+                                "for the remaining water (recovery %s)",
+                                int(delivered_since_issue), retries_used + 1)
                             retries_used += 1
                             recoveries += 1
                             await self.stop_device()
@@ -455,8 +454,8 @@ class RunnerMixin:
         reason = recovery.classify_non_start("never-started", overcredit is not None)
         if reason == "external-stop":
             _LOGGER.warning(
-                "irrigation: watering stopped externally near the end of a step; "
-                "not re-issuing the schedule")
+                "watering stopped externally near the end of a step; not re-issuing "
+                "the schedule")
             return reason, watering_seconds - overcredit, index
         return reason, watering_seconds, index
 
@@ -477,8 +476,8 @@ class RunnerMixin:
             await self.port.sleep(CHECK_INTERVAL_S)
             waited += CHECK_INTERVAL_S
         _LOGGER.warning(
-            f"irrigation: a zone was still running {waited}s after its block "
-            "should have ended; stopping it"
+            "a zone was still running %ss after its block should have ended; "
+            "stopping it", waited
         )
         await self.stop_all(zone_switches)
 
