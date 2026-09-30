@@ -811,6 +811,21 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input=None):
+        return await self._async_replace_key(
+            "reauth_confirm", self._get_reauth_entry(), "reauth_successful",
+            user_input)
+
+    async def async_step_reconfigure(self, user_input=None):
+        """Replace the Rachio API key by choice, e.g. after regenerating it.
+        Everything else set up in the wizard is changed under Configure."""
+        return await self._async_replace_key(
+            "reconfigure", self._get_reconfigure_entry(), "reconfigure_successful",
+            user_input)
+
+    async def _async_replace_key(self, step_id: str,
+                                 entry: config_entries.ConfigEntry,
+                                 success: str, user_input):
+        """Ask for a new API key for `entry`'s Rachio account and store it."""
         errors: dict[str, str] = {}
         if user_input is not None:
             key = user_input[CONF_API_KEY].strip()
@@ -818,7 +833,6 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
             if error:
                 errors["base"] = error
             else:
-                entry = self._get_reauth_entry()
                 if entry.unique_id not in (None, self._account_id):
                     return self.async_abort(reason="wrong_account")
                 # The running scheduler reads the key from the entry on each
@@ -828,9 +842,9 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
                     data={**entry.data, CONF_API_KEY: key})
                 if entry.state is not ConfigEntryState.LOADED:
                     self.hass.config_entries.async_schedule_reload(entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
+                return self.async_abort(reason=success)
         return self.async_show_form(
-            step_id="reauth_confirm", data_schema=_api_key_schema(), errors=errors)
+            step_id=step_id, data_schema=_api_key_schema(), errors=errors)
 
     @staticmethod
     @callback

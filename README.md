@@ -14,6 +14,29 @@ The scheduler ("the brain") runs natively inside this integration — there is
 no separate app to deliver or reload. A HA config-flow wizard collects your
 bindings and generates the scheduler's settings directly from your answers.
 
+## What it is for
+
+- **Water only what the soil needs.** Each night the scheduler compares every
+  zone's measured soil moisture against its target and waters the deficit,
+  instead of running a fixed schedule.
+- **Skip or shorten watering around rain**, using the forecast and your
+  weather station, and stop a running zone when it starts raining.
+- **Water less during a drought** by picking a drought level: lower targets,
+  shorter runtimes and an earlier finish.
+- **Keep watering out of the disease window** on warm, humid, still nights.
+
+## Supported devices
+
+- **Controllers:** any Rachio controller the Home Assistant
+  [Rachio](https://www.home-assistant.io/integrations/rachio/) integration
+  supports (zones are driven through its zone switches and its
+  `rachio.start_multiple_zone_schedule` / pause actions).
+- **Soil moisture:** GeoDrops sensors, through
+  [ha-geodrops-hacs](https://github.com/ajbaldwin/ha-geodrops-hacs) or any
+  integration exposing the same dominant, state and quality sensors.
+- **Weather:** any Home Assistant sensors for the five observed conditions,
+  and any `weather.*` entity with an hourly forecast (see Prerequisites).
+
 ## Prerequisites
 
 Before installing this integration, you need all of the following already
@@ -99,7 +122,9 @@ re-runs the same wizard, pre-filled with your current settings.
 If Rachio ever rejects the key (for example after you generate a new one),
 Home Assistant shows a **Reconfigure** notice for this integration: enter the
 new key there. Watering continues on each zone's stored runtimes in the
-meantime; only the refresh of those runtimes from Rachio waits for the key.
+meantime; only the refresh of those runtimes from Rachio waits for the key. To
+replace the key before that happens, use **⋮ → Reconfigure** on the
+integration; the key must belong to the same Rachio account.
 
 Changing an entity's ID in Home Assistant (Settings → Entities) is safe: the
 integration follows renames of its own entities and of every entity you picked
@@ -109,10 +134,51 @@ ends. The exception is the hourly precipitation-forecast sensors, which are
 found by name prefix: if you rename those, update the prefixes under
 **Configure → Weather Station**.
 
+### Configuration reference
+
+Everything below is changed under **Configure**. Changes apply when you press
+**Done**: the integration reloads, which cancels a watering run that is waiting
+or in progress. Pressing **Done** with nothing changed does not reload.
+
+| Section | What it sets |
+| --- | --- |
+| Connect Your Rachio Account | The API key (checked with Rachio). |
+| Core Setup | Notification service, irrigation log calendar, Rachio controller, Rachio standby switch, forecast `weather.*` entity. |
+| Weather station | Temperature, humidity, wind, rain-last-hour and precipitation-type sensors; the precipitation-chance and -amount sensor-name prefixes. |
+| Add / Edit / Remove a zone | Per zone: Rachio zone switch, GeoDrops dominant, state and quality sensors, target moisture level, full-refill runtime and depth, spray flag, grouping and adjacent zones. |
+| Advanced | Active Watering Calibration on/off, and the overrides below. |
+
+**Advanced overrides.** Any of these can be set in the overrides YAML (defaults
+shown). Units are °F, mph and mm.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `cycle_minutes` | 12 | Longest single watering cycle before a soak. |
+| `soak_minutes` | 20 | Soak between cycles of the same zone. |
+| `end_offset_minutes` | 5 | Finish this many minutes before dawn/sunrise (negative: after). |
+| `window_base_cap_hours` | 6.0 | Longest watering window. |
+| `window_disease_cap_hours` | 3.0 | Longest window on a warm, humid, still night. |
+| `warm_temp_f` | 68.0 | Overnight mean temperature that counts as warm. |
+| `humid_rh_pct` | 90.0 | Overnight mean humidity that counts as humid. |
+| `stagnant_wind_mph` | 2.0 | Overnight mean wind that counts as still. |
+| `rain_last_hour_mm` | 0.2 | Rain gauge reading that confirms rain. |
+| `rain_sustain_seconds` | 150 | How long rain must persist before a running zone stops. |
+| `rain_skip_probability_pct` | 70.0 | Forecast chance of rain that can skip a zone… |
+| `rain_skip_refill_fraction` | 0.5 | …when the forecast amount is at least this fraction of its refill depth. |
+| `field_capacity_pct` | 87.0 | Default moisture to refill to. |
+| `max_schedule_retries` | 2 | Times a schedule Rachio drops mid-run is re-issued. |
+
+The Active Watering Calibration keys (`probe_*`, `settle_hours`,
+`convergence_*` and others) are listed with comments in
+[`brain/config.py`](custom_components/geodrops_rachio/brain/config.py).
+`drought_profiles:` overrides per drought level (`target_offset`,
+`trigger_margin`, `runtime_scale`, `rain_skip_horizon_hours`, `end_anchor`
+`dawn`/`sunrise`, `end_offset_minutes`), as in the example above.
+
 ## Controls and entities
 
-Setup creates one main **GeoDrops + Rachio Irrigation** device plus a device
-per zone, with these entities (all prefixed `geodrops_rachio_`):
+Setup creates one main **Irrigation Controls** device plus a device per
+zone, with these entities (all prefixed `geodrops_rachio_`):
 
 **Controls (main device)**
 
@@ -172,6 +238,23 @@ Home Assistant restarts is not recorded.
   each reading held. They keep their readings across a restart. The 06:00
   forecast calibration compares the two.
 
+## How it updates
+
+- **23:00** — the nightly run plans each zone from its current moisture and
+  the overnight forecast, then waits for the watering window, which ends at
+  dawn or sunrise (per drought level).
+- **During a run** — zone switches are polled every 30 seconds; the rain
+  sensors are watched throughout.
+- **Rachio runtimes and refill depths** — fetched from the Rachio cloud when a
+  plan needs them and kept for 6 hours; *Refresh Rachio runtimes* fetches now.
+- **Forecast overnight sensors** — hourly, from the forecast entity.
+- **Observed overnight sensors** — on every weather-station change, and every
+  5 minutes.
+- **06:00** — the forecast calibration compares last night's forecast with
+  what was observed. Calibration samples are checked on the hour and half hour.
+- **Zone sensors** (soil moisture, deficit, last watered, …) update as soon as
+  their source does.
+
 ## Active Watering Calibration (Beta)
 
 The **Active Watering Calibration** option in the Advanced step of the
@@ -193,6 +276,88 @@ scheduler's normal drought-level/soil-moisture-driven watering to work.
   automation. The scheduler ends that night's run and credits only the water
   actually delivered; it does not restart a schedule someone stopped. To stop
   from Home Assistant, press *Stop irrigation*.
+
+## Examples
+
+Tell your phone when watering starts (compare the `status` attribute, not the
+display state):
+
+```yaml
+automation:
+  - alias: Irrigation started
+    triggers:
+      - trigger: state
+        entity_id: sensor.geodrops_rachio_status
+        attribute: status
+        to: watering
+    actions:
+      - action: notify.mobile_app_phone
+        data:
+          message: Watering started
+```
+
+Skip watering while the lawn is being mowed tomorrow, then resume:
+
+```yaml
+action: switch.turn_on
+target:
+  entity_id: switch.geodrops_rachio_standby
+```
+
+Keep a newly seeded zone out of the plan and calibration:
+`switch.geodrops_rachio_<zone>_exclude` on.
+
+## Known limitations
+
+- **Rachio and GeoDrops only.** The scheduler needs Rachio zone switches and
+  GeoDrops moisture sensors; there is no generic mode.
+- **One instance** per Home Assistant.
+- **Units are not converted.** The scheduler compares weather readings with
+  thresholds in °F, mph and mm, so bind weather-station sensors that report in
+  those units. The forecast is read in Home Assistant's unit system, so on a
+  metric install the forecast-based decisions (disease window, forecast
+  calibration) see °C and km/h as °F and mph.
+- **Rachio app runs** are recorded from Rachio's webhooks: a missed webhook
+  can lose or stretch one, and a run in progress across a restart is not
+  recorded.
+- **Precipitation-forecast sensors** are found by name prefix, so renaming
+  them is not followed; update the prefixes under Configure → Weather Station.
+- **Needs the Rachio cloud** for the key check and runtime refresh; watering
+  continues on stored runtimes while it is unreachable.
+
+## Troubleshooting
+
+- **A zone was not watered.** Open `sensor.geodrops_rachio_plan` or
+  `sensor.geodrops_rachio_last_nightly` in Developer Tools → States: the
+  planned minutes per zone, and any zones skipped and why, are in the
+  attributes. Check *Standby*, the
+  zone's *Exclude* switch, and the drought level.
+- **"Entities used by … are missing"** in Settings → Repairs: an entity picked
+  in setup was deleted. Pick a replacement under Configure; the notice clears
+  on its own.
+- **Home Assistant asks for the Rachio API key**: Rachio rejected it. Enter a
+  current key (Rachio web app → Account Settings → Get API Key).
+- **Setup is retrying with "The advanced overrides are not valid"**: fix the
+  YAML under Configure → Advanced.
+- **Anything else:** download diagnostics (⋮ → Download diagnostics; the API
+  key is removed) and turn on debug logging:
+
+  ```yaml
+  logger:
+    logs:
+      custom_components.geodrops_rachio: debug
+  ```
+
+  then open an [issue](https://github.com/ajbaldwin/ha-geodrops-rachio-irrigation/issues)
+  with both.
+
+## Removing
+
+1. Go to **Settings → Devices & services → GeoDrops + Rachio Irrigation →
+   ⋮ → Delete**. This removes its devices and entities and **deletes the
+   calibration history**; Rachio's own schedules are not touched.
+2. In HACS, open *GeoDrops + Rachio Irrigation* → ⋮ → **Remove**, then
+   restart Home Assistant.
 
 ## Updates
 

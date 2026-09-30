@@ -35,7 +35,7 @@ rules:
     comment: No device conditions.
   docs-high-level-description: done
   docs-installation-instructions: done
-  docs-removal-instructions: todo
+  docs-removal-instructions: done
   docs-triggers:
     status: exempt
     comment: No device triggers.
@@ -61,8 +61,11 @@ rules:
     comment: No service actions.
   config-entry-unloading: done
   docs-configuration-parameters:
-    status: todo
-    comment: The tunables accepted by the advanced overrides are not documented.
+    status: done
+    comment: >-
+      README "Configuration reference": the Configure sections and the main
+      advanced-override keys; the calibration keys are documented in
+      brain/config.py.
   docs-installation-parameters: done
   entity-unavailable:
     status: done
@@ -98,13 +101,13 @@ rules:
   discovery-update-info:
     status: exempt
     comment: No discovery.
-  docs-data-update: todo
-  docs-examples: todo
-  docs-known-limitations: todo
-  docs-supported-devices: todo
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
   docs-supported-functions: done
-  docs-troubleshooting: todo
-  docs-use-cases: todo
+  docs-troubleshooting: done
+  docs-use-cases: done
   dynamic-devices:
     status: done
     comment: Zones added in Configure get their devices on the reload that follows.
@@ -129,8 +132,16 @@ rules:
   entity-translations: done
   exception-translations: done
   icon-translations: done
-  reconfiguration-flow: todo
-  repair-issues: todo
+  reconfiguration-flow:
+    status: done
+    comment: >-
+      Reconfigure replaces the Rachio API key (same account); everything else
+      set up in the wizard is changed under Configure.
+  repair-issues:
+    status: done
+    comment: >-
+      An issue lists entities picked in setup that no longer exist. Reauth
+      covers a rejected API key.
   stale-devices:
     status: done
     comment: Devices of removed zones are purged on setup.

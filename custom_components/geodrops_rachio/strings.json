@@ -5,7 +5,8 @@
       "single_instance_allowed": "GeoDrops + Rachio Irrigation is already configured.",
       "already_configured": "This Rachio account is already set up.",
       "reauth_successful": "The Rachio API key was updated.",
-      "wrong_account": "This API key belongs to a different Rachio account than the one this integration is set up with."
+      "wrong_account": "This API key belongs to a different Rachio account than the one this integration is set up with.",
+      "reconfigure_successful": "The Rachio API key was replaced."
     },
     "step": {
       "connect": {
@@ -127,6 +128,16 @@
       "reauth_confirm": {
         "title": "Update Your Rachio API Key",
         "description": "Rachio rejected the API key this integration has, or it has none yet. Watering continues on the zones' stored runtimes; enter a current key so they stay up to date.",
+        "data": {
+          "api_key": "Rachio API Key"
+        },
+        "data_description": {
+          "api_key": "Get it in the Rachio web app (app.rach.io): Account Settings → Get API Key."
+        }
+      },
+      "reconfigure": {
+        "title": "Replace Your Rachio API Key",
+        "description": "Enter a new API key for the same Rachio account, for example after regenerating it. Zones, sensors and other settings are changed under Configure.",
         "data": {
           "api_key": "Rachio API Key"
         },
@@ -392,6 +403,12 @@
   "exceptions": {
     "invalid_overrides": {
       "message": "The advanced overrides are not valid: {error}. Fix them under Configure → Advanced."
+    }
+  },
+  "issues": {
+    "missing_entities": {
+      "title": "Entities used by {title} are missing",
+      "description": "These entities, picked when {title} was set up, no longer exist: {entities}.\n\nThe scheduler reads a missing entity as off or as no reading, so a zone whose valve switch or moisture sensor is missing will not be watered.\n\nIf you renamed one, it is followed automatically; this means it was deleted or its integration was removed. Go to **Settings → Devices & services → GeoDrops + Rachio Irrigation → Configure** and pick a replacement, or restore the entity. This notice clears once nothing is missing."
     }
   }
 }

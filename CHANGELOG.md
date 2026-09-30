@@ -25,6 +25,13 @@ section per released version, newest first.
   *Calibration state*, *Refill depth* and the overnight weather sensors are
   diagnostic. Dashboards you built are not changed.
 - **Every entity has an icon**, and names and icons can now be translated.
+- **Home Assistant warns when an entity picked in setup is deleted** (Settings
+  → Repairs), listing which ones. The scheduler reads a missing entity as off,
+  so a zone whose valve switch or moisture sensor was deleted would otherwise
+  silently stop being watered.
+- **Replace the Rachio API key at any time** with ⋮ → Reconfigure.
+- **The README covers** configuration options, how and when data updates,
+  examples, known limitations, troubleshooting and removal.
 
 ## v1.3.0-beta.1 — Renaming entities is safe; Rachio API key in the integration's settings
 
