@@ -26,7 +26,7 @@ class OrchestrationMixin:
                 {"window_end": window_end_iso, "stamp": stamp, "trigger": trigger},
             )
         except Exception as err:
-            _LOGGER.warning(f"irrigation: could not persist waiting marker ({err})")
+            _LOGGER.warning("could not persist waiting marker (%s)", err)
 
     async def _clear_waiting_marker(self):
         """Remove the waiting marker. Idempotent (see _delete_file); called both when
@@ -34,14 +34,14 @@ class OrchestrationMixin:
         try:
             await self.store.delete(WAITING_MARKER)
         except Exception as err:
-            _LOGGER.warning(f"irrigation: could not clear waiting marker ({err})")
+            _LOGGER.warning("could not clear waiting marker (%s)", err)
 
     def _read_waiting_marker(self):
         """The parsed waiting marker, or None when absent/unreadable."""
         try:
             return self.store.read(WAITING_MARKER)
         except Exception as err:
-            _LOGGER.warning(f"irrigation: could not read waiting marker ({err})")
+            _LOGGER.warning("could not read waiting marker (%s)", err)
             return None
 
     async def _publish_last_run(self, stamp, trigger, ctx=None, result=None, outcome=None,
@@ -196,8 +196,8 @@ class OrchestrationMixin:
                         )
                     except Exception as err:
                         _LOGGER.warning(
-                            f"irrigation: dawn unavailable for standby note ({err}); "
-                            "recording at the current time"
+                            "dawn unavailable for standby note (%s); recording at the "
+                            "current time", err
                         )
                 standby_result = report_format.RunResult(
                     [], {}, "", "", {}, standby=True
@@ -223,7 +223,7 @@ class OrchestrationMixin:
                 )
                 if not wait:
                     # run_now expresses intent to water; the forecast informs, not vetoes.
-                    _LOGGER.warning(f"irrigation: {summary} — watering anyway (manual run)")
+                    _LOGGER.warning("%s — watering anyway (manual run)", summary)
                 else:
                     for z in priority:
                         uncompleted[z] = "rain-forecast"
@@ -554,7 +554,7 @@ class OrchestrationMixin:
                 try:
                     await self.store.write(RUN_PROGRESS, None)
                 except Exception as err:
-                    _LOGGER.warning(f"irrigation: could not clear run progress ({err})")
+                    _LOGGER.warning("could not clear run progress (%s)", err)
             self._watering_active = False
             self._run_in_progress = False
 
@@ -821,4 +821,4 @@ class OrchestrationMixin:
                     "end_date_time": end_dt.isoformat()},
             )
         except Exception as err:
-            _LOGGER.warning(f"irrigation: calendar entry failed ({err}); recap was sent")
+            _LOGGER.warning("calendar entry failed (%s); recap was sent", err)

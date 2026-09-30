@@ -205,7 +205,7 @@ class ZoneCoordinatorSensor(SensorEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True
 
-    def __init__(self, entry, key, coordinator, suffix, ckey,
+    def __init__(self, entry, key, hub_device_id, coordinator, suffix, ckey,
                  device_class, unit, precision=None) -> None:
         s = slug(key)
         self._key, self._coord, self._ckey = key, coordinator, ckey
@@ -216,7 +216,7 @@ class ZoneCoordinatorSensor(SensorEntity):
         self._attr_native_unit_of_measurement = unit
         if precision is not None:
             self._attr_suggested_display_precision = precision
-        self._attr_device_info = zone_device_info(entry, key)
+        self._attr_device_info = zone_device_info(entry, key, hub_device_id)
 
     async def async_added_to_hass(self) -> None:
         self._coord.add_listener(self._update)
@@ -253,12 +253,12 @@ class ZoneMoistureSensor(SensorEntity):
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 1
 
-    def __init__(self, entry, key, source) -> None:
+    def __init__(self, entry, key, hub_device_id, source) -> None:
         s = slug(key)
         self._source = source
         self._attr_unique_id = f"{entry.entry_id}_zone_{s}_soil_moisture"
         self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{s}_soil_moisture")
-        self._attr_device_info = zone_device_info(entry, key)
+        self._attr_device_info = zone_device_info(entry, key, hub_device_id)
 
     async def async_added_to_hass(self) -> None:
         @callback
@@ -293,12 +293,12 @@ class ZoneDeficitSensor(SensorEntity):
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 1
 
-    def __init__(self, entry, key, coordinator, source) -> None:
+    def __init__(self, entry, key, hub_device_id, coordinator, source) -> None:
         s = slug(key)
         self._key, self._coord, self._source = key, coordinator, source
         self._attr_unique_id = f"{entry.entry_id}_zone_{s}_deficit"
         self.entity_id = ENTITY_ID_FORMAT.format(f"geodrops_rachio_{s}_deficit")
-        self._attr_device_info = zone_device_info(entry, key)
+        self._attr_device_info = zone_device_info(entry, key, hub_device_id)
 
     async def async_added_to_hass(self) -> None:
         self._coord.add_listener(self._update)
@@ -415,12 +415,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
             entry, key, field, forecast_entity, unit))
 
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    hub_id = hass.data[DOMAIN][entry.entry_id]["hub_device_id"]
     for z in entry.data.get("zones", []):
-        entities.append(ZoneMoistureSensor(entry, z["key"], z.get("dominant_sensor")))
+        entities.append(ZoneMoistureSensor(
+            entry, z["key"], hub_id, z.get("dominant_sensor")))
         entities.append(ZoneDeficitSensor(
-            entry, z["key"], coordinator, z.get("dominant_sensor")))
+            entry, z["key"], hub_id, coordinator, z.get("dominant_sensor")))
         for suffix, ckey, dc, unit, precision in _ZONE_FIELDS:
             entities.append(ZoneCoordinatorSensor(
-                entry, z["key"], coordinator, suffix, ckey, dc, unit, precision))
+                entry, z["key"], hub_id, coordinator, suffix, ckey, dc, unit,
+                precision))
 
     async_add_entities(entities)

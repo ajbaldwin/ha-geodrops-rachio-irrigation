@@ -29,7 +29,7 @@ RECORD_HISTORY_MAX = 500
 class EngineBase:
     def __init__(self, port: HAPort, store: EngineStore,
                  load_raw_config: Callable[[], dict],
-                 fetch_zone_data: Callable[[str], Awaitable[tuple[dict, dict, dict]]]) -> None:
+                 fetch_zone_data: Callable[[], Awaitable[tuple[dict, dict, dict]]]) -> None:
         self.port = port
         self.store = store
         self._load_raw_config = load_raw_config
@@ -113,7 +113,7 @@ class EngineBase:
             try:
                 cb()
             except Exception:
-                _LOGGER.exception("irrigation: record listener %r failed", cb)
+                _LOGGER.exception("record listener %r failed", cb)
 
     def _publish(self, name: str, value, attributes: dict) -> None:
         self.records[name] = {"value": value, "attributes": attributes}
@@ -131,7 +131,7 @@ class EngineBase:
         try:
             await self.store.write(record_key(name), {"value": value, "attributes": attributes})
         except Exception as err:
-            _LOGGER.warning(f"irrigation: could not persist {name} ({err})")
+            _LOGGER.warning("could not persist %s (%s)", name, err)
 
     def _restore_records(self):
         """Re-publish persisted diagnostic states after a restart."""
@@ -163,7 +163,7 @@ class EngineBase:
             await self.port.call("logbook", "log", {
                 "name": LOGBOOK_NAME, "message": message, "entity_id": target})
         except ServiceNotFound:
-            _LOGGER.debug(f"irrigation: logbook not loaded; not recorded: {message}")
+            _LOGGER.debug("logbook not loaded; not recorded: %s", message)
 
     async def _notify(self, message, title):
         """Send a push, tolerant of a missing/renamed notify service.
@@ -184,7 +184,7 @@ class EngineBase:
             )
         except Exception as err:
             _LOGGER.warning(
-                f"irrigation: notification failed ({err}); run records were still written"
+                "notification failed (%s); run records were still written", err
             )
 
     def _set_status(self, status, detail=None):

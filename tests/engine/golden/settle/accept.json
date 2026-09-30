@@ -3,7 +3,7 @@
  "logs": [
   [
    "info",
-   "irrigation: settle-and-learn updated 1 zone(s), dropped 0 inconclusive"
+   "settle-and-learn updated 1 zone(s), dropped 0 inconclusive"
   ]
  ],
  "records": {},

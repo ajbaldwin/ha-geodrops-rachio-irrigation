@@ -19,15 +19,19 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import CONF_API_KEY
 from homeassistant.core import callback
 from homeassistant.helpers import aiohttp_client, selector
 
 from .const import DOMAIN
 from .config_writer import build_config
+from .entity_renames import replace_entity_id
 from .rachio_client import (
+    RachioAuthError,
+    RachioConnectionError,
+    async_fetch_account,
     async_fetch_device_zones,
-    async_fetch_devices,
-    resolve_secret,
 )
 from .util import slug
 
@@ -72,7 +76,6 @@ SUN_DEFAULTS: dict[str, str] = {
 
 # ---- Defaults offered for user-collected fields ----
 DEFAULT_STANDBY_SWITCH = "switch.sprinkler_standby"
-DEFAULT_RACHIO_API_KEY_SECRET = "rachio_api_key"
 DEFAULT_WEATHER: dict[str, str] = {
     "temperature": "sensor.tempest_sensor_temperature",
     "humidity": "sensor.tempest_sensor_humidity",
@@ -82,6 +85,11 @@ DEFAULT_WEATHER: dict[str, str] = {
 }
 DEFAULT_PRECIPITATION_CHANCE_PREFIX = "sensor.precipitation_chance_"
 DEFAULT_PRECIPITATION_AMOUNT_PREFIX = "sensor.precipitation_amount_"
+
+
+def _api_key_schema() -> vol.Schema:
+    return vol.Schema({vol.Required(CONF_API_KEY): selector.TextSelector(
+        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD))})
 
 
 def _prereqs_met(hass) -> bool:
@@ -121,7 +129,6 @@ def _assemble_bindings(core: dict[str, Any], weather: dict[str, Any]) -> dict[st
     return {
         "notify_service": core["notify_service"],
         "calendar_entity": core["calendar_entity"],
-        "rachio_api_key_secret": core["rachio_api_key_secret"],
         "rachio_device_name": core["rachio_device_name"],
         "standby_switch": core["standby_switch"],
         "forecast_entity": core["forecast_entity"],
@@ -170,6 +177,12 @@ class _BindingsWizardSteps:
         __init__._reload_on_options), so this saves each edit durably WITHOUT
         restarting the scheduler mid-flow. The single reload happens on "Done".
         """
+        # An entity renamed while the dialog is open was rewritten in the
+        # entry, not in this flow's copy; carry the rename over rather than
+        # write the old id back (see entity_renames).
+        store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        for old, new in store.get("renamed", {}).items():
+            self._data = replace_entity_id(self._data, old, new)
         self.hass.config_entries.async_update_entry(
             self.config_entry, data=self._data)
 
@@ -184,7 +197,6 @@ class _BindingsWizardSteps:
             "notify_service": b.get("notify_service"),
             "calendar_entity": b.get("calendar_entity"),
             "rachio_device_name": b.get("rachio_device_name"),
-            "rachio_api_key_secret": b.get("rachio_api_key_secret", self._secret_name),
             "standby_switch": b.get("standby_switch"),
             "forecast_entity": b.get("forecast_entity"),
         }
@@ -210,56 +222,57 @@ class _BindingsWizardSteps:
                 "precipitation_amount_prefix", DEFAULT_PRECIPITATION_AMOUNT_PREFIX),
         }
 
-    async def _connect_rachio(self, secret_name: str) -> None:
-        """Resolve the API key and fetch the account's controllers.
+    async def _connect_rachio(self, key: str) -> str | None:
+        """Check API key `key` with Rachio and fetch the account's controllers.
 
-        Best-effort: any failure (no key, unreachable API) leaves `_devices`
-        empty and `_api_key` None, so the device-name field falls back to free
-        text and, later, zones fall back to manual entry.
+        Returns the form error (`invalid_auth`, `cannot_connect`) or None. On
+        success `_api_key`, `_account_id` and `_devices` are set, so the
+        device-name field can be a live dropdown and zones can pre-fill.
         """
         self._devices = []
         self._api_key = None
-        if not secret_name:
-            return
-        key = await resolve_secret(self.hass, secret_name)
-        if not key:
-            return
-        self._api_key = key
+        self._account_id = None
         session = aiohttp_client.async_get_clientsession(self.hass)
         try:
-            self._devices = await async_fetch_devices(session, key)
-        except Exception:  # noqa: BLE001 - degrade to a free-text device name
-            _LOGGER.debug(
-                "Rachio device fetch failed; using a free-text device name",
-                exc_info=True,
-            )
-            self._devices = []
+            self._account_id, self._devices = await async_fetch_account(session, key)
+        except RachioAuthError:
+            return "invalid_auth"
+        except RachioConnectionError as err:
+            _LOGGER.debug("Rachio account check failed: %s", err)
+            return "cannot_connect"
+        self._api_key = key
+        return None
 
     async def async_step_connect(self, user_input=None):
-        """Collect the Rachio API key (secret name) and poll the account.
+        """Collect and check the Rachio API key.
 
         Runs first so the device-name field can be a live dropdown of the user's
-        controllers and the zone step can pre-fill from Rachio. Everything
-        downstream degrades gracefully when this poll finds nothing.
+        controllers and the zone step can pre-fill from Rachio.
         """
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._secret_name = user_input["rachio_api_key_secret"]
-            await self._connect_rachio(self._secret_name)
-            if self._is_options:
-                self._data["bindings"]["rachio_api_key_secret"] = self._secret_name
-                self._persist()
-                return await self.async_step_menu()
-            return await self.async_step_bindings()
-
-        existing = self._existing_bindings()
-        schema = vol.Schema({
-            vol.Required(
-                "rachio_api_key_secret",
-                default=existing.get(
-                    "rachio_api_key_secret", DEFAULT_RACHIO_API_KEY_SECRET),
-            ): str,
-        })
-        return self.async_show_form(step_id="connect", data_schema=schema)
+            key = user_input[CONF_API_KEY].strip()
+            error = await self._connect_rachio(key)
+            if error:
+                errors["base"] = error
+            elif self._is_options:
+                entry = self.config_entry
+                if entry.unique_id not in (None, self._account_id):
+                    errors["base"] = "wrong_account"
+                else:
+                    if entry.unique_id is None:
+                        self.hass.config_entries.async_update_entry(
+                            entry, unique_id=self._account_id)
+                    self._data[CONF_API_KEY] = key
+                    self._persist()
+                    return await self.async_step_menu()
+            else:
+                await self.async_set_unique_id(self._account_id)
+                self._abort_if_unique_id_configured()
+                self._data[CONF_API_KEY] = key
+                return await self.async_step_bindings()
+        return self.async_show_form(
+            step_id="connect", data_schema=_api_key_schema(), errors=errors)
 
     def _device_name_field(self, default):
         """(key, selector) for device name: a dropdown of fetched controllers,
@@ -360,7 +373,6 @@ class _BindingsWizardSteps:
                     "notify_service": user_input["notify_service"],
                     "calendar_entity": user_input["calendar_entity"],
                     "rachio_device_name": user_input["rachio_device_name"],
-                    "rachio_api_key_secret": self._secret_name,
                     "standby_switch": user_input["standby_switch"],
                     "forecast_entity": user_input["forecast_entity"],
                 }
@@ -765,7 +777,8 @@ class _BindingsWizardSteps:
 
 
 class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, domain=DOMAIN):
-    VERSION = 1
+    # 2: the Rachio API key is stored in the entry (was a secrets.yaml name).
+    VERSION = 2
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {"zones": []}
@@ -775,7 +788,7 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
         self._picked_zone: dict | None = None
         self._devices: list[dict] = []
         self._api_key: str | None = None
-        self._secret_name: str = DEFAULT_RACHIO_API_KEY_SECRET
+        self._account_id: str | None = None
         self._editing_key: str | None = None
         self._selected_key: str | None = None
         self._removing: bool = False
@@ -790,6 +803,32 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
     async def _async_finish(self):
         return self.async_create_entry(
             title="GeoDrops + Rachio Irrigation", data=self._data)
+
+    async def async_step_reauth(self, entry_data):
+        """Rachio rejected the stored API key (or there is none yet)."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            key = user_input[CONF_API_KEY].strip()
+            error = await self._connect_rachio(key)
+            if error:
+                errors["base"] = error
+            else:
+                entry = self._get_reauth_entry()
+                if entry.unique_id not in (None, self._account_id):
+                    return self.async_abort(reason="wrong_account")
+                # The running scheduler reads the key from the entry on each
+                # fetch, so a key change needs no reload (see __init__._snapshot).
+                self.hass.config_entries.async_update_entry(
+                    entry, unique_id=self._account_id,
+                    data={**entry.data, CONF_API_KEY: key})
+                if entry.state is not ConfigEntryState.LOADED:
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+        return self.async_show_form(
+            step_id="reauth_confirm", data_schema=_api_key_schema(), errors=errors)
 
     @staticmethod
     @callback
@@ -812,7 +851,7 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         self._picked_zone: dict | None = None
         self._devices: list[dict] = []
         self._api_key: str | None = None
-        self._secret_name: str = DEFAULT_RACHIO_API_KEY_SECRET
+        self._account_id: str | None = None
         self._editing_key: str | None = None
         self._selected_key: str | None = None
         self._removing: bool = False
@@ -827,17 +866,18 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         self._data["self_calibration_enabled"] = self._existing.get(
             "self_calibration_enabled", False)
         self._data["advanced_overrides"] = self._existing.get("advanced_overrides", "")
+        if CONF_API_KEY in self._existing:
+            self._data[CONF_API_KEY] = self._existing[CONF_API_KEY]
         # Defer scheduler restarts until "Done" (see __init__._reload_on_options).
         store = self.hass.data.setdefault(DOMAIN, {}).setdefault(
             self.config_entry.entry_id, {})
         store["suppress_reload"] = True
         self._guarding = True
-        # Auto-connect with the stored secret so the Core device dropdown and
-        # zone pickers are live without visiting Connect. Best-effort, degrades
-        # exactly as the connect step does.
-        self._secret_name = self._existing_bindings().get(
-            "rachio_api_key_secret", DEFAULT_RACHIO_API_KEY_SECRET)
-        await self._connect_rachio(self._secret_name)
+        # Auto-connect with the stored key so the Core device dropdown and zone
+        # pickers are live without visiting Connect. Best-effort: on failure
+        # they fall back to free text and manual entry.
+        if self._data.get(CONF_API_KEY):
+            await self._connect_rachio(self._data[CONF_API_KEY])
         return await self.async_step_menu()
 
     async def _async_finish(self):

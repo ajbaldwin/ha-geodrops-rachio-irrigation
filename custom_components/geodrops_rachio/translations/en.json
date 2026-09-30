@@ -2,17 +2,20 @@
   "config": {
     "abort": {
       "missing_prerequisites": "Install and set up the Rachio integration first, then add this integration.",
-      "single_instance_allowed": "GeoDrops + Rachio Irrigation is already configured."
+      "single_instance_allowed": "GeoDrops + Rachio Irrigation is already configured.",
+      "already_configured": "This Rachio account is already set up.",
+      "reauth_successful": "The Rachio API key was updated.",
+      "wrong_account": "This API key belongs to a different Rachio account than the one this integration is set up with."
     },
     "step": {
       "connect": {
         "title": "Connect Your Rachio Account",
-        "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you.\n\nHome Assistant keeps API keys in **`config/secrets.yaml`**. Below, enter the **name** of the entry in that file that holds your Rachio API key — not the key itself. If you haven't added it yet, add a line to `secrets.yaml` first, then come back.\n\nIf the name can't be read, you can still complete setup by entering everything manually on the next screens.",
+        "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you and keep zone runtimes current.\n\nEnter your Rachio API key. It is checked with Rachio before you continue.",
         "data": {
-          "rachio_api_key_secret": "Rachio API Key — Secret Name"
+          "api_key": "Rachio API Key"
         },
         "data_description": {
-          "rachio_api_key_secret": "The key NAME in secrets.yaml (default `rachio_api_key`), not the key value.\n\nExample `secrets.yaml` line:\n`rachio_api_key: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`\n\nGet your API key from app.rach.io → Account Settings → Get API Key."
+          "api_key": "Get it in the Rachio web app (app.rach.io): Account Settings → Get API Key."
         }
       },
       "bindings": {
@@ -120,23 +123,36 @@
           "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
           "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
         }
+      },
+      "reauth_confirm": {
+        "title": "Update Your Rachio API Key",
+        "description": "Rachio rejected the API key this integration has, or it has none yet. Watering continues on the zones' stored runtimes; enter a current key so they stay up to date.",
+        "data": {
+          "api_key": "Rachio API Key"
+        },
+        "data_description": {
+          "api_key": "Get it in the Rachio web app (app.rach.io): Account Settings → Get API Key."
+        }
       }
     },
     "error": {
       "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity.",
-      "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name."
+      "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name.",
+      "invalid_auth": "Rachio rejected this API key. Check it and try again.",
+      "cannot_connect": "Could not reach Rachio. Check your internet connection and try again.",
+      "wrong_account": "This API key belongs to a different Rachio account than the one this integration is set up with."
     }
   },
   "options": {
     "step": {
       "connect": {
         "title": "Connect Your Rachio Account",
-        "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you.\n\nHome Assistant keeps API keys in **`config/secrets.yaml`**. Below, enter the **name** of the entry in that file that holds your Rachio API key — not the key itself. If you haven't added it yet, add a line to `secrets.yaml` first, then come back.\n\nIf the name can't be read, you can still complete setup by entering everything manually on the next screens.",
+        "description": "This integration talks to the Rachio cloud API to read your controllers and zones, so it can pre-fill most of setup for you and keep zone runtimes current.\n\nEnter your Rachio API key. It is checked with Rachio before you continue.",
         "data": {
-          "rachio_api_key_secret": "Rachio API Key — Secret Name"
+          "api_key": "Rachio API Key"
         },
         "data_description": {
-          "rachio_api_key_secret": "The key NAME in secrets.yaml (default `rachio_api_key`), not the key value.\n\nExample `secrets.yaml` line:\n`rachio_api_key: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`\n\nGet your API key from app.rach.io → Account Settings → Get API Key."
+          "api_key": "Get it in the Rachio web app (app.rach.io): Account Settings → Get API Key."
         }
       },
       "bindings": {
@@ -274,7 +290,10 @@
     "error": {
       "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity.",
       "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name.",
-      "invalid_advanced_overrides": "Advanced overrides must be a valid YAML mapping of tunables. Fix the YAML and try again."
+      "invalid_advanced_overrides": "Advanced overrides must be a valid YAML mapping of tunables. Fix the YAML and try again.",
+      "invalid_auth": "Rachio rejected this API key. Check it and try again.",
+      "cannot_connect": "Could not reach Rachio. Check your internet connection and try again.",
+      "wrong_account": "This API key belongs to a different Rachio account than the one this integration is set up with."
     }
   }
 }

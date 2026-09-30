@@ -19,13 +19,7 @@ RUNTIME_CACHE_TTL_S = 6 * 3600
 class IOMixin:
     async def _fetch_zone_data(self):
         """(runtimes_minutes, refill_depths_mm, refill_spans_pts), one pass."""
-        # _current_bindings may be unset only if this is called before any config
-        # load at all; fall back to the documented default rather than crash.
-        key_name = (
-            self._current_bindings.rachio_api_key_secret if self._current_bindings
-            else "rachio_api_key"
-        )
-        return await self._fetch_zone_data_fn(key_name)
+        return await self._fetch_zone_data_fn()
 
     # ─── Rachio zone I/O (start/stop + poll-verify) ──────────────────────────
 
@@ -129,7 +123,7 @@ class IOMixin:
             await self.port.call("rachio", "stop_watering",
                                  {"devices": self._current_bindings.rachio_device_name})
         except Exception as err:
-            _LOGGER.warning(f"irrigation: stop_device (rachio.stop_watering) failed: {err}")
+            _LOGGER.warning("stop_device (rachio.stop_watering) failed: %s", err)
 
     async def set_run_active(self, on):
         """Persisted marker: a collapsed run is in flight (survives a restart)."""
@@ -143,7 +137,7 @@ class IOMixin:
             try:
                 await self.stop_zone(zs)
             except Exception as err:
-                _LOGGER.warning(f"irrigation: stop_all failed for {zs}: {err}")
+                _LOGGER.warning("stop_all failed for %s: %s", zs, err)
 
     # ─── Rachio Public API: per-zone full-refill runtimes ────────────────────
 
@@ -160,7 +154,7 @@ class IOMixin:
             runtimes, depths, spans = await self._fetch_zone_data()
         except Exception as err:
             _LOGGER.warning(
-                f"irrigation: Rachio fetch failed ({err}); using static values"
+                "Rachio fetch failed (%s); using static values", err
             )
             return False
         if runtimes:
@@ -252,4 +246,4 @@ class IOMixin:
                           "trigger": trigger}
             await self.store.write(ZONE_WATERED, doc)
         except Exception as err:
-            _LOGGER.warning(f"irrigation: could not record zone watering ({err})")
+            _LOGGER.warning("could not record zone watering (%s)", err)

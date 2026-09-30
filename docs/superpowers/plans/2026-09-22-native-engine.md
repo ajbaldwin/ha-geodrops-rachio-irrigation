@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Repo: `C:\Users\Adam\Projects\Projects\ghr-native-engine` (worktree of `ajbaldwin/ha-geodrops-rachio-irrigation`), branch `feature/native-engine`. Commit per task. Do not push until Task 13.
+- Repo: a local worktree of `ajbaldwin/ha-geodrops-rachio-irrigation`, branch `feature/native-engine`. Commit per task. Do not push until Task 13.
 - Integration root below is abbreviated `CC` = `custom_components/geodrops_rachio`.
 - Min HA stays **2026.3.0**. Target release **v1.0.0**.
 - Behaviour is ported **unchanged**. The only behaviour change allowed is the unload safety stop (Task 11). If a differential test fails, fix the port — never edit the legacy fixture or loosen the assertion.

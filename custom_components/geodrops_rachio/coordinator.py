@@ -123,7 +123,7 @@ class ZoneStateCoordinator:
             try:
                 cb()
             except Exception:
-                _LOGGER.exception("geodrops_rachio: sensor update %r failed", cb)
+                _LOGGER.exception("sensor update %r failed", cb)
 
     def _attrs(self, name: str) -> dict | None:
         rec = self._scheduler.records.get(name)

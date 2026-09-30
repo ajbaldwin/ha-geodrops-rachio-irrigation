@@ -139,7 +139,8 @@ class PlanningMixin:
         def num(entity, default=0.0):
             raw = self.port.state(entity)
             if raw is None:
-                _LOGGER.warning(f"irrigation: weather entity {entity!r} not found; using {default}")
+                _LOGGER.warning("weather entity %r not found; using %s",
+                                entity, default)
                 return default
             try:
                 return float(raw)
@@ -149,7 +150,8 @@ class PlanningMixin:
         def text(entity, default=""):
             raw = self.port.state(entity)
             if raw is None:
-                _LOGGER.warning(f"irrigation: weather entity {entity!r} not found; using {default!r}")
+                _LOGGER.warning("weather entity %r not found; using %r",
+                                entity, default)
                 return default
             return raw
 
@@ -175,12 +177,12 @@ class PlanningMixin:
         """
         raw = self.port.state(entity)
         if raw is None:
-            _LOGGER.warning(f"irrigation: forecast entity {entity!r} not found")
+            _LOGGER.warning("forecast entity %r not found", entity)
             return None
         try:
             return float(raw)
         except (TypeError, ValueError):
-            _LOGGER.warning(f"irrigation: forecast entity {entity!r} unusable ({raw!r})")
+            _LOGGER.warning("forecast entity %r unusable (%r)", entity, raw)
             return None
 
     def _read_forecast_weather(self):
@@ -280,7 +282,7 @@ class PlanningMixin:
         raw = self.port.state(entity)
         if raw is None:
             _LOGGER.warning(
-                f"irrigation: end-anchor entity {entity!r} not found; using dawn"
+                "end-anchor entity %r not found; using dawn", entity
             )
             return self._dawn_time()
         return dt.datetime.fromisoformat(raw)
@@ -300,8 +302,8 @@ class PlanningMixin:
         profile = cfg.drought_profiles.get(level)
         if profile is None:
             _LOGGER.warning(
-                f"irrigation: drought level {level!r} missing or unknown; "
-                "defaulting to Level 3 - Critical"
+                "drought level %r missing or unknown; defaulting to Level 3 - Critical",
+                level
             )
             profile = cfg.drought_profiles["Level 3 - Critical"]
             level = "Level 3 - Critical"
@@ -505,8 +507,8 @@ class PlanningMixin:
         if forecast_wx is None:
             cap_source = "instant"
             _LOGGER.warning(
-                "irrigation: overnight forecast unavailable; sizing the window from "
-                "current conditions"
+                "overnight forecast unavailable; sizing the window from current "
+                "conditions"
             )
             cap = weather.window_cap_minutes(wx, tun)
         else:

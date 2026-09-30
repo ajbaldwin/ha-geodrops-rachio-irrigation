@@ -1,6 +1,11 @@
 """Rachio Public API client for the setup wizard and the scheduler's live
 runtime pull (`async_fetch_zone_data`).
 
+Every failure surfaces as RachioAuthError (the key was rejected) or
+RachioConnectionError (anything else). Their messages name only the HTTP
+status or error type, never the request URL, which carries account and device
+ids.
+
 At wizard time we can auto-populate each zone's full-refill runtime and refill
 depth (and capture the zone's Rachio UUID, which enables the scheduler's live
 runtime pull) instead of asking the user to type them. This is purely additive:
@@ -9,15 +14,32 @@ is unreachable.
 
 `parse_zones` and `resolve_secret_text` are pure (unit-tested here). The async
 fetch and secret read touch I/O and are covered via the config-flow tests.
+`resolve_secret` only serves the migration of entries from before the key was
+stored in the config entry.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
+from urllib.parse import quote
 
+import aiohttp
 import yaml
 
 RACHIO_BASE = "https://api.rach.io/1/public/"
 _HTTP_TIMEOUT_S = 15
+
+
+class RachioError(Exception):
+    """The Rachio API call failed."""
+
+
+class RachioAuthError(RachioError):
+    """Rachio rejected the API key."""
+
+
+class RachioConnectionError(RachioError):
+    """Rachio could not be reached or answered with an error."""
 
 
 def parse_devices(devices_json: list) -> list[dict]:
@@ -108,49 +130,62 @@ async def resolve_secret(hass, name: str) -> str | None:
     return resolve_secret_text(text, name)
 
 
-async def _get_json(session, url, key):
+async def _get_json(session, path, key):
     headers = {"Authorization": "Bearer " + key}
-    async with session.get(url, headers=headers, timeout=_HTTP_TIMEOUT_S) as resp:
-        resp.raise_for_status()
-        return await resp.json()
+    try:
+        async with session.get(RACHIO_BASE + path, headers=headers,
+                               timeout=_HTTP_TIMEOUT_S) as resp:
+            if resp.status in (401, 403):
+                raise RachioAuthError(f"Rachio rejected the API key (HTTP {resp.status})")
+            if resp.status >= 400:
+                raise RachioConnectionError(f"Rachio API returned HTTP {resp.status}")
+            return await resp.json()
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+        raise RachioConnectionError(
+            f"Rachio API unreachable ({type(err).__name__})") from err
 
 
-async def async_fetch_devices(session, key: str) -> list[dict]:
-    """Fetch the account's Rachio controllers as ``[{id, name}]``.
+async def _person(session, key: str) -> dict:
+    person = await _get_json(session, "person/info", key)
+    if not isinstance(person, dict) or not isinstance(person.get("id"), str):
+        raise RachioConnectionError("Rachio API returned no account id")
+    return person
 
-    Two hops (person/info -> person/{id}). Raises on transport/HTTP/JSON errors;
-    the caller treats any failure as "no live data" and falls back to a
-    free-text device-name field.
+
+async def async_fetch_account(session, key: str) -> tuple[str, list[dict]]:
+    """(account id, controllers as ``[{id, name}]``) for API key `key`.
+
+    Two hops (person/info -> person/{id}). Raises RachioAuthError when the key
+    is rejected, RachioConnectionError on any other failure.
     """
-    person = await _get_json(session, RACHIO_BASE + "person/info", key)
-    payload = await _get_json(session, RACHIO_BASE + "person/" + person["id"], key)
-    return parse_devices(payload.get("devices", []))
+    person = await _person(session, key)
+    payload = await _get_json(session, "person/" + quote(person["id"]), key)
+    return person["id"], parse_devices(payload.get("devices", []))
 
 
 async def async_fetch_device_zones(session, key: str, device_id: str) -> list[dict]:
     """Fetch one device's zones, parsed for the wizard (device/{id}).
 
-    Raises on transport/HTTP/JSON errors; the caller falls back to the manual
-    zone form.
+    Raises RachioError; the caller falls back to the manual zone form.
     """
-    payload = await _get_json(session, RACHIO_BASE + "device/" + device_id, key)
+    payload = await _get_json(session, "device/" + quote(device_id), key)
     return parse_zones(payload.get("zones", []))
 
 
 async def async_fetch_zone_data(session, key: str) -> tuple[dict, dict, dict]:
     """(runtimes_minutes, refill_depths_mm, refill_spans_pts), each keyed by
     Rachio zone id, across every controller on the account — one pass over the
-    device payloads (ported from the pyscript app's _fetch_zone_data). Raises on
-    transport/HTTP/JSON errors; the engine then falls back to static values."""
+    device payloads (ported from the pyscript app's _fetch_zone_data). Raises
+    RachioError; the engine then falls back to static values."""
     from .brain import rachio_runtime
 
-    person = await _get_json(session, RACHIO_BASE + "person/info", key)
-    payload = await _get_json(session, RACHIO_BASE + "person/" + person["id"], key)
+    person = await _person(session, key)
+    payload = await _get_json(session, "person/" + quote(person["id"]), key)
     runtimes: dict = {}
     depths: dict = {}
     spans: dict = {}
-    for device in payload["devices"]:
-        dev = await _get_json(session, RACHIO_BASE + "device/" + device["id"], key)
+    for device in payload.get("devices", []):
+        dev = await _get_json(session, "device/" + quote(device["id"]), key)
         zones = dev.get("zones", [])
         runtimes.update(rachio_runtime.parse_runtimes(zones))
         depths.update(rachio_runtime.parse_refill_depths(zones))
