@@ -200,19 +200,14 @@ def test_bound_entity_ids_skip_services_prefixes_and_text():
 async def test_rename_while_options_open_survives_done(hass, enable_pyscript_and_rachio):
     """The options flow edits its own copy of the entry; pressing Done must not
     write the old id back over a rename made while the dialog was open."""
-    async def _no_secret(h, name):
-        return None
-
     _external(hass, "switch.rachio_standby")
     entry, _ = await _setup(hass)
-    with patch("custom_components.geodrops_rachio.config_flow.resolve_secret",
-               _no_secret):
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        _rename(hass, "switch.rachio_standby", "switch.rachio_pause")
-        await hass.async_block_till_done()
-        await hass.config_entries.options.async_configure(
-            result["flow_id"], {"next_step_id": "finish"})
-        await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    _rename(hass, "switch.rachio_standby", "switch.rachio_pause")
+    await hass.async_block_till_done()
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "finish"})
+    await hass.async_block_till_done()
     assert entry.data["bindings"]["standby_switch"] == "switch.rachio_pause"
     scheduler = _running(hass, entry)
     cfg = scheduler._load_cfg()

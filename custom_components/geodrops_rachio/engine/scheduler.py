@@ -385,9 +385,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
                 "the shared config globals"
             )
             return
-        # Standalone service, outside _plan_and_run — load config here so
-        # get_runtimes()'s Rachio fetch has _current_bindings.rachio_api_key_secret
-        # to look up, same as every other entry point that can reach _fetch_zone_data.
+        # Standalone service, outside _plan_and_run — load config here, same as
+        # every other entry point that reads _current_cfg / _current_bindings.
         cfg = self._load_cfg()
         self._current_cfg = cfg
         self._current_bindings = cfg.bindings

@@ -25,8 +25,8 @@ from .const import DOMAIN
 
 # Fields whose values are not entity ids even when shaped like one: the notify
 # target is a service name (a notify entity can share it), the overrides are
-# free YAML text.
-_NOT_ENTITY_FIELDS = frozenset({"notify_service", "advanced_overrides"})
+# free YAML text, the API key is a secret.
+_NOT_ENTITY_FIELDS = frozenset({"notify_service", "advanced_overrides", "api_key"})
 
 
 def bound_entity_ids(data: Any) -> set[str]:

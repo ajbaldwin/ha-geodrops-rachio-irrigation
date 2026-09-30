@@ -119,10 +119,10 @@ async def test_resolve_secret_reads_the_config_secrets_file(hass, tmp_path):
     assert await resolve_secret(hass, "rachio_api_key") == "K1"
 
 
-async def test_async_fetch_devices_and_device_zones(hass, aioclient_mock):
+async def test_async_fetch_account_and_device_zones(hass, aioclient_mock):
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from custom_components.geodrops_rachio.rachio_client import (
-        RACHIO_BASE, async_fetch_device_zones, async_fetch_devices)
+        RACHIO_BASE, async_fetch_account, async_fetch_device_zones)
     aioclient_mock.get(RACHIO_BASE + "person/info", json={"id": "p1"})
     aioclient_mock.get(RACHIO_BASE + "person/p1", json={"devices": [
         {"id": "d1", "name": "Main House"}, {"name": "no id"}]})
@@ -130,7 +130,8 @@ async def test_async_fetch_devices_and_device_zones(hass, aioclient_mock):
         {"id": "z1", "name": "Front", "zoneNumber": 1, "runtime": 600,
          "depthOfWater": 1.0, "enabled": True}]})
     session = async_get_clientsession(hass)
-    assert await async_fetch_devices(session, "key") == [{"id": "d1", "name": "Main House"}]
+    assert await async_fetch_account(session, "key") == (
+        "p1", [{"id": "d1", "name": "Main House"}])
     zones = await async_fetch_device_zones(session, "key", "d1")
     assert [(z["id"], z["runtime_minutes"]) for z in zones] == [("z1", 10.0)]
     # The API key travels as a bearer token on every hop.
@@ -157,11 +158,33 @@ async def test_async_fetch_zone_data_merges_every_controller(hass, aioclient_moc
 async def test_async_fetch_zone_data_raises_on_an_http_error(hass, aioclient_mock):
     """A rejected key must raise, not return empty maps: the engine's fallback
     to static runtimes (and its warning) keys off the exception."""
-    import aiohttp
     import pytest
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from custom_components.geodrops_rachio.rachio_client import (
-        RACHIO_BASE, async_fetch_zone_data)
+        RACHIO_BASE, RachioAuthError, async_fetch_zone_data)
     aioclient_mock.get(RACHIO_BASE + "person/info", status=401)
-    with pytest.raises(aiohttp.ClientResponseError):
+    with pytest.raises(RachioAuthError):
         await async_fetch_zone_data(async_get_clientsession(hass), "bad")
+
+
+async def test_errors_name_no_account_or_device_ids(hass, aioclient_mock):
+    """Error text reaches the log; the request URL carries account and device
+    ids, so the message must not include it."""
+    import asyncio
+    import pytest
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from custom_components.geodrops_rachio.rachio_client import (
+        RACHIO_BASE, RachioConnectionError, async_fetch_account)
+    session = async_get_clientsession(hass)
+    aioclient_mock.get(RACHIO_BASE + "person/info", json={"id": "person-secret-id"})
+    aioclient_mock.get(RACHIO_BASE + "person/person-secret-id", status=500)
+    with pytest.raises(RachioConnectionError) as err:
+        await async_fetch_account(session, "key")
+    assert "person-secret-id" not in str(err.value)
+    assert "500" in str(err.value)
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(RACHIO_BASE + "person/info", exc=asyncio.TimeoutError())
+    with pytest.raises(RachioConnectionError, match="TimeoutError"):
+        await async_fetch_account(session, "key")
+

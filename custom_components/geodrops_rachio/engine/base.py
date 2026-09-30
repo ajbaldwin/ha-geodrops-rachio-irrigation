@@ -29,7 +29,7 @@ RECORD_HISTORY_MAX = 500
 class EngineBase:
     def __init__(self, port: HAPort, store: EngineStore,
                  load_raw_config: Callable[[], dict],
-                 fetch_zone_data: Callable[[str], Awaitable[tuple[dict, dict, dict]]]) -> None:
+                 fetch_zone_data: Callable[[], Awaitable[tuple[dict, dict, dict]]]) -> None:
         self.port = port
         self.store = store
         self._load_raw_config = load_raw_config

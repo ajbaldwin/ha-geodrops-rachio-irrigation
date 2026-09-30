@@ -45,9 +45,17 @@ rules:
   runtime-data:
     status: todo
     comment: Runtime objects are still kept in hass.data.
-  test-before-configure: todo
-  test-before-setup: todo
-  unique-config-entry: done
+  test-before-configure: done
+  test-before-setup:
+    status: exempt
+    comment: >-
+      Setup must not wait on the Rachio cloud: the scheduler waters from the
+      zones' stored runtimes, and the API key only refreshes them. Setup checks
+      the key in the background and starts reauthentication if Rachio rejects
+      it.
+  unique-config-entry:
+    status: done
+    comment: One entry per Home Assistant, keyed to the Rachio account id.
 
   # Silver
   action-exceptions:
@@ -62,7 +70,7 @@ rules:
   integration-owner: done
   log-when-unavailable: todo
   parallel-updates: todo
-  reauthentication-flow: todo
+  reauthentication-flow: done
   test-coverage:
     status: todo
     comment: Not measured yet.

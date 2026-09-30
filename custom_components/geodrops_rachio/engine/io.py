@@ -19,13 +19,7 @@ RUNTIME_CACHE_TTL_S = 6 * 3600
 class IOMixin:
     async def _fetch_zone_data(self):
         """(runtimes_minutes, refill_depths_mm, refill_spans_pts), one pass."""
-        # _current_bindings may be unset only if this is called before any config
-        # load at all; fall back to the documented default rather than crash.
-        key_name = (
-            self._current_bindings.rachio_api_key_secret if self._current_bindings
-            else "rachio_api_key"
-        )
-        return await self._fetch_zone_data_fn(key_name)
+        return await self._fetch_zone_data_fn()
 
     # ─── Rachio zone I/O (start/stop + poll-verify) ──────────────────────────
 

@@ -56,9 +56,12 @@ Setup checks for the Rachio integration being loaded and will abort with
    Assistant.
 3. Go to **Settings → Devices & Services → Add Integration**, search for
    **"GeoDrops + Rachio Irrigation"**, and complete the setup wizard:
-   - **Core bindings** — your notification service, calendar, Rachio device
-     name/API key secret, standby switch, and forecast entity (all picked
-     from entity selectors, not typed by hand).
+   - **Rachio account** — your Rachio API key (Rachio web app → Account
+     Settings → Get API Key). It is checked with Rachio before you continue,
+     and stored in Home Assistant's own settings like any integration's key.
+   - **Core bindings** — your notification service, calendar, Rachio
+     controller, standby switch, and forecast entity (all picked from lists,
+     not typed by hand).
    - **Weather station** — your local temperature/humidity/wind/rain/precip
      sensors, plus the sensor-name prefixes used for per-zone precipitation
      forecasts.
@@ -92,6 +95,11 @@ Only one instance of this integration may be configured at a time; adding a
 second one is blocked. To change bindings, weather sensors, zones, or the
 advanced settings later, use the integration's **Configure** option — it
 re-runs the same wizard, pre-filled with your current settings.
+
+If Rachio ever rejects the key (for example after you generate a new one),
+Home Assistant shows a **Reconfigure** notice for this integration: enter the
+new key there. Watering continues on each zone's stored runtimes in the
+meantime; only the refresh of those runtimes from Rachio waits for the key.
 
 Changing an entity's ID in Home Assistant (Settings → Entities) is safe: the
 integration follows renames of its own entities and of every entity you picked
