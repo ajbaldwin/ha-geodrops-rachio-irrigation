@@ -9,7 +9,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import config_writer, entity_renames, owned_entities, rachio_client
+from . import config_writer, entity_renames, issues, owned_entities, rachio_client
 from .const import DOMAIN, PLATFORMS
 from .coordinator import (
     GeodropsRachioConfigEntry, GeodropsRachioData, ZoneStateCoordinator)
@@ -78,6 +78,10 @@ async def async_setup_entry(hass: HomeAssistant,
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
     entry.async_on_unload(entity_renames.async_track_renames(
         hass, entry, lambda old, new: _on_rename(hass, entry, old, new)))
+    entry.async_on_unload(issues.async_track_missing(hass, entry))
+    # Re-raised by the next setup if still true; a disabled or deleted entry
+    # must not leave it behind.
+    entry.async_on_unload(lambda: issues.async_clear(hass, entry))
     entry.async_create_background_task(
         hass, _async_check_api_key(hass, entry, session), "geodrops_rachio_check_key")
     _purge_orphan_zone_devices(hass, entry)
