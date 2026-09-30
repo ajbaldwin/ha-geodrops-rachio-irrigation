@@ -50,6 +50,44 @@ async def test_entities_are_named_after_their_device(hass, enable_pyscript_and_r
         "sensor.geodrops_rachio_front_deficit": "Front Deficit"}
 
 
+async def test_entities_have_translations_and_categories(
+        hass, enable_pyscript_and_rachio):
+    """Every entity's name comes from strings.json, and upkeep and diagnostic
+    entities are categorized so they stay off the default dashboard."""
+    import json
+    import pathlib
+    from homeassistant.const import EntityCategory
+    from homeassistant.helpers import entity_registry as er
+    root = pathlib.Path(__file__).parents[1] / "custom_components" / DOMAIN
+    strings = json.loads((root / "strings.json").read_text(encoding="utf-8"))
+    icons = json.loads((root / "icons.json").read_text(encoding="utf-8"))
+    entry = MockConfigEntry(domain=DOMAIN, data={**ENTRY_DATA, "zones": [
+        {"key": "front", "rachio_switch": "switch.x", "dominant_sensor": "sensor.d",
+         "state_sensor": "sensor.s", "quality_sensors": [], "target_range": "moist",
+         "runtime_minutes": 20, "refill_depth_mm": 10}]})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    reg = er.async_get(hass)
+    entities = er.async_entries_for_config_entry(reg, entry.entry_id)
+    assert len(entities) == 27     # 18 on the hub, 9 per zone
+    for e in entities:
+        assert e.translation_key in strings["entity"][e.domain], e.entity_id
+        assert e.original_icon is None, e.entity_id
+    for domain, keys in icons["entity"].items():
+        assert set(keys) <= set(strings["entity"][domain])
+    category = {e.entity_id: e.entity_category for e in entities}
+    assert category["button.geodrops_rachio_run_now"] is None
+    assert category["button.geodrops_rachio_refresh_runtimes"] is EntityCategory.CONFIG
+    assert category["switch.geodrops_rachio_standby"] is None
+    assert category["switch.geodrops_rachio_front_exclude"] is EntityCategory.CONFIG
+    assert category["select.geodrops_rachio_drought_level"] is EntityCategory.CONFIG
+    assert category["sensor.geodrops_rachio_front_deficit"] is None
+    assert category["sensor.geodrops_rachio_front_efficacy"] is EntityCategory.DIAGNOSTIC
+    assert (category["sensor.geodrops_rachio_observed_overnight_temp"]
+            is EntityCategory.DIAGNOSTIC)
+
+
 async def test_forecast_sensor_is_unavailable_while_the_forecast_fails(
         hass, enable_pyscript_and_rachio, caplog):
     """Unavailable (not stale) while the weather entity cannot answer; the

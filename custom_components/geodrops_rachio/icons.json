@@ -1,0 +1,68 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "run_active": {
+        "default": "mdi:sprinkler-variant"
+      }
+    },
+    "button": {
+      "stop": {
+        "default": "mdi:stop-circle-outline"
+      },
+      "run_now": {
+        "default": "mdi:play-circle-outline"
+      },
+      "preview": {
+        "default": "mdi:eye-outline"
+      },
+      "reset": {
+        "default": "mdi:cancel"
+      },
+      "refresh_runtimes": {
+        "default": "mdi:refresh"
+      }
+    },
+    "select": {
+      "drought_level": {
+        "default": "mdi:water-alert-outline"
+      }
+    },
+    "sensor": {
+      "status": {
+        "default": "mdi:sprinkler"
+      },
+      "last_nightly": {
+        "default": "mdi:weather-night"
+      },
+      "last_run": {
+        "default": "mdi:history"
+      },
+      "plan": {
+        "default": "mdi:eye-outline"
+      },
+      "deficit": {
+        "default": "mdi:water-minus-outline"
+      },
+      "efficacy": {
+        "default": "mdi:chart-line"
+      },
+      "calibration_state": {
+        "default": "mdi:tune-variant"
+      },
+      "refill_depth": {
+        "default": "mdi:arrow-collapse-down"
+      }
+    },
+    "switch": {
+      "standby": {
+        "default": "mdi:power-sleep"
+      },
+      "exclude": {
+        "default": "mdi:water-off-outline",
+        "state": {
+          "off": "mdi:water-outline"
+        }
+      }
+    }
+  }
+}

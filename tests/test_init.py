@@ -59,6 +59,9 @@ async def test_bad_overrides_not_ready(hass, enable_pyscript_and_rachio):
     entry.add_to_hass(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     assert entry.state is ConfigEntryState.SETUP_RETRY
+    # The translated reason, shown on the integration's card.
+    assert entry.reason.startswith("The advanced overrides are not valid: ")
+    assert entry.reason.endswith("Fix them under Configure → Advanced")
 
 
 async def test_nightly_trigger_starts_run(hass, enable_pyscript_and_rachio):

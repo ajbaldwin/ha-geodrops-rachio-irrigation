@@ -1,5 +1,6 @@
 from __future__ import annotations
 from homeassistant.components.button import ButtonEntity, ENTITY_ID_FORMAT
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import GeodropsRachioConfigEntry
@@ -9,13 +10,12 @@ from .entity import GeodropsRachioEntity
 # Presses never queue behind one another: Stop must act mid-run.
 PARALLEL_UPDATES = 0
 
-# Buttons that drive the native scheduler. (key, friendly name, icon).
-_ACTIONS = [
-    ("run_now", "Run irrigation now", "mdi:play-circle-outline"),
-    ("preview", "Preview irrigation plan", "mdi:eye-outline"),
-    ("reset", "Reset irrigation", "mdi:cancel"),
-    ("refresh_runtimes", "Refresh Rachio runtimes", "mdi:refresh"),
-]
+# Buttons that drive the native scheduler: key -> entity category. Reset and
+# Refresh are upkeep, not everyday controls. Names and icons are translated.
+_ACTIONS: dict[str, EntityCategory | None] = {
+    "run_now": None, "preview": None,
+    "reset": EntityCategory.CONFIG, "refresh_runtimes": EntityCategory.CONFIG,
+}
 # Button key -> Scheduler coroutine method. Long actions run as background tasks
 # so a press never blocks on a preview or a Rachio fetch.
 _METHODS = {
@@ -26,8 +26,6 @@ _BACKGROUND = {"preview", "refresh_runtimes"}
 
 
 class StopButton(GeodropsRachioEntity, ButtonEntity):
-    _attr_name = "Stop irrigation"
-
     def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, "stop")
         self._scheduler = scheduler
@@ -38,10 +36,9 @@ class StopButton(GeodropsRachioEntity, ButtonEntity):
 
 class ActionButton(GeodropsRachioEntity, ButtonEntity):
     def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler,
-                 key: str, name: str, icon: str) -> None:
+                 key: str, category: EntityCategory | None) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, key)
-        self._attr_name = name
-        self._attr_icon = icon
+        self._attr_entity_category = category
         self._entry = entry
         self._scheduler = scheduler
         self._key = key
@@ -59,6 +56,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
                             async_add_entities: AddEntitiesCallback) -> None:
     scheduler = entry.runtime_data.scheduler
     entities: list[ButtonEntity] = [StopButton(entry, scheduler)]
-    entities += [ActionButton(entry, scheduler, key, name, icon)
-                 for key, name, icon in _ACTIONS]
+    entities += [ActionButton(entry, scheduler, key, category)
+                 for key, category in _ACTIONS.items()]
     async_add_entities(entities)

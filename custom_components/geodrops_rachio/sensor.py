@@ -4,7 +4,8 @@ import logging
 from homeassistant.components.sensor import (
     RestoreSensor, SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.const import (
-    MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfLength)
+    MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, EntityCategory,
+    UnitOfLength)
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
@@ -30,7 +31,8 @@ _OBSERVED_RECOMPUTE_INTERVAL = dt.timedelta(minutes=5)
 _FIELDS = [("temp", "temperature", "°F"), ("humidity", "humidity", "%"),
            ("wind", "wind_speed", "mph")]
 
-# (suffix, coordinator-key, device_class, unit, display_precision)
+# (suffix, coordinator-key, device_class, unit, display_precision). The
+# calibration fields and refill depth are diagnostic (_ZONE_DIAGNOSTIC).
 _ZONE_FIELDS = [
     ("planned_runtime", "planned_runtime", SensorDeviceClass.DURATION, "min", None),
     ("last_delivered_runtime", "last_delivered_runtime",
@@ -50,6 +52,7 @@ _ZONE_FIELDS = [
     # card rounds to "0"). Plain mm + a display precision keeps it readable.
     ("refill_depth", "refill_depth", None, UnitOfLength.MILLIMETERS, 1),
 ]
+_ZONE_DIAGNOSTIC = {"efficacy", "calibration_state", "refill_depth"}
 
 
 def _pretty_status(value):
@@ -105,12 +108,12 @@ class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
     change — a steady reading is still accruing time when nothing changes.
     """
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_suggested_display_precision = 1
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
                  source: str | None, unit: str) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, f"observed_overnight_{key}")
-        self._attr_name = f"Observed overnight {key}"
         self._attr_native_unit_of_measurement = unit
         self._source = source
         self._samples: list[tuple[dt.datetime, float]] = []
@@ -165,12 +168,12 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
     """Tonight's forecast mean of one weather field, from the bound weather
     entity's hourly forecast. Unavailable while that forecast cannot be read."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_suggested_display_precision = 1
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str, field: str,
                  source: str | None, unit: str) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, f"forecast_overnight_{key}")
-        self._attr_name = f"Forecast overnight {key}"
         self._attr_native_unit_of_measurement = unit
         self._field = field
         self._source = source
@@ -218,7 +221,8 @@ class ZoneCoordinatorSensor(GeodropsRachioZoneEntity, SensorEntity):
                  unit: str | None, precision: int | None = None) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, key, hub_device_id, suffix)
         self._key, self._coord, self._ckey = key, coordinator, ckey
-        self._attr_name = suffix.replace("_", " ").capitalize()
+        if suffix in _ZONE_DIAGNOSTIC:
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         if precision is not None:
@@ -256,7 +260,6 @@ class ZoneMoistureSensor(GeodropsRachioZoneEntity, SensorEntity):
     """Live mirror of the zone's own GeoDrops dominant sensor; unavailable
     while that sensor is."""
 
-    _attr_name = "Soil moisture"
     # GeoDrops dominant moisture is a 0-100 percentage; label it so readers see
     # "75.6 %" with a moisture icon instead of a bare number.
     _attr_device_class = SensorDeviceClass.MOISTURE
@@ -298,7 +301,6 @@ class ZoneDeficitSensor(GeodropsRachioZoneEntity, SensorEntity):
     device_class: it's a delta, not an absolute moisture, so HA must not unit-
     convert it."""
 
-    _attr_name = "Deficit"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 1
 
@@ -340,9 +342,6 @@ class SchedulerStatusSensor(GeodropsRachioEntity, SensorEntity):
     """The scheduler's overall status (idle / planning / waiting / watering /
     standby / skipped / aborted) on the main device."""
 
-    _attr_name = "Status"
-    _attr_icon = "mdi:sprinkler"
-
     def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, "status")
         self._scheduler = scheduler
@@ -362,11 +361,11 @@ class SchedulerStatusSensor(GeodropsRachioEntity, SensorEntity):
         _update()
 
 
-# (record name, entity suffix, display name, icon)
+# (record name, entity suffix); names and icons are translated by suffix.
 _RECORDS = [
-    ("last_nightly", "last_nightly", "Last nightly run", "mdi:weather-night"),
-    ("last_run", "last_run", "Last run", "mdi:history"),
-    ("preview", "plan", "Plan", "mdi:eye-outline"),
+    ("last_nightly", "last_nightly"),
+    ("last_run", "last_run"),
+    ("preview", "plan"),
 ]
 
 
@@ -381,10 +380,8 @@ class RecordSensor(GeodropsRachioEntity, SensorEntity):
     _unrecorded_attributes = frozenset({MATCH_ALL})
 
     def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler,
-                 record: str, suffix: str, name: str, icon: str) -> None:
+                 record: str, suffix: str) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, f"record_{record}", suffix)
-        self._attr_name = name
-        self._attr_icon = icon
         self._scheduler = scheduler
         self._record = record
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from homeassistant.components.select import SelectEntity, ENTITY_ID_FORMAT
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -12,7 +13,7 @@ PARALLEL_UPDATES = 0
 
 
 class DroughtLevelSelect(GeodropsRachioEntity, RestoreEntity, SelectEntity):
-    _attr_name = "Drought level"
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_options = DROUGHT_LEVELS
 
     def __init__(self, entry: GeodropsRachioConfigEntry) -> None:

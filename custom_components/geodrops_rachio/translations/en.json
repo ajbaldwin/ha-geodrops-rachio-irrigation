@@ -295,5 +295,103 @@
       "cannot_connect": "Could not reach Rachio. Check your internet connection and try again.",
       "wrong_account": "This API key belongs to a different Rachio account than the one this integration is set up with."
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "run_active": {
+        "name": "Run active"
+      }
+    },
+    "button": {
+      "stop": {
+        "name": "Stop irrigation"
+      },
+      "run_now": {
+        "name": "Run irrigation now"
+      },
+      "preview": {
+        "name": "Preview irrigation plan"
+      },
+      "reset": {
+        "name": "Reset irrigation"
+      },
+      "refresh_runtimes": {
+        "name": "Refresh Rachio runtimes"
+      }
+    },
+    "select": {
+      "drought_level": {
+        "name": "Drought level"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "last_nightly": {
+        "name": "Last nightly run"
+      },
+      "last_run": {
+        "name": "Last run"
+      },
+      "plan": {
+        "name": "Plan"
+      },
+      "observed_overnight_temp": {
+        "name": "Observed overnight temp"
+      },
+      "observed_overnight_humidity": {
+        "name": "Observed overnight humidity"
+      },
+      "observed_overnight_wind": {
+        "name": "Observed overnight wind"
+      },
+      "forecast_overnight_temp": {
+        "name": "Forecast overnight temp"
+      },
+      "forecast_overnight_humidity": {
+        "name": "Forecast overnight humidity"
+      },
+      "forecast_overnight_wind": {
+        "name": "Forecast overnight wind"
+      },
+      "soil_moisture": {
+        "name": "Soil moisture"
+      },
+      "deficit": {
+        "name": "Deficit"
+      },
+      "planned_runtime": {
+        "name": "Planned runtime"
+      },
+      "last_delivered_runtime": {
+        "name": "Last delivered runtime"
+      },
+      "last_watered": {
+        "name": "Last watered"
+      },
+      "efficacy": {
+        "name": "Efficacy"
+      },
+      "calibration_state": {
+        "name": "Calibration state"
+      },
+      "refill_depth": {
+        "name": "Refill depth"
+      }
+    },
+    "switch": {
+      "standby": {
+        "name": "Standby"
+      },
+      "exclude": {
+        "name": "Exclude from Watering/Calibration"
+      }
+    }
+  },
+  "exceptions": {
+    "invalid_overrides": {
+      "message": "The advanced overrides are not valid: {error}. Fix them under Configure → Advanced."
+    }
   }
 }
