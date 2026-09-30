@@ -180,8 +180,8 @@ class _BindingsWizardSteps:
         # An entity renamed while the dialog is open was rewritten in the
         # entry, not in this flow's copy; carry the rename over rather than
         # write the old id back (see entity_renames).
-        store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
-        for old, new in store.get("renamed", {}).items():
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        for old, new in (runtime.renamed if runtime else {}).items():
             self._data = replace_entity_id(self._data, old, new)
         self.hass.config_entries.async_update_entry(
             self.config_entry, data=self._data)
@@ -871,9 +871,10 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         if CONF_API_KEY in self._existing:
             self._data[CONF_API_KEY] = self._existing[CONF_API_KEY]
         # Defer scheduler restarts until "Done" (see __init__._reload_on_options).
-        store = self.hass.data.setdefault(DOMAIN, {}).setdefault(
-            self.config_entry.entry_id, {})
-        store["suppress_reload"] = True
+        # An entry that is not running has no reload listener to hold off.
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        if runtime is not None:
+            runtime.suppress_reload = True
         self._guarding = True
         # Auto-connect with the stored key so the Core device dropdown and zone
         # pickers are live without visiting Connect. Best-effort: on failure
@@ -897,9 +898,9 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
     def _release_guard(self) -> bool:
         """Clear suppress_reload; returns whether this flow still held it."""
         held, self._guarding = self._guarding, False
-        store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
-        if held and store is not None:
-            store["suppress_reload"] = False
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        if held and runtime is not None:
+            runtime.suppress_reload = False
         return held
 
     @callback

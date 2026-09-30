@@ -38,6 +38,8 @@ class EngineBase:
         self.api_calls = 0     # Rachio-affecting service calls (start/stop) — the real budget
         self.state_polls = 0   # local HA state reads (free); tracked separately
         self._runtime_cache = {"ts": 0.0, "runtimes": {}, "depths": {}, "spans": {}}
+        # The last Rachio fetch failed; logged once until one succeeds.
+        self._rachio_failing = False
         self._current_tun = None
         self._current_cfg = None
         self._current_bindings = None

@@ -27,8 +27,8 @@ async def test_setup_and_unload_entry(hass, enable_pyscript_and_rachio):
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     assert entry.state is ConfigEntryState.LOADED
-    assert "scheduler" in hass.data[DOMAIN][entry.entry_id]
-    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    assert entry.runtime_data.scheduler is not None
+    scheduler = entry.runtime_data.scheduler
     with patch.object(scheduler, "async_shutdown",
                       AsyncMock(wraps=scheduler.async_shutdown)) as shutdown:
         assert await hass.config_entries.async_unload(entry.entry_id)
@@ -93,14 +93,14 @@ async def test_reload_listener_honors_suppress_flag(hass, enable_pyscript_and_ra
 
     with patch.object(hass.config_entries, "async_reload", _fake_reload):
         # Flag set -> update fires the listener but it must NOT reload.
-        hass.data[DOMAIN][entry.entry_id]["suppress_reload"] = True
+        entry.runtime_data.suppress_reload = True
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, "advanced_overrides": "a: 1"})
         await hass.async_block_till_done()
         assert reloads == []
 
         # Flag cleared -> the next data change reloads exactly once.
-        hass.data[DOMAIN][entry.entry_id]["suppress_reload"] = False
+        entry.runtime_data.suppress_reload = False
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, "advanced_overrides": "a: 2"})
         await hass.async_block_till_done()
@@ -218,7 +218,7 @@ async def test_ha_stop_safety_stops_a_watering_run(hass, enable_pyscript_and_rac
         # switch.turn_off, which would replace an earlier mock.
         stops = async_mock_service(hass, "rachio", "stop_watering")
         offs = async_mock_service(hass, "switch", "turn_off")
-        scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+        scheduler = entry.runtime_data.scheduler
         await scheduler.async_run_now()
         await watering.wait()
         assert scheduler.startup_task is not None and not scheduler.startup_task.done()
@@ -244,8 +244,8 @@ async def test_options_update_without_changes_does_not_reload(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    store = hass.data[DOMAIN][entry.entry_id]
-    scheduler = store["scheduler"]
+    store = entry.runtime_data
+    scheduler = store.scheduler
     original = copy.deepcopy(dict(entry.data))
 
     with patch.object(scheduler, "async_shutdown",
@@ -255,30 +255,30 @@ async def test_options_update_without_changes_does_not_reload(
         hass.config_entries.async_update_entry(entry, title="Renamed")
         await hass.async_block_till_done()
         shutdown.assert_not_awaited()
-        assert hass.data[DOMAIN][entry.entry_id]["scheduler"] is scheduler
+        assert entry.runtime_data.scheduler is scheduler
 
         # Edited and reverted while the options dialog held reloads off: "Done"
         # finds the config back where it started and leaves the run alone.
-        store["suppress_reload"] = True
+        store.suppress_reload = True
         edited = copy.deepcopy(original)
         edited["zones"][0]["runtime_minutes"] = 41
         hass.config_entries.async_update_entry(entry, data=edited)
         hass.config_entries.async_update_entry(entry, data=copy.deepcopy(original))
         await hass.async_block_till_done()
-        store["suppress_reload"] = False
+        store.suppress_reload = False
         assert not await async_reload_if_changed(hass, entry)
         await hass.async_block_till_done()
         shutdown.assert_not_awaited()
-        assert hass.data[DOMAIN][entry.entry_id]["scheduler"] is scheduler
+        assert entry.runtime_data.scheduler is scheduler
 
         # A real change reloads, shutting the running scheduler down.
         hass.config_entries.async_update_entry(entry, data=edited)
         await hass.async_block_till_done()
         shutdown.assert_awaited_once()
-    assert hass.data[DOMAIN][entry.entry_id]["scheduler"] is not scheduler
+    assert entry.runtime_data.scheduler is not scheduler
 
     # An options change is a change too (the snapshot covers options).
-    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    scheduler = entry.runtime_data.scheduler
     with patch.object(scheduler, "async_shutdown",
                       AsyncMock(wraps=scheduler.async_shutdown)) as shutdown:
         hass.config_entries.async_update_entry(entry, options={"x": 1})
@@ -304,7 +304,7 @@ async def test_options_flow_done_without_edits_does_not_reload(
         await hass.async_block_till_done()
     assert result["type"] == "create_entry"
     assert reloads == []
-    assert hass.data[DOMAIN][entry.entry_id]["suppress_reload"] is False
+    assert entry.runtime_data.suppress_reload is False
 
 
 async def test_setup_survives_failing_pyscript_reload(
@@ -330,7 +330,7 @@ async def test_unload_stops_the_scheduler_before_its_platforms(
     entry = MockConfigEntry(domain=DOMAIN, data=DATA)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    scheduler = entry.runtime_data.scheduler
     order = []
     real_shutdown = scheduler.async_shutdown
     real_unload = hass.config_entries.async_unload_platforms
@@ -357,7 +357,7 @@ async def _open_options_then_close(hass, entry, edit):
 
     with patch.object(hass.config_entries, "async_reload", _fake_reload):
         result = await hass.config_entries.options.async_init(entry.entry_id)
-        assert hass.data[DOMAIN][entry.entry_id]["suppress_reload"] is True
+        assert entry.runtime_data.suppress_reload is True
         if edit:
             # A sub-step persists an edit while the guard is up ...
             hass.config_entries.async_update_entry(
@@ -378,7 +378,7 @@ async def test_options_closed_without_done_applies_persisted_edits(
     await hass.async_block_till_done()
     reloads = await _open_options_then_close(hass, entry, edit=True)
     assert reloads == [entry.entry_id]
-    assert hass.data[DOMAIN][entry.entry_id]["suppress_reload"] is False
+    assert entry.runtime_data.suppress_reload is False
 
 
 async def test_options_closed_without_edits_clears_guard_without_reload(
@@ -389,7 +389,7 @@ async def test_options_closed_without_edits_clears_guard_without_reload(
     await hass.async_block_till_done()
     reloads = await _open_options_then_close(hass, entry, edit=False)
     assert reloads == []
-    assert hass.data[DOMAIN][entry.entry_id]["suppress_reload"] is False
+    assert entry.runtime_data.suppress_reload is False
 
 
 async def test_reload_if_changed_reloads_an_entry_that_is_not_loaded(
@@ -426,7 +426,7 @@ async def test_removing_entry_deletes_its_store(hass, hass_storage, enable_pyscr
     entry = MockConfigEntry(domain=DOMAIN, data=DATA)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.data[DOMAIN][entry.entry_id]["scheduler"].store.write("efficacy", {"x": {}})
+    await entry.runtime_data.scheduler.store.write("efficacy", {"x": {}})
     key = f"{DOMAIN}.{entry.entry_id}"
     assert key in hass_storage
     await hass.config_entries.async_remove(entry.entry_id)
@@ -442,7 +442,7 @@ async def test_stop_button_works_without_logbook(hass, enable_pyscript_and_rachi
     assert not hass.services.has_service("logbook", "log")
     await hass.services.async_call(
         "button", "press", {"entity_id": "button.geodrops_rachio_stop"}, blocking=True)
-    assert hass.data[DOMAIN][entry.entry_id]["scheduler"]._manual_stop is True
+    assert entry.runtime_data.scheduler._manual_stop is True
 
 
 async def test_rachio_native_run_is_tracked_through_state_events(
@@ -454,7 +454,7 @@ async def test_rachio_native_run_is_tracked_through_state_events(
     entry.add_to_hass(hass)
     with patch("custom_components.geodrops_rachio.engine.native.NATIVE_GAP_S", 0):
         assert await hass.config_entries.async_setup(entry.entry_id)
-        scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+        scheduler = entry.runtime_data.scheduler
         hass.states.async_set("switch.front_zone", "on")
         await hass.async_block_till_done()
         assert set(scheduler._native_session["zones"]) == {"front"}
@@ -480,7 +480,7 @@ async def test_zone_data_fetch_uses_the_stored_key(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    fetch = hass.data[DOMAIN][entry.entry_id]["scheduler"]._fetch_zone_data_fn
+    fetch = entry.runtime_data.scheduler._fetch_zone_data_fn
 
     with pytest.raises(RachioAuthError):
         await fetch()
@@ -498,7 +498,7 @@ async def test_zone_data_fetch_uses_the_stored_key(
     assert runtimes == {"z1": 30.0}
     assert aioclient_mock.mock_calls[0][3]["Authorization"] == "Bearer K1"
     # A key change is not a reload: it would cancel a waiting or watering run.
-    assert hass.data[DOMAIN][entry.entry_id]["scheduler"]._fetch_zone_data_fn is fetch
+    assert entry.runtime_data.scheduler._fetch_zone_data_fn is fetch
 
 
 async def test_rejected_key_at_setup_asks_for_a_new_one_without_blocking(

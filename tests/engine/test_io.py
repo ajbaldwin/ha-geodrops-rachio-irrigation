@@ -68,6 +68,22 @@ async def test_runtime_cache_ttl(freezer):
     assert await eng.get_runtimes(force=True) == {}   # fetch failure -> {}
 
 
+async def test_rachio_outage_is_logged_once(freezer, caplog):
+    """Each plan asks for runtimes, depths and spans; an outage warns once,
+    not per call, and its end is logged."""
+    world, eng = _eng(freezer)
+    world.rachio_api = None
+    for _ in range(3):
+        assert await eng.get_runtimes(force=True) == {}
+    warnings = [r for r in caplog.records
+                if r.levelname == "WARNING" and "Rachio fetch failed" in r.message]
+    assert len(warnings) == 1
+    world.rachio_api = ({"id-front": 33.0}, {"id-front": 8.0}, {"id-front": 20.0})
+    assert await eng.get_runtimes(force=True) == {"id-front": 33.0}
+    assert any(r.levelname == "INFO" and "succeeded again" in r.message
+               for r in caplog.records)
+
+
 async def test_efficacy_and_pending_obs_roundtrip(freezer):
     world, eng = _eng(freezer)
     assert eng._read_efficacy_store() == {}

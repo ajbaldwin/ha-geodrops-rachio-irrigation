@@ -32,6 +32,59 @@ async def test_control_entities_created(hass, enable_pyscript_and_rachio):
     assert hass.states.get("button.geodrops_rachio_stop") is not None
 
 
+async def test_entities_are_named_after_their_device(hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data={**ENTRY_DATA, "zones": [
+        {"key": "front", "rachio_switch": "switch.x", "dominant_sensor": "sensor.d",
+         "state_sensor": "sensor.s", "quality_sensors": [], "target_range": "moist",
+         "runtime_minutes": 20, "refill_depth_mm": 10}]})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    names = {eid: hass.states.get(eid).name for eid in (
+        "button.geodrops_rachio_stop", "switch.geodrops_rachio_standby",
+        "select.geodrops_rachio_drought_level", "sensor.geodrops_rachio_front_deficit")}
+    assert names == {
+        "button.geodrops_rachio_stop": "Irrigation Controls Stop irrigation",
+        "switch.geodrops_rachio_standby": "Irrigation Controls Standby",
+        "select.geodrops_rachio_drought_level": "Irrigation Controls Drought level",
+        "sensor.geodrops_rachio_front_deficit": "Front Deficit"}
+
+
+async def test_forecast_sensor_is_unavailable_while_the_forecast_fails(
+        hass, enable_pyscript_and_rachio, caplog):
+    """Unavailable (not stale) while the weather entity cannot answer; the
+    outage and its end are each logged once."""
+    from homeassistant.core import SupportsResponse
+    from homeassistant.exceptions import HomeAssistantError
+    forecast = "sensor.geodrops_rachio_forecast_overnight_temp"
+    failing = True
+
+    async def get_forecasts(call):
+        if failing:
+            raise HomeAssistantError("no forecast")
+        return {"weather.home": {"forecast": []}}
+
+    hass.services.async_register("weather", "get_forecasts", get_forecasts,
+                                 supports_response=SupportsResponse.ONLY)
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        **ENTRY_DATA, "bindings": {"forecast_entity": "weather.home"}})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(forecast).state == "unavailable"
+
+    sensor = hass.data["entity_components"]["sensor"].get_entity(forecast)
+    await sensor._refresh(None)           # the hourly retry fails again
+    outages = [r for r in caplog.records
+               if "cannot be read" in r.message and forecast in r.message]
+    assert len(outages) == 1
+
+    failing = False
+    await sensor._refresh(None)
+    assert hass.states.get(forecast).state == "unknown"
+    assert any("can be read again" in r.message for r in caplog.records)
+
+
 async def test_action_buttons_created(hass, enable_pyscript_and_rachio):
     entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
     entry.add_to_hass(hass)
@@ -63,7 +116,7 @@ async def test_stop_button_raises_manual_stop(hass, enable_pyscript_and_rachio):
     hass.services.async_register("logbook", "log", lambda call: None)
     await hass.services.async_call(
         "button", "press", {"entity_id": "button.geodrops_rachio_stop"}, blocking=True)
-    assert hass.data[DOMAIN][entry.entry_id]["scheduler"]._manual_stop is True
+    assert entry.runtime_data.scheduler._manual_stop is True
 
 
 async def test_record_sensors_mirror_scheduler(hass, enable_pyscript_and_rachio):
@@ -116,7 +169,7 @@ async def test_run_active_is_a_read_only_indicator(hass, enable_pyscript_and_rac
     assert hass.states.get("switch.geodrops_rachio_run_active") is None
     eid = "binary_sensor.geodrops_rachio_run_active"
     assert hass.states.get(eid).state == "off"
-    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    scheduler = entry.runtime_data.scheduler
     await scheduler.set_run_active(True)
     await hass.async_block_till_done()
     assert hass.states.get(eid).state == "on"
@@ -438,9 +491,11 @@ def test_pretty_status_titlecases_tokens_and_preserves_sentinels():
     assert _pretty_status("") == ""
 
 
-async def test_zone_soil_moisture_non_numeric_source_reads_none(hass, enable_pyscript_and_rachio):
-    """A moisture device_class must be numeric — an unavailable dominant sensor
-    must read as no value, not push HA a non-numeric state."""
+async def test_zone_soil_moisture_follows_source_availability(
+        hass, enable_pyscript_and_rachio):
+    """A moisture device_class must be numeric: a non-numeric dominant sensor
+    reads as no value, and an unavailable one makes the mirror (and the
+    deficit computed from it) unavailable too."""
     hass.states.async_set("sensor.d", "unavailable")
     entry = MockConfigEntry(domain=DOMAIN, data={
         "bindings": {"weather": {}, "forecast_entity": "weather.home"},
@@ -452,7 +507,19 @@ async def test_zone_soil_moisture_non_numeric_source_reads_none(hass, enable_pys
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.geodrops_rachio_front_soil_moisture").state == "unknown"
+    moisture = "sensor.geodrops_rachio_front_soil_moisture"
+    deficit = "sensor.geodrops_rachio_front_deficit"
+    assert hass.states.get(moisture).state == "unavailable"
+    assert hass.states.get(deficit).state == "unavailable"
+
+    hass.states.async_set("sensor.d", "unknown")
+    await hass.async_block_till_done()
+    assert hass.states.get(moisture).state == "unknown"
+    assert hass.states.get(deficit).state == "unknown"
+
+    hass.states.async_set("sensor.d", "41.5")
+    await hass.async_block_till_done()
+    assert hass.states.get(moisture).state == "41.5"
 
 
 async def test_zone_device_uses_friendly_name(hass, enable_pyscript_and_rachio):
@@ -486,7 +553,7 @@ async def test_long_action_buttons_run_in_the_background(
     async def slow():
         await release.wait()
         finished.set()
-    scheduler = hass.data[DOMAIN][entry.entry_id]["scheduler"]
+    scheduler = entry.runtime_data.scheduler
     with patch.object(scheduler, method, slow):
         # A blocking press returns while the action is still running (were it
         # awaited inline, the press would hang until the timeout fails it).

@@ -31,4 +31,4 @@ def zone_device(hass, entry, key):
 def publish_record(hass, entry, name, value, attributes):
     """Test helper: publish a scheduler record as the engine would."""
     from custom_components.geodrops_rachio.const import DOMAIN
-    hass.data[DOMAIN][entry.entry_id]["scheduler"]._publish(name, value, attributes)
+    entry.runtime_data.scheduler._publish(name, value, attributes)

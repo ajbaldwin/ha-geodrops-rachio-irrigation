@@ -11,11 +11,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import config_writer, entity_renames, owned_entities, rachio_client
 from .const import DOMAIN, PLATFORMS
-from .coordinator import ZoneStateCoordinator
+from .coordinator import (
+    GeodropsRachioConfigEntry, GeodropsRachioData, ZoneStateCoordinator)
 from .engine.port import HassPort
 from .engine.scheduler import Scheduler
 from .engine.store import async_open_store, async_remove_store
-from .entity_base import device_info
+from .entity import device_info
 from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,7 +26,8 @@ _LOGGER = logging.getLogger(__name__)
 _LEGACY_SECRET_NAME = "rachio_api_key"
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant,
+                            entry: GeodropsRachioConfigEntry) -> bool:
     data = dict(entry.data)
     try:
         config_writer.build_config(data)  # validates advanced_overrides
@@ -60,12 +62,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Registered up front so zone devices can link to it by its registry id.
     hub = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id, **device_info(entry))
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "data": data, "coordinator": coordinator, "scheduler": scheduler,
-        "hub_device_id": hub.id, "renamed": renamed,
-        # What this running entry was set up with; a reload that would not
-        # change it is skipped (see async_reload_if_changed).
-        "setup_snapshot": _snapshot(entry)}
+    entry.runtime_data = GeodropsRachioData(
+        data=data, coordinator=coordinator, scheduler=scheduler,
+        hub_device_id=hub.id, renamed=renamed, setup_snapshot=_snapshot(entry))
     entry.async_on_unload(coordinator.async_stop)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # A stage-1 shutdown job runs BEFORE HA cancels background tasks (the run
@@ -172,76 +171,82 @@ async def async_reload_if_changed(hass: HomeAssistant, entry: ConfigEntry) -> bo
     not running always reloads — including one whose snapshot outlived it (a
     failed platform unload, or setup failing after the snapshot was stored).
     Returns whether it reloaded."""
-    store = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    snapshot = store.get("setup_snapshot")
-    if (entry.state is ConfigEntryState.LOADED and snapshot is not None
-            and snapshot == _snapshot(entry)):
+    runtime = _runtime(entry)
+    if (entry.state is ConfigEntryState.LOADED and runtime is not None
+            and runtime.setup_snapshot == _snapshot(entry)):
         _LOGGER.debug("configuration unchanged; not reloading")
         return False
     await hass.config_entries.async_reload(entry.entry_id)
     return True
 
 
+def _runtime(entry: ConfigEntry) -> GeodropsRachioData | None:
+    """The entry's runtime data, or None while it is not set up."""
+    return getattr(entry, "runtime_data", None)
+
+
 @callback
-def _on_rename(hass: HomeAssistant, entry: ConfigEntry, old: str, new: str) -> None:
+def _on_rename(hass: HomeAssistant, entry: GeodropsRachioConfigEntry,
+               old: str, new: str) -> None:
     """A bound entity was renamed; entity_renames rewrites the entry next."""
-    store = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if store is None:
+    runtime = _runtime(entry)
+    if runtime is None:
         return
-    entity_renames.record_rename(store["renamed"], old, new)
-    store["rename_pending"] = True
+    entity_renames.record_rename(runtime.renamed, old, new)
+    runtime.rename_pending = True
     _LOGGER.info("Following the rename of %s to %s", old, new)
 
 
-def _run_in_flight(store: dict) -> bool:
-    scheduler = store.get("scheduler")
-    task = scheduler.run_task if scheduler is not None else None
+def _run_in_flight(runtime: GeodropsRachioData) -> bool:
+    task = runtime.scheduler.run_task
     return task is not None and not task.done()
 
 
 @callback
-def _reload_when_run_ends(hass: HomeAssistant, entry: ConfigEntry, store: dict) -> None:
-    if store.get("reload_after_run"):
+def _reload_when_run_ends(hass: HomeAssistant, entry: GeodropsRachioConfigEntry,
+                          runtime: GeodropsRachioData) -> None:
+    if runtime.reload_after_run:
         return
-    store["reload_after_run"] = True
+    runtime.reload_after_run = True
 
     @callback
     def _run_ended(_task) -> None:
         # Only for the entry instance that deferred it: a reload in between has
         # already rebound the renamed entities.
-        if (hass.data.get(DOMAIN, {}).get(entry.entry_id) is store
+        if (_runtime(entry) is runtime
                 and entry.state is ConfigEntryState.LOADED):
             hass.async_create_task(async_reload_if_changed(hass, entry),
                                    "geodrops_rachio_reload_after_rename")
 
-    store["scheduler"].run_task.add_done_callback(_run_ended)
+    runtime.scheduler.run_task.add_done_callback(_run_ended)
 
 
-async def _reload_on_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _reload_on_options(hass: HomeAssistant,
+                             entry: GeodropsRachioConfigEntry) -> None:
     # An options flow persists each edit via async_update_entry, which fires
     # this listener. While the dialog is open we defer the scheduler restart:
     # the options flow sets suppress_reload and, on "Done", clears it and fires
     # at most one reload. See config_flow.GeodropsRachioOptionsFlow.
-    store = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    rename = store.pop("rename_pending", False)
-    if store.get("suppress_reload"):
+    runtime = _runtime(entry)
+    if runtime is None:
+        await async_reload_if_changed(hass, entry)
         return
-    if rename and _run_in_flight(store):
+    rename, runtime.rename_pending = runtime.rename_pending, False
+    if runtime.suppress_reload:
+        return
+    if rename and _run_in_flight(runtime):
         # A reload would cancel the waiting or watering run. The engine already
         # reads the new id (the resolver's rename map), so rebind once it ends.
-        _reload_when_run_ends(hass, entry, store)
+        _reload_when_run_ends(hass, entry, runtime)
         return
     await async_reload_if_changed(hass, entry)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    stored = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if stored is not None:
-        await stored["scheduler"].async_shutdown()
+async def async_unload_entry(hass: HomeAssistant,
+                             entry: GeodropsRachioConfigEntry) -> bool:
+    await entry.runtime_data.scheduler.async_shutdown()
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if ok:
-        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-    else:
+    if not ok:
         _LOGGER.warning(
             "platforms did not unload; the scheduler is already stopped, so no nightly "
             "run will fire until Home Assistant restarts")
