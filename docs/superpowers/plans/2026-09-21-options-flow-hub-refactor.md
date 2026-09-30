@@ -17,7 +17,7 @@
 - **`strings.json` and `translations/en.json` are byte-identical** and must be edited together (verify with `diff`).
 - **Test runner** (Git Bash must disable MSYS path conversion):
   ```bash
-  MSYS_NO_PATHCONV=1 docker run --rm -v "/c/Users/Adam/Projects/Projects/ghr-options-hub:/app" -w /app ghr-test python -m pytest <target> -q
+  bash tools/test.sh <target> -q
   ```
   The `ghr-test` image is python:3.13 + `requirements_test.txt`. Rebuild it from a Dockerfile (`COPY requirements_test.txt` then `pip install -r requirements_test.txt`) if missing.
 - **Commit attribution:** end every commit message with
@@ -90,7 +90,7 @@ async def test_reload_listener_honors_suppress_flag(hass, enable_pyscript_and_ra
 
 Run:
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "/c/Users/Adam/Projects/Projects/ghr-options-hub:/app" -w /app ghr-test python -m pytest tests/test_init.py::test_reload_listener_honors_suppress_flag -q
+bash tools/test.sh tests/test_init.py::test_reload_listener_honors_suppress_flag -q
 ```
 Expected: FAIL — `assert reloads == []` fails because the current listener always reloads (first update produces `reloads == [entry_id]`).
 
@@ -114,7 +114,7 @@ async def _reload_on_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 Run:
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "/c/Users/Adam/Projects/Projects/ghr-options-hub:/app" -w /app ghr-test python -m pytest tests/test_init.py -q
+bash tools/test.sh tests/test_init.py -q
 ```
 Expected: PASS (new test + the 3 existing init tests, including `test_removing_zone_purges_its_device`, which has no flag set so the listener still reloads).
 
@@ -441,7 +441,7 @@ async def test_options_connect_repoll_persists_secret(hass, enable_pyscript_and_
 
 Run:
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "/c/Users/Adam/Projects/Projects/ghr-options-hub:/app" -w /app ghr-test python -m pytest tests/test_config_flow.py -q -k options
+bash tools/test.sh tests/test_config_flow.py -q -k options
 ```
 Expected: FAIL — the current options flow opens on `connect`, not `menu`, and has no `add_zone` menu item on init, so `test_options_lands_on_hub_menu` and the rest fail.
 
@@ -800,7 +800,7 @@ async def test_options_flow_defers_reload_until_finish(hass, enable_pyscript_and
 
 Run:
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "/c/Users/Adam/Projects/Projects/ghr-options-hub:/app" -w /app ghr-test python -m pytest tests/test_config_flow.py tests/test_init.py -q
+bash tools/test.sh tests/test_config_flow.py tests/test_init.py -q
 ```
 Expected: PASS — all config-flow (first-install) tests unchanged and green, all rewritten/new options tests green, both init tests green.
 
@@ -872,7 +872,7 @@ async def test_options_advanced_valid_yaml_persists(hass, enable_pyscript_and_ra
 
 Run:
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "/c/Users/Adam/Projects/Projects/ghr-options-hub:/app" -w /app ghr-test python -m pytest tests/test_config_flow.py::test_options_advanced_invalid_yaml_rejected -q
+bash tools/test.sh tests/test_config_flow.py::test_options_advanced_invalid_yaml_rejected -q
 ```
 Expected: FAIL — Task 2's advanced step persists unconditionally and returns to `menu`, so the invalid string is accepted (`errors` empty, step is `menu`).
 
@@ -939,7 +939,7 @@ In **both** files, in the `options.error` object, add the `invalid_advanced_over
 
 Run:
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "/c/Users/Adam/Projects/Projects/ghr-options-hub:/app" -w /app ghr-test python -m pytest tests/test_config_flow.py tests/test_init.py -q
+bash tools/test.sh tests/test_config_flow.py tests/test_init.py -q
 ```
 Expected: PASS — both new advanced tests green, full suite green.
 
@@ -948,7 +948,7 @@ Expected: PASS — both new advanced tests green, full suite green.
 Run:
 ```bash
 diff custom_components/geodrops_rachio/strings.json custom_components/geodrops_rachio/translations/en.json && echo IDENTICAL
-MSYS_NO_PATHCONV=1 docker run --rm -v "/c/Users/Adam/Projects/Projects/ghr-options-hub:/app" -w /app ghr-test python -m pytest -q
+bash tools/test.sh -q
 ```
 Expected: `IDENTICAL`, then the entire suite passes.
 

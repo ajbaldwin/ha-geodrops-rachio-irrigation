@@ -53,14 +53,14 @@ async def test_runtime_cache_ttl(freezer):
     calls = []
     orig = eng._fetch_zone_data_fn
 
-    async def counting(key):
-        calls.append(key)
-        return await orig(key)
+    async def counting():
+        calls.append(1)
+        return await orig()
 
     eng._fetch_zone_data_fn = counting
     assert await eng.get_runtimes() == {"id-front": 33.0}
     assert await eng.get_refill_depths() == {"id-front": 8.0}
-    assert calls == ["rachio_api_key"]            # cached
+    assert calls == [1]                           # cached
     freezer.tick(6 * 3600 + 1)
     await eng.get_refill_spans()
     assert len(calls) == 2                        # TTL expired

@@ -305,7 +305,7 @@ async def test_unload_safety_stop_is_bounded(freezer, caplog):
     await eng.async_shutdown()
     assert eng.run_task is None
     assert [c[:2] for c in calls if c[3]] == [("rachio", "stop_watering")]  # cut off
-    assert ("warning", "irrigation: unload safety stop failed ()") in log_trail_native(caplog)
+    assert ("warning", "unload safety stop failed ()") in log_trail_native(caplog)
 
 
 async def test_unload_during_predawn_wait_leaves_valves_and_marker(freezer):
@@ -387,8 +387,8 @@ async def test_crashed_run_and_startup_are_logged_at_once(freezer, caplog):
     errors = [r for r in caplog.records
               if r.name.startswith(ENGINE_LOGGER_PREFIX) and r.levelname == "ERROR"]
     assert [r.getMessage() for r in errors] == [
-        "irrigation: geodrops_rachio_run failed (RuntimeError('boom'))",
-        "irrigation: geodrops_rachio_startup failed (RuntimeError('boom'))",
+        "geodrops_rachio_run failed (RuntimeError('boom'))",
+        "geodrops_rachio_startup failed (RuntimeError('boom'))",
     ]
     assert all(r.exc_info and r.exc_info[1].args == ("boom",) for r in errors)
     # Retrieved by the callback: no "never retrieved" when the tasks are collected.

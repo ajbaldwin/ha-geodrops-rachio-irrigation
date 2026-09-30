@@ -104,11 +104,11 @@
  "logs": [
   [
    "warning",
-   "irrigation: notification failed (notify.phone failed); run records were still written"
+   "notification failed (notify.phone failed); run records were still written"
   ],
   [
    "warning",
-   "irrigation: calendar entry failed (calendar.create_event failed); recap was sent"
+   "calendar entry failed (calendar.create_event failed); recap was sent"
   ]
  ],
  "records": {

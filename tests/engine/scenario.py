@@ -31,7 +31,6 @@ def entry_data(*, self_cal: bool = False, overrides: str = "") -> dict:
             "notify_service": "notify.phone",
             "calendar_entity": "calendar.lawn",
             "rachio_device_name": "Main House",
-            "rachio_api_key_secret": "rachio_api_key",
             "drought_level_select": "select.geodrops_rachio_drought_level",
             "standby_boolean": "switch.geodrops_rachio_standby",
             "standby_switch": "switch.rachio_standby",
@@ -79,7 +78,7 @@ async def _nosave(_docs):
 
 
 def fake_fetch(world):
-    async def fetch(_key_name):
+    async def fetch():
         if world.rachio_api is None:
             raise RuntimeError("rachio api down")
         return copy.deepcopy(world.rachio_api)

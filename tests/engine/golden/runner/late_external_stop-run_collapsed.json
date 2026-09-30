@@ -58,7 +58,7 @@
  "logs": [
   [
    "warning",
-   "irrigation: watering stopped externally near the end of a step; not re-issuing the schedule"
+   "watering stopped externally near the end of a step; not re-issuing the schedule"
   ]
  ],
  "out": {

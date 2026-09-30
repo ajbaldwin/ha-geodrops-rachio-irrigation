@@ -33,7 +33,7 @@
  "logs": [
   [
    "warning",
-   "irrigation: watering stopped externally after 900s of a 24 min block; ending the run rather than starting more zones"
+   "watering stopped externally after 900s of a 24 min block; ending the run rather than starting more zones"
   ]
  ],
  "out": {

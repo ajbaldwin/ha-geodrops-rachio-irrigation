@@ -71,7 +71,7 @@
  "logs": [
   [
    "warning",
-   "irrigation: Rachio dropped the schedule after 24 min; re-issuing for the remaining water (recovery 1)"
+   "Rachio dropped the schedule after 24 min; re-issuing for the remaining water (recovery 1)"
   ]
  ],
  "out": {

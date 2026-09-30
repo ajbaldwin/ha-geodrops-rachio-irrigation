@@ -7,6 +7,16 @@ from homeassistant import config_entries, data_entry_flow
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.geodrops_rachio.const import DOMAIN
+from custom_components.geodrops_rachio.rachio_client import (
+    RachioAuthError, RachioConnectionError)
+
+
+@pytest.fixture(autouse=True)
+def _no_key_check():
+    """A finished flow sets its entry up, which checks the key with Rachio in
+    the background; there is no Rachio here."""
+    with patch("custom_components.geodrops_rachio._async_check_api_key"):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +26,7 @@ def _notify_service(hass):
     hass.services.async_register("notify", "phone", lambda call: None)
     yield
 
-CONNECT_INPUT = {"rachio_api_key_secret": "rachio_api_key"}
+CONNECT_INPUT = {"api_key": "KEY"}
 
 BINDINGS_INPUT = {
     "notify_service": "notify.phone",
@@ -64,27 +74,23 @@ def _field_names(result):
     return {str(f) for f in result["data_schema"].schema}
 
 
-def _patch_poll(*, key="KEY", devices=None, zones=None,
-                devices_raise=False, zones_raise=False):
-    """Patch the wizard's Rachio hooks. key=None simulates no resolvable
-    secret; *_raise simulates an API error at that hop."""
-    async def _resolve(hass, name):
-        return key
-
-    async def _fetch_devices(session, k):
-        if devices_raise:
-            raise RuntimeError("boom")
-        return devices or []
+def _patch_poll(*, devices=None, zones=None, account="person-1",
+                account_error=None, zones_raise=False):
+    """Patch the wizard's Rachio hooks. `account_error` is raised by the key
+    check; zones_raise simulates an API error at the zone hop."""
+    async def _fetch_account(session, k):
+        if account_error is not None:
+            raise account_error
+        return account, devices or []
 
     async def _fetch_zones(session, k, device_id):
         if zones_raise:
-            raise RuntimeError("boom")
+            raise RachioConnectionError("boom")
         return zones or []
 
     stack = contextlib.ExitStack()
     base = "custom_components.geodrops_rachio.config_flow."
-    stack.enter_context(patch(base + "resolve_secret", _resolve))
-    stack.enter_context(patch(base + "async_fetch_devices", _fetch_devices))
+    stack.enter_context(patch(base + "async_fetch_account", _fetch_account))
     stack.enter_context(patch(base + "async_fetch_device_zones", _fetch_zones))
     return stack
 
@@ -112,7 +118,7 @@ async def test_aborts_without_rachio(hass):
 async def test_user_step_proceeds_with_only_rachio(hass):
     """pyscript is no longer a prerequisite: Rachio alone is enough."""
     hass.config.components.add("rachio")
-    with _patch_poll(key=None):
+    with _patch_poll():
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
     assert result["type"] == data_entry_flow.FlowResultType.FORM
@@ -120,8 +126,8 @@ async def test_user_step_proceeds_with_only_rachio(hass):
 
 
 async def test_happy_path_creates_entry(hass, enable_pyscript_and_rachio):
-    # No resolvable key -> no live devices/zones -> free-text device + manual zone.
-    with _patch_poll(key=None):
+    # A valid key on an account with no controllers -> free-text device + manual zone.
+    with _patch_poll():
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         assert result["step_id"] == "connect"
@@ -147,9 +153,11 @@ async def test_happy_path_creates_entry(hass, enable_pyscript_and_rachio):
             result["flow_id"], {"self_calibration_enabled": False})
         assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
 
+    assert result["result"].data["api_key"] == "KEY"
+    assert result["result"].unique_id == "person-1"
     bindings = result["result"].data["bindings"]
     assert bindings["notify_service"] == "notify.phone"
-    assert bindings["rachio_api_key_secret"] == "rachio_api_key"
+    assert "rachio_api_key_secret" not in bindings
     assert bindings["rachio_device_name"] == "Main House"
     assert bindings["drought_level_select"] == "select.geodrops_rachio_drought_level"
     assert bindings["sun"] == {
@@ -159,7 +167,7 @@ async def test_happy_path_creates_entry(hass, enable_pyscript_and_rachio):
 
 async def test_device_name_dropdown_and_live_zone_prefill(
         hass, enable_pyscript_and_rachio):
-    with _patch_poll(key="KEY", devices=DEVICES, zones=LIVE_ZONES):
+    with _patch_poll(devices=DEVICES, zones=LIVE_ZONES):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -214,7 +222,7 @@ async def test_zone_details_prefills_matching_switch(
     # A HA switch whose friendly name matches the Rachio zone -> pre-selected.
     hass.states.async_set(
         "switch.front_yard", "off", {"friendly_name": "Front Yard"})
-    with _patch_poll(key="KEY", devices=DEVICES, zones=LIVE_ZONES):
+    with _patch_poll(devices=DEVICES, zones=LIVE_ZONES):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -234,7 +242,7 @@ async def test_zone_details_prefills_matching_switch(
 async def test_zone_details_no_switch_match_requires_pick(
         hass, enable_pyscript_and_rachio):
     # No matching switch -> field has no default (user must pick).
-    with _patch_poll(key="KEY", devices=DEVICES, zones=LIVE_ZONES):
+    with _patch_poll(devices=DEVICES, zones=LIVE_ZONES):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -260,7 +268,7 @@ async def test_switch_match_normalizes_spaces_and_underscores(
         "id": "z9", "name": "Front Slope", "zoneNumber": 2,
         "runtime_minutes": 20.0, "refill_depth_mm": 10.0,
     }]
-    with _patch_poll(key="KEY", devices=DEVICES, zones=zones):
+    with _patch_poll(devices=DEVICES, zones=zones):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -278,7 +286,7 @@ async def test_switch_match_normalizes_spaces_and_underscores(
 
 async def test_invalid_notify_service_shows_error(hass, enable_pyscript_and_rachio):
     # Picking a notify entity the scheduler can't call as a service is rejected.
-    with _patch_poll(key=None):
+    with _patch_poll():
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -302,7 +310,7 @@ async def test_duplicate_zone_key_preserves_typed_fields(
         hass, enable_pyscript_and_rachio):
     """A duplicate key re-renders the zone form with an error, keeping the other
     fields the user already typed instead of clearing them."""
-    with _patch_poll(key=None):
+    with _patch_poll():
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -329,9 +337,9 @@ async def test_duplicate_zone_key_preserves_typed_fields(
     assert _suggested(result, "runtime_minutes") == 45
 
 
-async def test_no_key_free_text_device_and_manual_zone(
+async def test_no_controllers_free_text_device_and_manual_zone(
         hass, enable_pyscript_and_rachio):
-    with _patch_poll(key=None):
+    with _patch_poll():
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -353,7 +361,7 @@ async def test_no_key_free_text_device_and_manual_zone(
 async def test_zone_fetch_failure_falls_back_to_manual(
         hass, enable_pyscript_and_rachio):
     # devices fetch OK, but the per-device zone fetch fails -> manual zone form.
-    with _patch_poll(key="KEY", devices=DEVICES, zones_raise=True):
+    with _patch_poll(devices=DEVICES, zones_raise=True):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
@@ -366,16 +374,37 @@ async def test_zone_fetch_failure_falls_back_to_manual(
     assert "rachio_zone" not in _field_names(result)
 
 
-async def test_device_fetch_failure_free_text_device(
-        hass, enable_pyscript_and_rachio):
-    with _patch_poll(key="KEY", devices_raise=True):
+@pytest.mark.parametrize(("error", "code"), [
+    (RachioAuthError("rejected"), "invalid_auth"),
+    (RachioConnectionError("down"), "cannot_connect"),
+])
+async def test_connect_reports_a_bad_key_and_recovers(
+        hass, enable_pyscript_and_rachio, error, code):
+    with _patch_poll(account_error=error):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], CONNECT_INPUT)
-        device_field = next(
-            f for f in result["data_schema"].schema if f == "rachio_device_name")
-        assert device_field.default() == ""
+    assert result["step_id"] == "connect"
+    assert result["errors"] == {"base": code}
+    with _patch_poll(devices=DEVICES):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+    assert result["step_id"] == "bindings"
+
+
+async def test_same_rachio_account_cannot_be_added_twice(
+        hass, enable_pyscript_and_rachio):
+    MockConfigEntry(domain=DOMAIN, unique_id="person-1", data={}).add_to_hass(hass)
+    with _patch_poll(), patch(
+            "custom_components.geodrops_rachio.config_flow."
+            "GeodropsRachioConfigFlow._async_current_entries", return_value=[]):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+    assert result["type"] == data_entry_flow.FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
 
 
 
@@ -383,7 +412,6 @@ ORIGINAL_BINDINGS = {
     "notify_service": "notify.phone",
     "calendar_entity": "calendar.lawn",
     "rachio_device_name": "Main House",
-    "rachio_api_key_secret": "rachio_api_key",
     "standby_switch": "switch.sprinkler_standby",
     "forecast_entity": "weather.home",
     "weather": {
@@ -432,7 +460,7 @@ def _zone(key, switch):
 
 async def test_options_lands_on_hub_menu(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] == data_entry_flow.FlowResultType.MENU
     assert result["step_id"] == "menu"
@@ -445,7 +473,7 @@ async def test_options_seed_finish_leaves_entry_unchanged(hass, enable_pyscript_
     entry = _options_entry(hass, zones=[dict(ZONE_INPUT, add_another_zone=None)],
                            calib=False, overrides="")
     original = dict(entry.data)
-    with _patch_poll(key=None), _count_reloads(hass) as reloads:
+    with _patch_poll(), _count_reloads(hass) as reloads:
         result = await hass.config_entries.options.async_init(entry.entry_id)
         assert reloads == []
         result = await hass.config_entries.options.async_configure(
@@ -460,7 +488,7 @@ async def test_options_seed_finish_leaves_entry_unchanged(hass, enable_pyscript_
 
 async def test_options_add_zone_persists_before_finish(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass) as reloads:
+    with _patch_poll(), _count_reloads(hass) as reloads:
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "add_zone"})
@@ -480,7 +508,7 @@ async def test_options_add_zone_persists_before_finish(hass, enable_pyscript_and
 
 async def test_options_add_zone_abandoned_still_persisted(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass) as reloads:
+    with _patch_poll(), _count_reloads(hass) as reloads:
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "add_zone"})
@@ -494,7 +522,7 @@ async def test_options_add_zone_abandoned_still_persisted(hass, enable_pyscript_
 
 async def test_options_add_two_zones_via_menu(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         for key, sw in (("back", "switch.back"), ("side", "switch.side")):
             result = await hass.config_entries.options.async_configure(
@@ -510,7 +538,7 @@ async def test_options_add_two_zones_via_menu(hass, enable_pyscript_and_rachio):
 
 async def test_options_remove_zone(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "remove_zone"})
@@ -527,7 +555,7 @@ async def test_options_remove_zone(hass, enable_pyscript_and_rachio):
 
 async def test_options_edit_zone_in_place(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "edit_zone"})
@@ -556,7 +584,7 @@ async def test_options_edit_zone_in_place(hass, enable_pyscript_and_rachio):
 
 async def test_options_edit_zone_preserves_rachio_zone_id(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass, zones=[dict(ZONE_INPUT, rachio_zone_id="z-uuid-1")])
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "edit_zone"})
@@ -577,7 +605,7 @@ async def test_options_edit_zone_preserves_rachio_zone_id(hass, enable_pyscript_
 
 async def test_options_add_zone_duplicate_key_rejected(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "add_zone"})
@@ -596,7 +624,7 @@ async def test_options_add_zone_duplicate_key_rejected(hass, enable_pyscript_and
 
 async def test_options_bindings_prefills_and_edits_core_only(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "bindings"})
@@ -618,7 +646,7 @@ async def test_options_bindings_prefills_and_edits_core_only(hass, enable_pyscri
 async def test_options_weather_edit_preserves_core(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
     changed_weather = dict(WEATHER_INPUT, weather_humidity="sensor.new_humidity")
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "weather"})
@@ -632,22 +660,85 @@ async def test_options_weather_edit_preserves_core(hass, enable_pyscript_and_rac
     assert entry.data["bindings"]["notify_service"] == "notify.phone"
 
 
-async def test_options_connect_repoll_persists_secret(hass, enable_pyscript_and_rachio):
+async def test_options_connect_replaces_the_key(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "connect"})
         assert result["step_id"] == "connect"
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"rachio_api_key_secret": "rotated_key"})
+            result["flow_id"], {"api_key": " rotated "})
         assert result["step_id"] == "menu"
-    assert entry.data["bindings"]["rachio_api_key_secret"] == "rotated_key"
+    assert entry.data["api_key"] == "rotated"
+    assert entry.unique_id == "person-1"
+    assert entry.data["bindings"] == ORIGINAL_BINDINGS
+
+
+async def test_options_connect_rejects_another_account(hass, enable_pyscript_and_rachio):
+    entry = _options_entry(hass)
+    hass.config_entries.async_update_entry(entry, unique_id="person-1")
+    with _patch_poll(account="someone-else"), _count_reloads(hass):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "connect"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"api_key": "other"})
+    assert result["errors"] == {"base": "wrong_account"}
+    assert "api_key" not in entry.data
+
+
+async def test_options_keep_the_stored_key(hass, enable_pyscript_and_rachio):
+    """Every options save writes the whole entry; the key must survive it."""
+    entry = _options_entry(hass)
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "api_key": "K"})
+    with _patch_poll(devices=DEVICES), _count_reloads(hass):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "finish"})
+    assert entry.data["api_key"] == "K"
+
+
+async def _start_reauth(hass, entry):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_REAUTH,
+                         "entry_id": entry.entry_id}, data=dict(entry.data))
+    assert result["step_id"] == "reauth_confirm"
+    return result
+
+
+async def test_reauth_stores_the_new_key(hass, enable_pyscript_and_rachio):
+    entry = _options_entry(hass)
+    with _patch_poll(account_error=RachioAuthError("rejected")):
+        result = await _start_reauth(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"api_key": "bad"})
+    assert result["errors"] == {"base": "invalid_auth"}
+    with _patch_poll(), _count_reloads(hass):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"api_key": "new"})
+    assert result["type"] == data_entry_flow.FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data["api_key"] == "new"
+    assert entry.unique_id == "person-1"
+    assert entry.data["bindings"] == ORIGINAL_BINDINGS
+
+
+async def test_reauth_refuses_another_account(hass, enable_pyscript_and_rachio):
+    entry = _options_entry(hass)
+    hass.config_entries.async_update_entry(
+        entry, unique_id="person-1", data={**entry.data, "api_key": "old"})
+    with _patch_poll(account="someone-else"):
+        result = await _start_reauth(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"api_key": "other"})
+    assert result["reason"] == "wrong_account"
+    assert entry.data["api_key"] == "old"
 
 
 async def test_options_advanced_invalid_yaml_rejected(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "advanced"})
@@ -664,7 +755,7 @@ async def test_options_advanced_invalid_yaml_rejected(hass, enable_pyscript_and_
 
 async def test_options_advanced_valid_yaml_persists(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
-    with _patch_poll(key=None), _count_reloads(hass):
+    with _patch_poll(), _count_reloads(hass):
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": "advanced"})

@@ -2,21 +2,27 @@ import copy
 import logging
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.core import HassJob, HomeAssistant
+from homeassistant.const import CONF_API_KEY
+from homeassistant.core import HassJob, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import config_writer, rachio_client
+from . import config_writer, entity_renames, owned_entities, rachio_client
 from .const import DOMAIN, PLATFORMS
 from .coordinator import ZoneStateCoordinator
 from .engine.port import HassPort
 from .engine.scheduler import Scheduler
 from .engine.store import async_open_store, async_remove_store
+from .entity_base import device_info
 from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
+
+# The secrets.yaml name version 1 entries read the Rachio API key from when
+# they did not name one.
+_LEGACY_SECRET_NAME = "rachio_api_key"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -29,22 +35,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     store = await async_open_store(hass, entry.entry_id)
     session = async_get_clientsession(hass)
 
-    async def fetch_zone_data(key_name: str):
-        key = await rachio_client.resolve_secret(hass, key_name)
-        if not key:
-            _LOGGER.warning(
-                "irrigation: no %s in secrets.yaml; using static values", key_name)
-            return {}, {}, {}
-        return await rachio_client.async_fetch_zone_data(session, key)
+    async def fetch_zone_data():
+        # Read at each fetch, so a key replaced by reauth applies without a
+        # reload (which would cancel a waiting or watering run).
+        key = entry.data.get(CONF_API_KEY)
+        try:
+            if not key:
+                raise rachio_client.RachioAuthError("no Rachio API key is set")
+            return await rachio_client.async_fetch_zone_data(session, key)
+        except rachio_client.RachioAuthError:
+            entry.async_start_reauth(hass)
+            raise
 
+    # {original id: current id} of bound entities renamed while this entry runs;
+    # the engine reads through it until the reload that rebinds them.
+    renamed: dict[str, str] = {}
     scheduler = Scheduler(
-        HassPort(hass), store, lambda: config_writer.build_config(data),
+        HassPort(hass, owned_entities.resolver(hass, entry, renamed)), store,
+        lambda: config_writer.build_config(data),
         fetch_zone_data,
         lambda coro, name: entry.async_create_background_task(hass, coro, name))
     coordinator = ZoneStateCoordinator(hass, entry, scheduler)
     coordinator.async_start()
+    # Registered up front so zone devices can link to it by its registry id.
+    hub = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, **device_info(entry))
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "data": data, "coordinator": coordinator, "scheduler": scheduler,
+        "hub_device_id": hub.id, "renamed": renamed,
         # What this running entry was set up with; a reload that would not
         # change it is skipped (see async_reload_if_changed).
         "setup_snapshot": _snapshot(entry)}
@@ -57,10 +75,54 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         hass.async_add_shutdown_job(HassJob(scheduler.async_shutdown)))
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
+    entry.async_on_unload(entity_renames.async_track_renames(
+        hass, entry, lambda old, new: _on_rename(hass, entry, old, new)))
+    entry.async_create_background_task(
+        hass, _async_check_api_key(hass, entry, session), "geodrops_rachio_check_key")
     _purge_orphan_zone_devices(hass, entry)
     _purge_retired_entities(hass, entry)
     # Last, so a failure above cannot leak the scheduler's time triggers.
     scheduler.async_start(hass)
+    return True
+
+
+async def _async_check_api_key(hass: HomeAssistant, entry: ConfigEntry,
+                               session) -> None:
+    """Ask for a new key at once if Rachio rejects the stored one.
+
+    Setup does not wait for this: the scheduler waters from the zones' stored
+    runtimes, and the key only refreshes them, so a rejected key or an
+    unreachable Rachio cloud must not stop a night's watering."""
+    key = entry.data.get(CONF_API_KEY)
+    try:
+        if not key:
+            raise rachio_client.RachioAuthError("no Rachio API key is set")
+        await rachio_client.async_fetch_account(session, key)
+    except rachio_client.RachioAuthError:
+        entry.async_start_reauth(hass)
+    except rachio_client.RachioConnectionError as err:
+        _LOGGER.info("Rachio is not reachable (%s); zones keep their stored "
+                     "runtimes until it is", err)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Version 1 named a secrets.yaml entry holding the Rachio API key; version
+    2 stores the key in the entry. A key that cannot be read is left empty and
+    setup asks for it (reauth)."""
+    if entry.version > 2:
+        return False
+    if entry.version == 1:
+        data = copy.deepcopy(dict(entry.data))
+        bindings = data.setdefault("bindings", {})
+        name = bindings.pop("rachio_api_key_secret", None) or _LEGACY_SECRET_NAME
+        data[CONF_API_KEY] = await rachio_client.resolve_secret(hass, name) or ""
+        hass.config_entries.async_update_entry(entry, data=data, version=2)
+        if data[CONF_API_KEY]:
+            _LOGGER.info("Moved the Rachio API key from secrets.yaml (%s) into "
+                         "the integration's settings", name)
+        else:
+            _LOGGER.warning("No Rachio API key found in secrets.yaml (%s); "
+                            "Home Assistant will ask for it", name)
     return True
 
 
@@ -90,7 +152,10 @@ def _purge_retired_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 def _snapshot(entry: ConfigEntry) -> dict:
-    return {"data": copy.deepcopy(dict(entry.data)),
+    # Without the API key: the running scheduler reads it from the entry on each
+    # fetch, so replacing it needs no reload.
+    data = {k: v for k, v in entry.data.items() if k != CONF_API_KEY}
+    return {"data": copy.deepcopy(data),
             "options": copy.deepcopy(dict(entry.options))}
 
 
@@ -106,10 +171,45 @@ async def async_reload_if_changed(hass: HomeAssistant, entry: ConfigEntry) -> bo
     snapshot = store.get("setup_snapshot")
     if (entry.state is ConfigEntryState.LOADED and snapshot is not None
             and snapshot == _snapshot(entry)):
-        _LOGGER.debug("geodrops_rachio: configuration unchanged; not reloading")
+        _LOGGER.debug("configuration unchanged; not reloading")
         return False
     await hass.config_entries.async_reload(entry.entry_id)
     return True
+
+
+@callback
+def _on_rename(hass: HomeAssistant, entry: ConfigEntry, old: str, new: str) -> None:
+    """A bound entity was renamed; entity_renames rewrites the entry next."""
+    store = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if store is None:
+        return
+    entity_renames.record_rename(store["renamed"], old, new)
+    store["rename_pending"] = True
+    _LOGGER.info("Following the rename of %s to %s", old, new)
+
+
+def _run_in_flight(store: dict) -> bool:
+    scheduler = store.get("scheduler")
+    task = scheduler.run_task if scheduler is not None else None
+    return task is not None and not task.done()
+
+
+@callback
+def _reload_when_run_ends(hass: HomeAssistant, entry: ConfigEntry, store: dict) -> None:
+    if store.get("reload_after_run"):
+        return
+    store["reload_after_run"] = True
+
+    @callback
+    def _run_ended(_task) -> None:
+        # Only for the entry instance that deferred it: a reload in between has
+        # already rebound the renamed entities.
+        if (hass.data.get(DOMAIN, {}).get(entry.entry_id) is store
+                and entry.state is ConfigEntryState.LOADED):
+            hass.async_create_task(async_reload_if_changed(hass, entry),
+                                   "geodrops_rachio_reload_after_rename")
+
+    store["scheduler"].run_task.add_done_callback(_run_ended)
 
 
 async def _reload_on_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -118,7 +218,13 @@ async def _reload_on_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # the options flow sets suppress_reload and, on "Done", clears it and fires
     # at most one reload. See config_flow.GeodropsRachioOptionsFlow.
     store = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    rename = store.pop("rename_pending", False)
     if store.get("suppress_reload"):
+        return
+    if rename and _run_in_flight(store):
+        # A reload would cancel the waiting or watering run. The engine already
+        # reads the new id (the resolver's rename map), so rebind once it ends.
+        _reload_when_run_ends(hass, entry, store)
         return
     await async_reload_if_changed(hass, entry)
 
@@ -132,8 +238,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     else:
         _LOGGER.warning(
-            "geodrops_rachio: platforms did not unload; the scheduler is already "
-            "stopped, so no nightly run will fire until Home Assistant restarts")
+            "platforms did not unload; the scheduler is already stopped, so no nightly "
+            "run will fire until Home Assistant restarts")
     return ok
 
 

@@ -1,0 +1,112 @@
+# Home Assistant integration quality scale: where this integration stands.
+# https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist
+# Each rule is `done`, `todo` or `exempt` (with a comment saying why).
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: The integration registers no service actions; its controls are buttons.
+  appropriate-polling:
+    status: done
+    comment: >-
+      No entity polls. Rachio zone data is cached for 6 h; the overnight
+      forecast refreshes hourly.
+  brands: done
+  common-modules:
+    status: todo
+    comment: coordinator.py exists; entities still lack a shared base class (entity.py).
+  config-flow-test-coverage:
+    status: todo
+    comment: Well tested, but coverage is not measured yet.
+  config-flow:
+    status: todo
+    comment: >-
+      The options menu labels are hard-coded rather than translated, some
+      fields lack a data_description, and settings live in entry.data rather
+      than entry.options.
+  dependency-transparency: done
+  docs-actions:
+    status: exempt
+    comment: No service actions.
+  docs-conditions:
+    status: exempt
+    comment: No device conditions.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: todo
+  docs-triggers:
+    status: exempt
+    comment: No device triggers.
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name:
+    status: todo
+    comment: Buttons, Standby, Drought level and the weather sensors do not set it yet.
+  runtime-data:
+    status: todo
+    comment: Runtime objects are still kept in hass.data.
+  test-before-configure: done
+  test-before-setup:
+    status: exempt
+    comment: >-
+      Setup must not wait on the Rachio cloud: the scheduler waters from the
+      zones' stored runtimes, and the API key only refreshes them. Setup checks
+      the key in the background and starts reauthentication if Rachio rejects
+      it.
+  unique-config-entry:
+    status: done
+    comment: One entry per Home Assistant, keyed to the Rachio account id.
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: No service actions.
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: todo
+    comment: The tunables accepted by the advanced overrides are not documented.
+  docs-installation-parameters: done
+  entity-unavailable: todo
+  integration-owner: done
+  log-when-unavailable: todo
+  parallel-updates: todo
+  reauthentication-flow: done
+  test-coverage:
+    status: todo
+    comment: Not measured yet.
+
+  # Gold
+  devices: done
+  diagnostics: todo
+  discovery:
+    status: exempt
+    comment: A cloud account bound to entities of other integrations; nothing to discover.
+  discovery-update-info:
+    status: exempt
+    comment: No discovery.
+  docs-data-update: todo
+  docs-examples: todo
+  docs-known-limitations: todo
+  docs-supported-devices: todo
+  docs-supported-functions: done
+  docs-troubleshooting: todo
+  docs-use-cases: todo
+  dynamic-devices:
+    status: done
+    comment: Zones added in Configure get their devices on the reload that follows.
+  entity-category: todo
+  entity-device-class: todo
+  entity-disabled-by-default: todo
+  entity-translations: todo
+  exception-translations: todo
+  icon-translations: todo
+  reconfiguration-flow: todo
+  repair-issues: todo
+  stale-devices:
+    status: done
+    comment: Devices of removed zones are purged on setup.
+
+  # Platinum
+  async-dependency: done
+  inject-websession: done
+  strict-typing: todo

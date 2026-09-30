@@ -448,11 +448,11 @@
  "logs": [
   [
    "warning",
-   "irrigation: forecast entity 'sensor.forecast_overnight_temp' not found"
+   "forecast entity 'sensor.forecast_overnight_temp' not found"
   ],
   [
    "warning",
-   "irrigation: overnight forecast unavailable; sizing the window from current conditions"
+   "overnight forecast unavailable; sizing the window from current conditions"
   ]
  ],
  "skip": {

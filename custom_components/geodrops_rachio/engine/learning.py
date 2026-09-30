@@ -50,8 +50,8 @@ class LearningMixin:
         observed_wx = self._read_observed_overnight(cfg.bindings)
         if observed_wx is None:
             _LOGGER.warning(
-                "irrigation: overnight observed means unavailable; skipping "
-                "calibration for last night"
+                "overnight observed means unavailable; skipping calibration for "
+                "last night"
             )
             return
         await self._await_run_finished()
@@ -130,7 +130,7 @@ class LearningMixin:
         try:
             cfg = self._load_cfg()
         except Exception as err:
-            _LOGGER.warning(f"irrigation: settle-and-learn skipped; config load failed ({err})")
+            _LOGGER.warning("settle-and-learn skipped; config load failed (%s)", err)
             return
         tun = cfg.tunables
         if not tun.self_calibration_enabled:
@@ -186,7 +186,7 @@ class LearningMixin:
                 # A single zone's missing/renamed sensor (or any other accumulate
                 # failure) must not abort the whole poll and must not drop the
                 # observation — keep it for the next poll to retry.
-                _LOGGER.warning(f"irrigation: settle-and-learn skipped a record ({err})")
+                _LOGGER.warning("settle-and-learn skipped a record (%s)", err)
                 remaining.append(rec)
                 continue
             if decision == "accumulate":
@@ -255,11 +255,11 @@ class LearningMixin:
                     zrec = calibration.apply_reject(zrec, reason, minutes, peak - pre, tun)
                 store[zone] = zrec
             except Exception as err:
-                _LOGGER.warning(f"irrigation: settle-and-learn skipped a record ({err})")
+                _LOGGER.warning("settle-and-learn skipped a record (%s)", err)
                 continue
         await self.store.write(PENDING_OBS, remaining)
         await self._write_efficacy_store(store)
         if learned or dropped:
             _LOGGER.info(
-                f"irrigation: settle-and-learn updated {learned} zone(s), "
-                f"dropped {dropped} inconclusive")
+                "settle-and-learn updated %s zone(s), dropped %s inconclusive",
+                learned, dropped)

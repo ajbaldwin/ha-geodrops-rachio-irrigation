@@ -33,7 +33,7 @@
  "logs": [
   [
    "warning",
-   "irrigation: no zone came on within 90s of handing Rachio a 24 min block; something stopped it at the start. Crediting no water and ending the run rather than starting more zones"
+   "no zone came on within 90s of handing Rachio a 24 min block; something stopped it at the start. Crediting no water and ending the run rather than starting more zones"
   ]
  ],
  "out": {

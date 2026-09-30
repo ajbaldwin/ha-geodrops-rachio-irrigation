@@ -107,7 +107,7 @@ async def test_a_zone_that_cannot_be_read_keeps_its_obs_for_the_next_poll(freeze
     w.remove("sensor.front_q1")            # a renamed/deleted quality sensor
     await _poll(w, eng, 1)
     assert eng.store.read(PENDING_OBS) == [_obs("front")]
-    assert ("warning", "irrigation: settle-and-learn skipped a record (sensor.front_q1)") in [
+    assert ("warning", "settle-and-learn skipped a record (sensor.front_q1)") in [
         (r.levelname.lower(), r.getMessage()) for r in caplog.records]
 
 
@@ -201,7 +201,7 @@ async def test_a_corrupt_zone_record_skips_that_obs(freezer, caplog):
     await _poll(w, eng, 14)
     assert eng.store.read(PENDING_OBS) == []
     assert eng.store.read(EFFICACY) == {"front": "corrupt"}
-    assert any(r.getMessage().startswith("irrigation: settle-and-learn skipped a record (")
+    assert any(r.getMessage().startswith("settle-and-learn skipped a record (")
                and r.levelname == "WARNING" for r in caplog.records)
 
 
