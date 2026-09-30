@@ -32,7 +32,9 @@ async def async_setup_entry(hass: HomeAssistant,
     try:
         config_writer.build_config(data)  # validates advanced_overrides
     except ValueError as err:
-        raise ConfigEntryNotReady(str(err)) from err
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN, translation_key="invalid_overrides",
+            translation_placeholders={"error": str(err)}) from err
 
     store = await async_open_store(hass, entry.entry_id)
     session = async_get_clientsession(hass)
