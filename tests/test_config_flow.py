@@ -736,6 +736,43 @@ async def test_reauth_refuses_another_account(hass, enable_pyscript_and_rachio):
     assert entry.data["api_key"] == "old"
 
 
+async def _start_reconfigure(hass, entry):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_RECONFIGURE,
+                         "entry_id": entry.entry_id})
+    assert result["step_id"] == "reconfigure"
+    return result
+
+
+async def test_reconfigure_replaces_the_key(hass, enable_pyscript_and_rachio):
+    entry = _options_entry(hass)
+    hass.config_entries.async_update_entry(
+        entry, unique_id="person-1", data={**entry.data, "api_key": "old"})
+    with _patch_poll(account_error=RachioConnectionError("down")):
+        result = await _start_reconfigure(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"api_key": "new"})
+    assert result["errors"] == {"base": "cannot_connect"}
+    with _patch_poll(), _count_reloads(hass):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"api_key": " new "})
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data["api_key"] == "new"
+    assert entry.data["bindings"] == ORIGINAL_BINDINGS
+
+
+async def test_reconfigure_refuses_another_account(hass, enable_pyscript_and_rachio):
+    entry = _options_entry(hass)
+    hass.config_entries.async_update_entry(
+        entry, unique_id="person-1", data={**entry.data, "api_key": "old"})
+    with _patch_poll(account="someone-else"):
+        result = await _start_reconfigure(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"api_key": "other"})
+    assert result["reason"] == "wrong_account"
+    assert entry.data["api_key"] == "old"
+
+
 async def test_options_advanced_invalid_yaml_rejected(hass, enable_pyscript_and_rachio):
     entry = _options_entry(hass)
     with _patch_poll(), _count_reloads(hass):
