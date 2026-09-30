@@ -93,6 +93,14 @@ second one is blocked. To change bindings, weather sensors, zones, or the
 advanced settings later, use the integration's **Configure** option — it
 re-runs the same wizard, pre-filled with your current settings.
 
+Changing an entity's ID in Home Assistant (Settings → Entities) is safe: the
+integration follows renames of its own entities and of every entity you picked
+in the wizard, and updates its settings to the new ID. A rename during a
+watering run takes effect at once and the settings are reloaded when the run
+ends. The exception is the hourly precipitation-forecast sensors, which are
+found by name prefix: if you rename those, update the prefixes under
+**Configure → Weather Station**.
+
 ## Controls and entities
 
 Setup creates one main **GeoDrops + Rachio Irrigation** device plus a device

@@ -24,6 +24,7 @@ from homeassistant.helpers import aiohttp_client, selector
 
 from .const import DOMAIN
 from .config_writer import build_config
+from .entity_renames import replace_entity_id
 from .rachio_client import (
     async_fetch_device_zones,
     async_fetch_devices,
@@ -170,6 +171,12 @@ class _BindingsWizardSteps:
         __init__._reload_on_options), so this saves each edit durably WITHOUT
         restarting the scheduler mid-flow. The single reload happens on "Done".
         """
+        # An entity renamed while the dialog is open was rewritten in the
+        # entry, not in this flow's copy; carry the rename over rather than
+        # write the old id back (see entity_renames).
+        store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        for old, new in store.get("renamed", {}).items():
+            self._data = replace_entity_id(self._data, old, new)
         self.hass.config_entries.async_update_entry(
             self.config_entry, data=self._data)
 
