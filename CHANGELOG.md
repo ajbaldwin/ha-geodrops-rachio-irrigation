@@ -4,6 +4,38 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.0-beta.1 — Renaming entities is safe; Rachio API key in the integration's settings
+
+### Changes
+
+- **Fix: renaming an entity could stop Standby or a zone's Exclude from
+  working.** Changing the entity ID of *Standby*, a zone's *Exclude from
+  Watering/Calibration* switch, or an entity picked in setup (for example the
+  Rachio standby switch) in Settings → Entities left the scheduler looking
+  for the old ID, so the switch was ignored and the zone was watered. Renames
+  are now followed. A rename during a watering run applies at once and the
+  settings reload when the run ends. The one exception is the hourly
+  precipitation-forecast sensors, which are found by name prefix: if you
+  rename those, update the prefixes under **Configure → Weather Station**.
+- **Fix: a renamed zone entity could go unavailable** on Home Assistant
+  2026.9 until the next restart.
+- **Your Rachio API key moves into the integration's settings.** On update it
+  is copied once from the `secrets.yaml` entry you named in setup. After that
+  this integration no longer reads `secrets.yaml`; you can remove the line if
+  nothing else uses it. New setups enter the key directly, and it is checked
+  with Rachio before setup continues.
+- **Home Assistant asks for a new key if Rachio rejects it** (or if none could
+  be read from `secrets.yaml`), with a notice on the integration. Watering
+  continues on each zone's stored runtimes meanwhile; only the refresh of
+  those runtimes from Rachio waits for the key. Replacing the key never
+  interrupts a run.
+- Log messages no longer include Rachio account or device IDs.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.2.0 → restart. The integration's
+settings and calibration history carry over; v1.2.0 reads the key from
+`secrets.yaml` again, so keep that line until you're staying on this version.
+
 ## v1.2.0 — Rachio app runs recorded; ready for GeoDrops' new state names
 
 Everything since v1.1.0, including both 1.2.0 betas.
