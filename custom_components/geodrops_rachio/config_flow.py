@@ -777,8 +777,10 @@ class _BindingsWizardSteps:
 
 
 class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, domain=DOMAIN):
+    VERSION = 1
     # 2: the Rachio API key is stored in the entry (was a secrets.yaml name).
-    VERSION = 2
+    # A minor bump so older releases can still load the entry (rollback).
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {"zones": []}

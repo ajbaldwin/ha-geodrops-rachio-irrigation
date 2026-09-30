@@ -476,7 +476,7 @@ async def test_zone_data_fetch_uses_the_stored_key(
     and asks for one."""
     from custom_components.geodrops_rachio.rachio_client import (
         RACHIO_BASE, RachioAuthError)
-    entry = MockConfigEntry(domain=DOMAIN, data=DATA, version=2)
+    entry = MockConfigEntry(domain=DOMAIN, data=DATA, minor_version=2)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -505,7 +505,7 @@ async def test_rejected_key_at_setup_asks_for_a_new_one_without_blocking(
         hass, aioclient_mock, enable_pyscript_and_rachio):
     from custom_components.geodrops_rachio.rachio_client import RACHIO_BASE
     aioclient_mock.get(RACHIO_BASE + "person/info", status=401)
-    entry = MockConfigEntry(domain=DOMAIN, data={**DATA, "api_key": "old"}, version=2)
+    entry = MockConfigEntry(domain=DOMAIN, data={**DATA, "api_key": "old"}, minor_version=2)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -519,7 +519,7 @@ async def test_unreachable_rachio_at_setup_does_not_ask_for_a_key(
     import asyncio
     from custom_components.geodrops_rachio.rachio_client import RACHIO_BASE
     aioclient_mock.get(RACHIO_BASE + "person/info", exc=asyncio.TimeoutError())
-    entry = MockConfigEntry(domain=DOMAIN, data={**DATA, "api_key": "k"}, version=2)
+    entry = MockConfigEntry(domain=DOMAIN, data={**DATA, "api_key": "k"}, minor_version=2)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -530,24 +530,34 @@ async def test_unreachable_rachio_at_setup_does_not_ask_for_a_key(
 async def test_migration_moves_the_key_out_of_secrets_yaml(
         hass, tmp_path, enable_pyscript_and_rachio):
     (tmp_path / "secrets.yaml").write_text("lawn_key: K1\n", encoding="utf-8")
-    entry = MockConfigEntry(domain=DOMAIN, version=1, data={
+    entry = MockConfigEntry(domain=DOMAIN, minor_version=1, data={
         **DATA, "bindings": {"rachio_api_key_secret": "lawn_key",
                              "notify_service": "notify.phone"}})
     entry.add_to_hass(hass)
     with patch("custom_components.geodrops_rachio._async_check_api_key", AsyncMock()):
         assert await hass.config_entries.async_setup(entry.entry_id)
-    assert entry.version == 2
+    assert (entry.version, entry.minor_version) == (1, 2)
     assert entry.data["api_key"] == "K1"
-    assert entry.data["bindings"] == {"notify_service": "notify.phone"}
+    # Kept for a rollback to a release that still reads it.
+    assert entry.data["bindings"] == {"rachio_api_key_secret": "lawn_key",
+                                      "notify_service": "notify.phone"}
 
 
 async def test_migration_without_a_readable_key_asks_for_one(
         hass, enable_pyscript_and_rachio):
-    entry = MockConfigEntry(domain=DOMAIN, version=1, data=DATA)
+    entry = MockConfigEntry(domain=DOMAIN, minor_version=1, data=DATA)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.version == 2 and entry.data["api_key"] == ""
+    assert entry.minor_version == 2 and entry.data["api_key"] == ""
     assert entry.state is ConfigEntryState.LOADED
     assert [f["context"]["source"] for f in hass.config_entries.flow.async_progress()
             ] == ["reauth"]
+
+
+async def test_entry_from_a_newer_major_version_is_refused(
+        hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, version=2, data=DATA)
+    entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.MIGRATION_ERROR
