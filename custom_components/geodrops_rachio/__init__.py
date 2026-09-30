@@ -20,7 +20,7 @@ from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
 
-# The secrets.yaml name version 1 entries read the Rachio API key from when
+# The secrets.yaml name entries before 1.2 read the Rachio API key from when
 # they did not name one.
 _LEGACY_SECRET_NAME = "rachio_api_key"
 
@@ -106,17 +106,22 @@ async def _async_check_api_key(hass: HomeAssistant, entry: ConfigEntry,
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Version 1 named a secrets.yaml entry holding the Rachio API key; version
-    2 stores the key in the entry. A key that cannot be read is left empty and
-    setup asks for it (reauth)."""
-    if entry.version > 2:
+    """1.1 named a secrets.yaml entry holding the Rachio API key; 1.2 stores the
+    key in the entry. A key that cannot be read is left empty and setup asks
+    for it (reauth).
+
+    A minor version, so the change stays loadable by older releases (Home
+    Assistant loads an entry with a newer minor version of the same major): a
+    rollback keeps the entry and its calibration history. For the same reason
+    the secrets.yaml name stays in the bindings, unused here."""
+    if entry.version > 1:
         return False
-    if entry.version == 1:
+    if entry.minor_version < 2:
         data = copy.deepcopy(dict(entry.data))
-        bindings = data.setdefault("bindings", {})
-        name = bindings.pop("rachio_api_key_secret", None) or _LEGACY_SECRET_NAME
+        bindings = data.get("bindings", {})
+        name = bindings.get("rachio_api_key_secret") or _LEGACY_SECRET_NAME
         data[CONF_API_KEY] = await rachio_client.resolve_secret(hass, name) or ""
-        hass.config_entries.async_update_entry(entry, data=data, version=2)
+        hass.config_entries.async_update_entry(entry, data=data, minor_version=2)
         if data[CONF_API_KEY]:
             _LOGGER.info("Moved the Rachio API key from secrets.yaml (%s) into "
                          "the integration's settings", name)
