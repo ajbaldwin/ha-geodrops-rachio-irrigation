@@ -84,8 +84,8 @@ CHANGELOG sections:
      container. `tools/test.sh` builds the `geodrops-rachio-test` image from
      `Dockerfile.test` (cached after the first run; a separate tag because the
      GeoDrops repo's script rebuilds `geodrops-test` with an older Home
-     Assistant) and runs `pytest` in it (arguments are forwarded), which collects **both** `tests/` and `tests_brain/` —
-     including `tests/engine/`'s scenario tests, which run the engine through
+     Assistant) and runs `pytest` in it (arguments are forwarded), which
+     collects **both** `tests/` and `tests_brain/` — including `tests/engine/`'s scenario tests, which run the engine through
      whole nights, runs and restarts and compare every effect with a golden
      fixture (see below). CI (`.github/workflows/ci.yml`) runs the same suite
      on `ubuntu-latest`.
@@ -97,6 +97,14 @@ CHANGELOG sections:
      get an older HA, below the `hacs.json` minimum.
 
    Both suites must pass before releasing.
+
+   The quality scale (`custom_components/geodrops_rachio/quality_scale.yaml`)
+   claims every module above 95% coverage and `config_flow.py` at 100%. A
+   change that adds code should keep that; check with:
+
+   ```bash
+   bash tools/test.sh -q --cov=custom_components/geodrops_rachio --cov-report=term-missing
+   ```
 
 3. **Open a release PR** (`release: vX.Y.Z`) with two changes:
 
