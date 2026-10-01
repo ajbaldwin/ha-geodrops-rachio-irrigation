@@ -144,7 +144,7 @@ or in progress. Pressing **Done** with nothing changed does not reload.
 | --- | --- |
 | Connect Your Rachio Account | The API key (checked with Rachio). |
 | Core Setup | Notification service, irrigation log calendar, Rachio controller, Rachio standby switch, forecast `weather.*` entity. |
-| Weather station | Temperature, humidity, wind, rain-last-hour and precipitation-type sensors; the precipitation-chance and -amount sensor-name prefixes. |
+| Weather station | Temperature, humidity, wind, rain-last-hour, precipitation-type and rain-today sensors; the precipitation-chance and -amount sensor-name prefixes. Rain today is the gauge's total since midnight; a night with more than `rain_confounder_mm` (0.5 mm) is left out of watering calibration. |
 | Add / Edit / Remove a zone | Per zone: Rachio zone switch, GeoDrops dominant, state and quality sensors, target moisture level, full-refill runtime and depth, spray flag, grouping and adjacent zones. |
 | Advanced | Active Watering Calibration on/off, and the overrides below. |
 

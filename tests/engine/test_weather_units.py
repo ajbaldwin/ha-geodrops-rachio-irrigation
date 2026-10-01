@@ -8,10 +8,12 @@ from tests.engine.scenario import T_PLAN, entry_data, native_engine, populate
 from tests.engine.world import FakeWorld
 
 
-def _eng(freezer):
+def _eng(freezer, weather=None):
     freezer.move_to(T_PLAN)
     world = FakeWorld(freezer)
     data = entry_data()
+    if weather is not None:
+        data["bindings"]["weather"] = weather
     populate(world, data)
     eng = native_engine(world, data, PlanningMixin, IOMixin)
     eng._current_cfg = eng._load_cfg()
@@ -73,4 +75,20 @@ async def test_rain_confounder_reads_the_gauge_in_mm(freezer):
     assert eng._rained_since_run(eng._current_bindings, eng._current_tun) is True
     world.set("sensor.tempest_precipitation_today", "0.05",
               {"unit_of_measurement": "mm"})
+    assert eng._rained_since_run(eng._current_bindings, eng._current_tun) is False
+
+
+async def test_rain_confounder_reads_the_bound_gauge(freezer):
+    """A non-Tempest gauge picked in the wizard is the one read."""
+    world, eng = _eng(freezer, weather={"rain_today": "sensor.backyard_rain_today"})
+    world.set("sensor.backyard_rain_today", "3.0", {"unit_of_measurement": "mm"})
+    assert eng._current_bindings.weather.rain_today == "sensor.backyard_rain_today"
+    assert eng._rained_since_run(eng._current_bindings, eng._current_tun) is True
+
+
+async def test_rain_confounder_fails_safe_on_a_missing_gauge(freezer):
+    """A gauge entity that does not exist reads as no rain, not an error that
+    would abort the settle pass."""
+    world, eng = _eng(freezer)
+    world.remove("sensor.tempest_precipitation_today")
     assert eng._rained_since_run(eng._current_bindings, eng._current_tun) is False

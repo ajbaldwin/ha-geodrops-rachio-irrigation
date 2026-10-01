@@ -12,6 +12,11 @@ section per released version, newest first.
   (for example renaming a device together with its entities). Each rename is
   now written to the integration's settings, even one that arrives while the
   integration is reloading for the previous one.
+- **Pick your rain gauge's daily total** under Configure → Weather Station
+  (*Rain Today Sensor*). Watering calibration leaves out a night with real
+  rain; it read the Tempest's *Precipitation today* sensor with no way to
+  change it, so other weather stations never had a rainy night left out. A
+  missing gauge no longer stops calibration.
 - **Weather readings are converted to the scheduler's units** (°F, mph,
   mm) from the unit each sensor reports, and the forecast from the weather
   entity's units, so metric installs and metric weather stations no longer

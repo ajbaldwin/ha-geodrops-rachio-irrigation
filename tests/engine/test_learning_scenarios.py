@@ -95,6 +95,22 @@ async def test_settle_scenario(freezer, name, caplog):
     _assert_settle_branch(name, eng)
 
 
+async def test_settle_learns_without_a_rain_gauge(freezer):
+    """A missing rain-today gauge reads as no rain: the sample is learned, the
+    settle pass is not aborted with the sample left pending."""
+    readings, statics = SETTLE["accept"]
+    data = entry_data(self_cal=True)
+    docs = {PENDING_OBS: [_obs("front")], EFFICACY: {"front": {"state": "calibrating"}}}
+    world = _world(freezer, data, readings, statics)
+    world.remove("sensor.tempest_precipitation_today")
+    eng = native_engine(world, data, *ALL_MIXINS, docs=docs)
+    for _ in range(80):
+        for coro in world.advance(1800):
+            await coro
+        await eng._settle_and_learn()
+    _assert_settle_branch("accept", eng)
+
+
 @pytest.mark.parametrize("has_nightly", [True, False])
 async def test_calibrate_scenario(freezer, has_nightly, caplog):
     caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
