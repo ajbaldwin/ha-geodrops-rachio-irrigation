@@ -155,4 +155,10 @@ rules:
   # Platinum
   async-dependency: done
   inject-websession: done
-  strict-typing: todo
+  strict-typing:
+    status: todo
+    comment: >-
+      `mypy --strict` reports 810 errors in 33 files (2026-10-01): most are
+      engine mixins using attributes only their combined class defines, plus
+      untyped functions and bare generics. Planned as brain/, the integration
+      modules, engine/, then a CI check.

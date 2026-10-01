@@ -8,6 +8,10 @@ section per released version, newest first.
 
 ### Changes
 
+- **Fix: renaming several bound entities at once followed only the first**
+  (for example renaming a device together with its entities). Each rename is
+  now written to the integration's settings, even one that arrives while the
+  integration is reloading for the previous one.
 - **Pick your rain gauge's daily total** under Configure → Weather Station
   (*Rain Today Sensor*). Watering calibration leaves out a night with real
   rain; it read the Tempest's *Precipitation today* sensor with no way to
