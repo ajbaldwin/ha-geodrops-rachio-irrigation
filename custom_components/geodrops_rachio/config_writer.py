@@ -1,7 +1,27 @@
 from __future__ import annotations
+from collections.abc import Mapping
+from typing import Any
+
 import yaml
 
+from .const import SETTINGS_KEYS
 from .util import slug
+
+
+def entry_config(data: Mapping[str, Any], options: Mapping[str, Any]) -> dict:
+    """An entry's whole configuration: the setup data, with the settings
+    (SETTINGS_KEYS) taken from its options. Entries before 1.3 kept the
+    settings in data, and still carry a copy there for a rollback."""
+    merged = dict(data)
+    merged.update({k: options[k] for k in SETTINGS_KEYS if k in options})
+    return merged
+
+
+def split_settings(config: Mapping[str, Any]) -> tuple[dict, dict]:
+    """(data, options) for a whole configuration: entry_config reversed."""
+    data = {k: v for k, v in config.items() if k not in SETTINGS_KEYS}
+    options = {k: config[k] for k in SETTINGS_KEYS if k in config}
+    return data, options
 
 # Defaults the wizard does not collect; the scheduler also has code defaults,
 # but emitting them keeps the built config self-describing.

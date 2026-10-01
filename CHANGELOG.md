@@ -40,6 +40,13 @@ section per released version, newest first.
 - **Replace the Rachio API key at any time** with ⋮ → Reconfigure.
 - **The README covers** configuration options, how and when data updates,
   examples, known limitations, troubleshooting and removal.
+- **Every setup and Configure field has a description**, and the Configure
+  menu can be translated.
+
+**Rollback:** HACS → Redownload → v1.3.0-beta.1 → restart. *Active Watering
+Calibration* and *Advanced overrides* go back to what they were when you
+updated; if you changed them since, set them again under Configure →
+Advanced.
 
 ## v1.3.0-beta.1 — Renaming entities is safe; Rachio API key in the integration's settings
 

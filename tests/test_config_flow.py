@@ -163,6 +163,10 @@ async def test_happy_path_creates_entry(hass, enable_pyscript_and_rachio):
     assert bindings["sun"] == {
         "dawn": "sensor.sun_next_dawn", "sunrise": "sensor.sun_next_rising"}
     assert result["result"].data["zones"][0]["key"] == "front"
+    # Settings are options; the rest is setup data.
+    assert result["result"].options == {
+        "self_calibration_enabled": False, "advanced_overrides": ""}
+    assert "self_calibration_enabled" not in result["result"].data
 
 
 async def test_device_name_dropdown_and_live_zone_prefill(
@@ -482,8 +486,9 @@ async def test_options_seed_finish_leaves_entry_unchanged(hass, enable_pyscript_
     assert reloads == [entry.entry_id]          # exactly one reload, at finish
     assert entry.data["bindings"] == original["bindings"]
     assert entry.data["zones"] == original["zones"]
-    assert entry.data["self_calibration_enabled"] is False
-    assert entry.data["advanced_overrides"] == ""
+    # Done hands the settings back as the options rather than clearing them.
+    assert entry.options == {
+        "self_calibration_enabled": False, "advanced_overrides": ""}
 
 
 async def test_options_add_zone_persists_before_finish(hass, enable_pyscript_and_rachio):
@@ -787,7 +792,7 @@ async def test_options_advanced_invalid_yaml_rejected(hass, enable_pyscript_and_
         assert result["step_id"] == "advanced"
         assert result["errors"] == {"advanced_overrides": "invalid_advanced_overrides"}
     # Nothing persisted.
-    assert entry.data["advanced_overrides"] == ""
+    assert entry.options == {}
 
 
 async def test_options_advanced_valid_yaml_persists(hass, enable_pyscript_and_rachio):
@@ -800,5 +805,104 @@ async def test_options_advanced_valid_yaml_persists(hass, enable_pyscript_and_ra
             result["flow_id"],
             {"self_calibration_enabled": True, "advanced_overrides": "rain_skip_mm: 2"})
         assert result["step_id"] == "menu"
-    assert entry.data["self_calibration_enabled"] is True
-    assert entry.data["advanced_overrides"] == "rain_skip_mm: 2"
+    assert entry.options == {
+        "self_calibration_enabled": True, "advanced_overrides": "rain_skip_mm: 2"}
+    # The pre-1.3 copies in the data stay as they were, for a rollback.
+    assert entry.data["self_calibration_enabled"] is False
+    assert entry.data["advanced_overrides"] == ""
+
+
+async def _to_zone_picker(hass):
+    """A fresh setup flow, connected to Rachio, at the live zone picker."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER})
+    for step_input in (CONNECT_INPUT, BINDINGS_INPUT, WEATHER_INPUT):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], step_input)
+    assert result["step_id"] == "zone"
+    return result
+
+
+PICKED_ZONE_INPUT = {k: v for k, v in ZONE_INPUT.items() if k != "add_another_zone"}
+
+
+async def test_picked_zones_add_another_and_reject_a_duplicate_key(
+        hass, enable_pyscript_and_rachio):
+    with _patch_poll(devices=DEVICES, zones=LIVE_ZONES):
+        result = await _to_zone_picker(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"rachio_zone": "z-uuid-1"})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], dict(PICKED_ZONE_INPUT, add_another_zone=True))
+        assert result["step_id"] == "zone"           # back to the picker
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"rachio_zone": "z-uuid-1"})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], dict(PICKED_ZONE_INPUT, key="Front"))
+        assert result["step_id"] == "zone_details"
+        assert result["errors"] == {"key": "duplicate_zone_key"}
+        # The re-render keeps what was typed.
+        suggested = {str(f): (f.description or {}).get("suggested_value")
+                     for f in result["data_schema"].schema}
+        assert suggested["key"] == "Front"
+
+
+async def test_options_add_a_picked_zone_returns_to_the_menu(
+        hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        "bindings": dict(ORIGINAL_BINDINGS), "zones": [dict(ZONE_INPUT)],
+        "api_key": "KEY"})
+    entry.add_to_hass(hass)
+    with _patch_poll(devices=DEVICES, zones=LIVE_ZONES), _count_reloads(hass):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        # Core Setup's controller pick is what loads its zones for the picker.
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "bindings"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], BINDINGS_INPUT)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "add_zone"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"rachio_zone": "z-uuid-1"})
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], dict(PICKED_ZONE_INPUT, key="back"))
+        assert result["step_id"] == "menu"
+    back = next(z for z in entry.data["zones"] if z["key"] == "back")
+    assert back["rachio_zone_id"] == "z-uuid-1"
+
+
+async def test_guess_switch_matches_by_object_id(hass):
+    from custom_components.geodrops_rachio.config_flow import (
+        GeodropsRachioConfigFlow)
+    flow = GeodropsRachioConfigFlow()
+    flow.hass = hass
+    hass.states.async_set("switch.front_yard", "off")
+    assert flow._guess_switch("Front Yard") == "switch.front_yard"   # exact
+    assert flow._guess_switch("Yard") == "switch.front_yard"         # contains
+    assert flow._guess_switch("Pool") is None
+    assert flow._guess_switch("!!") is None                          # no slug
+
+
+async def test_notify_field_is_free_text_without_notify_services(hass):
+    from custom_components.geodrops_rachio.config_flow import (
+        GeodropsRachioConfigFlow)
+    hass.services.async_remove("notify", "phone")
+    flow = GeodropsRachioConfigFlow()
+    flow.hass = hass
+    key, validator = flow._notify_service_field(None)
+    assert str(key) == "notify_service" and validator is str
+
+
+def test_unknown_number_is_required():
+    from custom_components.geodrops_rachio.config_flow import _optional_number
+    assert isinstance(_optional_number("runtime_minutes", None), vol.Required)
+    assert not isinstance(_optional_number("runtime_minutes", 30.0), vol.Required)
+
+
+async def test_second_setup_is_refused(hass, enable_pyscript_and_rachio):
+    MockConfigEntry(domain=DOMAIN, data={}).add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER})
+    assert result["type"] == data_entry_flow.FlowResultType.ABORT
+    assert result["reason"] == "single_instance_allowed"
