@@ -11,9 +11,11 @@ section per released version, newest first.
 - **Weather readings are converted to the scheduler's units** (°F, mph,
   mm) from the unit each sensor reports, and the forecast from the weather
   entity's units, so metric installs and metric weather stations no longer
-  misjudge the disease window, rain checks and forecast calibration. The
-  overnight weather sensors still show °F and mph. A sensor with no unit is
-  read as before.
+  misjudge the disease window, rain checks and forecast calibration. A
+  sensor with no unit is read as before.
+- **The overnight weather sensors are temperature, humidity and wind-speed
+  sensors**, so they show in your home's units (°C and km/h on a metric
+  install) and get Home Assistant's icons and unit choices.
 - **The Irrigation Controls entities' names now start with the device's
   name**, as the zone entities' already do: *Stop irrigation* shows as
   *Irrigation Controls Stop irrigation*. Entity IDs are unchanged, and names
