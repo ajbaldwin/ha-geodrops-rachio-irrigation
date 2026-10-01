@@ -144,6 +144,20 @@ async def test_renamed_zone_sensors_are_rebound(hass, enable_pyscript_and_rachio
     assert back["dominant_sensor"] == "sensor.back_dominant"
 
 
+async def test_rename_while_the_entry_is_not_loaded_is_followed(
+        hass, enable_pyscript_and_rachio):
+    """Following a rename reloads the entry; a rename that lands while it is
+    unloaded (a burst, e.g. renaming a device and its entities) must still be
+    followed, not dropped."""
+    _external(hass, "sensor.front_dominant", "55")
+    entry, _ = await _setup(hass)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    _rename(hass, "sensor.front_dominant", "sensor.front_moisture")
+    await hass.async_block_till_done()
+    front = next(z for z in entry.data["zones"] if z["key"] == "front")
+    assert front["dominant_sensor"] == "sensor.front_moisture"
+
+
 async def test_rename_during_a_run_applies_now_and_rebinds_after_it(
         hass, enable_pyscript_and_rachio):
     """A reload would cancel the waiting or watering run, so the engine reads
