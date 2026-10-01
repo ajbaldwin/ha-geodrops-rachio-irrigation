@@ -4,7 +4,7 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
-## Unreleased
+## v1.3.0-beta.2 — Metric weather read correctly; diagnostics, repairs and reconfigure
 
 ### Changes
 
@@ -46,6 +46,7 @@ section per released version, newest first.
   examples, known limitations, troubleshooting and removal.
 - **Every setup and Configure field has a description**, and the Configure
   menu can be translated.
+- **Requires a Home Assistant restart** after updating.
 
 **Rollback:** HACS → Redownload → v1.3.0-beta.1 → restart. *Active Watering
 Calibration* and *Advanced overrides* go back to what they were when you
