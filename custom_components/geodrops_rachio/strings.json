@@ -33,7 +33,8 @@
           "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
           "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
-          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
+          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API.",
+          "calendar_entity": "The calendar the scheduler adds each night's watering summary to."
         }
       },
       "weather": {
@@ -50,7 +51,12 @@
         },
         "data_description": {
           "precipitation_chance_prefix": "Prefix of your hourly forecast precip-chance sensors; the scheduler appends an hour count, e.g. sensor.precipitation_chance_3_hour.",
-          "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour."
+          "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour.",
+          "weather_temperature": "Outdoor temperature from your weather station, in any unit; warm nights lengthen the disease window.",
+          "weather_humidity": "Outdoor relative humidity (%); humid nights shorten the watering window to limit disease.",
+          "weather_wind": "Wind speed in any unit, ideally an average; still air counts toward disease risk.",
+          "weather_rain_last_hour": "The rain gauge's total for the past hour (mm or inches). Rain stops a run, and the gauge confirms rain while a spray zone runs.",
+          "weather_precip_type": "The station's precipitation type; rain or hail stops a run."
         }
       },
       "zone": {
@@ -79,7 +85,12 @@
           "runtime_minutes": "Minutes for a full refill of this zone — use the Rachio app's computed zone runtime.",
           "refill_depth_mm": "Full-refill depth in mm — Rachio's depthOfWater (inches) × 25.4.",
           "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running.",
-          "rachio_zone": "Pick your zone from the live list pulled from Rachio — its runtime and refill depth are pre-filled on the next screen. Choose \"Enter manually\" for a zone that isn't in Rachio."
+          "rachio_zone": "Pick your zone from the live list pulled from Rachio — its runtime and refill depth are pre-filled on the next screen. Choose \"Enter manually\" for a zone that isn't in Rachio.",
+          "rachio_switch": "The Home Assistant switch that turns this zone's water on (from the Rachio integration).",
+          "dominant_sensor": "The GeoDrops sensor for this zone's dominant soil-moisture reading (the value the scheduler waters toward).",
+          "state_sensor": "The GeoDrops sensor reporting this zone's moisture state/health.",
+          "quality_sensors": "One or more GeoDrops quality/telemetry sensors for this zone (used to validate readings).",
+          "add_another_zone": "Set up another zone next, before finishing."
         }
       },
       "advanced": {
@@ -122,7 +133,8 @@
           "adjacency": "Optional. Other zones physically next to this one. The scheduler avoids watering neighbors back-to-back to limit runoff and pressure drop.",
           "runtime_minutes": "Minutes for a full refill — pre-filled from Rachio's computed zone runtime when available.",
           "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
-          "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
+          "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station.",
+          "add_another_zone": "Set up another zone next, before finishing."
         }
       },
       "reauth_confirm": {
@@ -180,7 +192,8 @@
           "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
           "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
-          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API."
+          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API.",
+          "calendar_entity": "The calendar the scheduler adds each night's watering summary to."
         }
       },
       "weather": {
@@ -197,7 +210,12 @@
         },
         "data_description": {
           "precipitation_chance_prefix": "Prefix of your hourly forecast precip-chance sensors; the scheduler appends an hour count, e.g. sensor.precipitation_chance_3_hour.",
-          "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour."
+          "precipitation_amount_prefix": "Prefix of your hourly forecast precip-amount sensors; the scheduler appends an hour count, e.g. sensor.precipitation_amount_3_hour.",
+          "weather_temperature": "Outdoor temperature from your weather station, in any unit; warm nights lengthen the disease window.",
+          "weather_humidity": "Outdoor relative humidity (%); humid nights shorten the watering window to limit disease.",
+          "weather_wind": "Wind speed in any unit, ideally an average; still air counts toward disease risk.",
+          "weather_rain_last_hour": "The rain gauge's total for the past hour (mm or inches). Rain stops a run, and the gauge confirms rain while a spray zone runs.",
+          "weather_precip_type": "The station's precipitation type; rain or hail stops a run."
         }
       },
       "menu": {
@@ -217,12 +235,18 @@
         "title": "Choose a Zone",
         "data": {
           "zone": "Zone"
+        },
+        "data_description": {
+          "zone": "The zone to edit or remove."
         }
       },
       "confirm_remove": {
         "title": "Remove Zone",
         "data": {
           "confirm": "Yes, remove this zone"
+        },
+        "data_description": {
+          "confirm": "Removes the zone from the scheduler, with its device and entities."
         }
       },
       "zone": {
@@ -251,7 +275,12 @@
           "runtime_minutes": "Minutes for a full refill of this zone — use the Rachio app's computed zone runtime.",
           "refill_depth_mm": "Full-refill depth in mm — Rachio's depthOfWater (inches) × 25.4.",
           "spray": "Enable if this zone's spray can reach your weather station. The scheduler then confirms 'rain' with the physical rain gauge instead of trusting the reported precipitation type while this zone is running.",
-          "rachio_zone": "Pick your zone from the live list pulled from Rachio — its runtime and refill depth are pre-filled on the next screen. Choose \"Enter manually\" for a zone that isn't in Rachio."
+          "rachio_zone": "Pick your zone from the live list pulled from Rachio — its runtime and refill depth are pre-filled on the next screen. Choose \"Enter manually\" for a zone that isn't in Rachio.",
+          "rachio_switch": "The Home Assistant switch that turns this zone's water on (from the Rachio integration).",
+          "dominant_sensor": "The GeoDrops sensor for this zone's dominant soil-moisture reading (the value the scheduler waters toward).",
+          "state_sensor": "The GeoDrops sensor reporting this zone's moisture state/health.",
+          "quality_sensors": "One or more GeoDrops quality/telemetry sensors for this zone (used to validate readings).",
+          "add_another_zone": "Set up another zone next, before finishing."
         }
       },
       "advanced": {
@@ -294,7 +323,8 @@
           "adjacency": "Optional. Other zones physically next to this one. The scheduler avoids watering neighbors back-to-back to limit runoff and pressure drop.",
           "runtime_minutes": "Minutes for a full refill — pre-filled from Rachio's computed zone runtime when available.",
           "refill_depth_mm": "Full-refill depth in mm — pre-filled from Rachio's depthOfWater (inches × 25.4) when available.",
-          "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station."
+          "spray": "Turn on ONLY if this zone's spray physically reaches your weather station. When it does, the scheduler double-checks 'rain' against the real rain gauge while this zone runs, so its own spray isn't mistaken for rainfall. Leave off for drip or zones far from the station.",
+          "add_another_zone": "Set up another zone next, before finishing."
         }
       }
     },

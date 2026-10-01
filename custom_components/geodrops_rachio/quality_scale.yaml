@@ -18,14 +18,15 @@ rules:
       Entities share a base class in entity.py; the runtime data and zone
       coordinator live in coordinator.py.
   config-flow-test-coverage:
-    status: todo
-    comment: Well tested, but coverage is not measured yet.
+    status: done
+    comment: config_flow.py is fully covered.
   config-flow:
-    status: todo
+    status: done
     comment: >-
-      The options menu labels are hard-coded rather than translated, some
-      fields lack a data_description, and settings live in entry.data rather
-      than entry.options.
+      Every field has a data_description and the options menu is translated.
+      The settings (Active Watering Calibration, advanced overrides) are in
+      entry.options; the API key, bindings and zones are setup data in
+      entry.data, which Configure edits like a reconfigure step would.
   dependency-transparency: done
   docs-actions:
     status: exempt

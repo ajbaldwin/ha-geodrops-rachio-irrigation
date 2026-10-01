@@ -539,7 +539,7 @@ async def test_migration_moves_the_key_out_of_secrets_yaml(
     entry.add_to_hass(hass)
     with patch("custom_components.geodrops_rachio._async_check_api_key", AsyncMock()):
         assert await hass.config_entries.async_setup(entry.entry_id)
-    assert (entry.version, entry.minor_version) == (1, 2)
+    assert (entry.version, entry.minor_version) == (1, 3)
     assert entry.data["api_key"] == "K1"
     # Kept for a rollback to a release that still reads it.
     assert entry.data["bindings"] == {"rachio_api_key_secret": "lawn_key",
@@ -552,7 +552,7 @@ async def test_migration_without_a_readable_key_asks_for_one(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.minor_version == 2 and entry.data["api_key"] == ""
+    assert entry.minor_version == 3 and entry.data["api_key"] == ""
     assert entry.state is ConfigEntryState.LOADED
     assert [f["context"]["source"] for f in hass.config_entries.flow.async_progress()
             ] == ["reauth"]
@@ -564,3 +564,34 @@ async def test_entry_from_a_newer_major_version_is_refused(
     entry.add_to_hass(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     assert entry.state is ConfigEntryState.MIGRATION_ERROR
+
+
+async def test_migration_moves_the_settings_into_options(
+        hass, enable_pyscript_and_rachio):
+    """1.3 keeps the settings in the options; the data keeps its copies for a
+    rollback, and the scheduler runs on the options."""
+    entry = MockConfigEntry(domain=DOMAIN, minor_version=2, data={
+        **DATA, "api_key": "k", "self_calibration_enabled": True,
+        "advanced_overrides": "rain_skip_probability_pct: 80"})
+    entry.add_to_hass(hass)
+    with patch("custom_components.geodrops_rachio._async_check_api_key", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.minor_version == 3
+    assert entry.options == {"self_calibration_enabled": True,
+                             "advanced_overrides": "rain_skip_probability_pct: 80"}
+    assert entry.data["self_calibration_enabled"] is True
+    tun = entry.runtime_data.scheduler._load_cfg().tunables
+    assert tun.self_calibration_enabled is True
+    assert tun.rain_skip_probability_pct == 80
+
+
+async def test_settings_are_read_from_the_options(hass, enable_pyscript_and_rachio):
+    """An option changed after the migration wins over the data's stale copy."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, minor_version=3,
+        data={**DATA, "api_key": "k", "self_calibration_enabled": False},
+        options={"self_calibration_enabled": True, "advanced_overrides": ""})
+    entry.add_to_hass(hass)
+    with patch("custom_components.geodrops_rachio._async_check_api_key", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.runtime_data.scheduler._load_cfg().tunables.self_calibration_enabled

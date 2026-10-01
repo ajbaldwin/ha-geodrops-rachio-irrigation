@@ -1,4 +1,5 @@
-from custom_components.geodrops_rachio.config_writer import build_config
+from custom_components.geodrops_rachio.config_writer import (
+    build_config, entry_config, split_settings)
 
 BASE = {
     "bindings": {
@@ -167,3 +168,18 @@ def test_build_config_returns_fresh_dict_each_call():
     first = build_config(BASE)
     first["zones"]["front"]["rachio_switch"] = "mutated"
     assert build_config(BASE)["zones"]["front"]["rachio_switch"] == "switch.front"
+
+
+def test_entry_config_takes_the_settings_from_the_options():
+    data = {**BASE, "self_calibration_enabled": False}
+    merged = entry_config(data, {"self_calibration_enabled": True})
+    assert merged["self_calibration_enabled"] is True
+    assert merged["advanced_overrides"] == ""          # data copy as fallback
+    assert merged["zones"] == BASE["zones"]
+
+
+def test_split_settings_reverses_entry_config():
+    data, options = split_settings(BASE)
+    assert options == {"self_calibration_enabled": False, "advanced_overrides": ""}
+    assert "advanced_overrides" not in data and data["zones"] == BASE["zones"]
+    assert entry_config(data, options) == BASE
