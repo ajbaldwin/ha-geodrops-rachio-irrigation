@@ -448,6 +448,42 @@ async def test_refresh_runtimes_publishes_record(freezer):
     assert rec["value"] == 1 and rec["attributes"]["refill_depths_mm"] == {"id-front": 8.0}
 
 
+async def test_refresh_runtimes_runs_during_the_pre_dawn_wait(freezer):
+    """A night's run is 'in progress' from 23:00 through its wait; the refresh
+    must still run then, and leave the waiting run's config installed."""
+    data = entry_data()
+    freezer.move_to("2026-07-01 23:00:00")
+    w = FakeWorld(freezer)
+    populate(w, data)
+    eng = native_scheduler(w, data)
+    gate = asyncio.Event()
+
+    async def blocking_sleep(_s):
+        await gate.wait()
+    eng.port.sleep = blocking_sleep
+    await eng.irrigation_nightly()
+    for _ in range(5):                 # let the run task reach its wait
+        await asyncio.sleep(0)
+    assert eng.records["status"]["value"] == "waiting" and eng._run_in_progress
+    run_cfg, run_bindings = eng._current_cfg, eng._current_bindings
+
+    w.rachio_api = ({"id-front": 33.0}, {"id-front": 8.0}, {})
+    await eng.async_refresh_runtimes()
+    assert eng.records["runtimes"]["attributes"]["runtimes_minutes"] == {"id-front": 33.0}
+    assert eng._current_cfg is run_cfg and eng._current_bindings is run_bindings
+    await eng.async_reset()
+
+
+async def test_refresh_runtimes_skipped_while_watering(freezer):
+    w, eng = await _run_to_pause(freezer)
+    eng.records.pop("runtimes", None)
+    await eng.async_refresh_runtimes()
+    assert "runtimes" not in eng.records
+    assert any("runtime refresh skipped: watering in progress" in m
+               for m in _logbook(w))
+    await eng.async_reset()
+
+
 async def test_safety_stop_fires_while_startup_task_still_running(freezer):
     """HA cancels background tasks (the run included) around shutdown. With the
     startup task still live, `async_shutdown` yields while cancelling it, the

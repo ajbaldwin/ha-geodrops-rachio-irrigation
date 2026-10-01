@@ -378,18 +378,30 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
              own: the zone sensors read their live refill depth from it.
         A live pull yields a non-empty dict keyed by rachio_zone_id; an empty dict
         means the fetch failed and the scheduler is on the zones' configured runtimes.
+
+        Refused only while valves are watering, like Preview: a night's run sets
+        _run_in_progress at 23:00 and keeps it through the pre-dawn wait, and
+        refusing for all of that left the button silently dead for hours. A
+        waiting run already holds its plan, so a fresh cache cannot change it.
         """
-        if self._run_in_progress:
-            _LOGGER.warning(
-                "runtime refresh skipped — an irrigation run is in progress and owns "
-                "the shared config globals"
-            )
+        if self._watering_active:
+            await self._activity("Rachio runtime refresh skipped: watering in progress")
             return
         # Standalone service, outside _plan_and_run — load config here, same as
         # every other entry point that reads _current_cfg / _current_bindings.
+        # Save/restore them around the body, as _preview does, so a refresh during
+        # a run's pre-dawn wait leaves the run's own context installed.
         cfg = self._load_cfg()
+        saved_cfg, saved_bindings = self._current_cfg, self._current_bindings
         self._current_cfg = cfg
         self._current_bindings = cfg.bindings
+        try:
+            await self._refresh_runtimes_body()
+        finally:
+            self._current_cfg = saved_cfg
+            self._current_bindings = saved_bindings
+
+    async def _refresh_runtimes_body(self):
         runtimes = await self.get_runtimes(force=True)
         depths = (await self.get_refill_depths()) if runtimes else {}
         live = bool(runtimes)
