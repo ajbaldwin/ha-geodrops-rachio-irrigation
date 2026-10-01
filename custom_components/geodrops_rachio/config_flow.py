@@ -82,6 +82,7 @@ DEFAULT_WEATHER: dict[str, str] = {
     "wind": "sensor.tempest_sensor_wind_speed_average",
     "rain_last_hour": "sensor.tempest_rain_last_hour",
     "precip_type": "sensor.tempest_sensor_precipitation_type",
+    "rain_today": "sensor.tempest_precipitation_today",
 }
 DEFAULT_PRECIPITATION_CHANCE_PREFIX = "sensor.precipitation_chance_"
 DEFAULT_PRECIPITATION_AMOUNT_PREFIX = "sensor.precipitation_amount_"
@@ -138,6 +139,7 @@ def _assemble_bindings(core: dict[str, Any], weather: dict[str, Any]) -> dict[st
             "wind": weather["weather_wind"],
             "rain_last_hour": weather["weather_rain_last_hour"],
             "precip_type": weather["weather_precip_type"],
+            "rain_today": weather["weather_rain_today"],
         },
         "derived": {
             "precipitation_chance_prefix": weather["precipitation_chance_prefix"],
@@ -221,6 +223,8 @@ class _BindingsWizardSteps:
                 "rain_last_hour", DEFAULT_WEATHER["rain_last_hour"]),
             "weather_precip_type": w.get(
                 "precip_type", DEFAULT_WEATHER["precip_type"]),
+            "weather_rain_today": w.get(
+                "rain_today", DEFAULT_WEATHER["rain_today"]),
             "precipitation_chance_prefix": d.get(
                 "precipitation_chance_prefix", DEFAULT_PRECIPITATION_CHANCE_PREFIX),
             "precipitation_amount_prefix": d.get(
@@ -430,6 +434,11 @@ class _BindingsWizardSteps:
                 "weather_precip_type",
                 default=existing_weather.get(
                     "precip_type", DEFAULT_WEATHER["precip_type"]),
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Required(
+                "weather_rain_today",
+                default=existing_weather.get(
+                    "rain_today", DEFAULT_WEATHER["rain_today"]),
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Required(
                 "precipitation_chance_prefix",

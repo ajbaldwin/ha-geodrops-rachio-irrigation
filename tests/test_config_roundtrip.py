@@ -33,6 +33,7 @@ def _wizard_data() -> dict:
         "weather_wind": "sensor.tempest_sensor_wind_speed_average",
         "weather_rain_last_hour": "sensor.tempest_rain_last_hour",
         "weather_precip_type": "sensor.tempest_sensor_precipitation_type",
+        "weather_rain_today": "sensor.backyard_rain_today",
         "precipitation_chance_prefix": "sensor.precipitation_chance_",
         "precipitation_amount_prefix": "sensor.precipitation_amount_",
     }
@@ -104,6 +105,7 @@ def test_bindings_resolve_fixed_entity_ids():
     # User-collected bindings and derived sensors resolve too.
     assert bindings.notify_service == "notify.mobile_app_phone"
     assert bindings.rachio_device_name == "Main House"
+    assert bindings.weather.rain_today == "sensor.backyard_rain_today"
     assert (
         bindings.derived.forecast_overnight["temp"]
         == "sensor.geodrops_rachio_forecast_overnight_temp"
@@ -118,3 +120,12 @@ def test_fixed_constants_are_wired_through():
         assert ha[key] == value
     assert ha["sun"] == SUN_DEFAULTS
     assert ha["derived"]["forecast_overnight"] == FIXED_DERIVED["forecast_overnight"]
+
+
+def test_rain_today_defaults_for_an_older_entry():
+    """An entry from before the wizard asked for the gauge keeps the Tempest
+    default."""
+    data = _wizard_data()
+    del data["bindings"]["weather"]["rain_today"]
+    bindings = scheduler_config.parse_bindings(build_config(data))
+    assert bindings.weather.rain_today == "sensor.tempest_precipitation_today"
