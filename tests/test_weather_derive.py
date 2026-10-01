@@ -47,6 +47,25 @@ def test_overnight_forecast_mean_handles_aware_datetimes():
     assert weather_derive.overnight_forecast_mean(periods, "temperature", now) == 15.0
 
 
+
+def test_overnight_forecast_mean_mixes_naive_and_aware_and_skips_gaps():
+    """A naive period against an aware clock takes the clock's zone, an aware
+    one against a naive clock drops its zone, and periods missing the time or
+    the field are skipped."""
+    aware_now = dt.datetime(2026, 9, 12, 19, 0, tzinfo=dt.timezone.utc)
+    naive_now = dt.datetime(2026, 9, 12, 19, 0)
+    periods = [
+        {"datetime": "2026-09-12T21:00:00", "temperature": 10.0},
+        {"datetime": "2026-09-13T03:00:00+00:00", "temperature": 20.0},
+        {"temperature": 100.0},                                  # no time
+        {"datetime": "2026-09-12T22:00:00", "humidity": 90},     # no field
+    ]
+    assert weather_derive.overnight_forecast_mean(
+        periods, "temperature", aware_now) == 15.0
+    assert weather_derive.overnight_forecast_mean(
+        periods, "temperature", naive_now) == 15.0
+
+
 D = dt.datetime
 
 
