@@ -4,6 +4,23 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.0-beta.3 — Retired-switch warning fixed; Refresh runtimes works at night
+
+### Changes
+
+- **Fix: a false "entities are missing" repair after updating to beta.2**
+  naming `switch.geodrops_rachio_dew_formed` and
+  `switch.geodrops_rachio_run_active`. Installs set up before v1.1.0 still
+  listed those retired switches in their settings; updating removes them, and
+  the warning clears after the restart. Watering was never affected.
+- **Fix: *Refresh Rachio runtimes* did nothing at night.** From the 23:00
+  plan until watering finished, the button was silently ignored. It now works
+  while a run waits for its pre-dawn window, and while valves are watering it
+  says in the Logbook that it was skipped.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.0-beta.2 → restart.
+
 ## v1.3.0-beta.2 — Metric weather read correctly; diagnostics, repairs and reconfigure
 
 ### Changes
