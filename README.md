@@ -236,7 +236,7 @@ Home Assistant restarts is not recorded.
 - **Observed overnight** sensors for the same three — what the weather station
   actually measured over last night's 23:00→06:00 (local), weighted by how long
   each reading held. They keep their readings across a restart. The 06:00
-  forecast calibration compares the two.
+  forecast calibration compares the two. All six show in your home's units.
 
 ## How it updates
 

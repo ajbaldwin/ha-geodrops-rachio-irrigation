@@ -11,6 +11,13 @@ ENTRY_DATA = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
               "advanced_overrides": ""}
 
 
+def _native(hass, entity_id):
+    """A sensor's native value. The overnight weather sensors hold °F / % /
+    mph and HA shows them in the home's units (metric in these tests)."""
+    return hass.data["entity_components"]["sensor"].get_entity(
+        entity_id).native_value
+
+
 @pytest.fixture(autouse=True)
 def _quiet_scheduler(hass, tmp_path):
     """Real entry setup, but no 30 s startup task and an isolated config dir."""
@@ -137,6 +144,7 @@ async def _setup_forecast(hass, forecast):
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    return entry
 
 
 _METRIC_NIGHT = [
@@ -153,22 +161,36 @@ _METRIC_NIGHT = [
 ])
 async def test_forecast_sensors_convert_a_metric_forecast(
         hass, enable_pyscript_and_rachio, freezer, weather_attrs):
-    """On a metric install the forecast arrives in °C and km/h; the sensors
-    publish °F and mph, as the scheduler reads them."""
+    """On a metric install the forecast arrives in °C and km/h. The sensors
+    hold °F and mph, HA shows them in °C and km/h, and the scheduler reads
+    them back in °F and mph."""
     from homeassistant.util.unit_system import METRIC_SYSTEM
+    from custom_components.geodrops_rachio import units
     hass.config.units = METRIC_SYSTEM
     await hass.config.async_set_time_zone("UTC")
     freezer.move_to("2026-06-15 21:00:00")
     hass.states.async_set("weather.home", "cloudy", weather_attrs)
-    await _setup_forecast(hass, _METRIC_NIGHT)
-    temp = hass.states.get("sensor.geodrops_rachio_forecast_overnight_temp")
-    wind = hass.states.get("sensor.geodrops_rachio_forecast_overnight_wind")
-    rh = hass.states.get("sensor.geodrops_rachio_forecast_overnight_humidity")
-    assert float(temp.state) == pytest.approx(69.8)           # 21 °C
-    assert temp.attributes["unit_of_measurement"] == "°F"
-    assert float(wind.state) == pytest.approx(6.2137, abs=1e-3)  # 10 km/h
-    assert wind.attributes["unit_of_measurement"] == "mph"
-    assert float(rh.state) == pytest.approx(92.0)
+    entry = await _setup_forecast(hass, _METRIC_NIGHT)
+    temp_id = "sensor.geodrops_rachio_forecast_overnight_temp"
+    wind_id = "sensor.geodrops_rachio_forecast_overnight_wind"
+    rh_id = "sensor.geodrops_rachio_forecast_overnight_humidity"
+    assert _native(hass, temp_id) == pytest.approx(69.8)              # 21 °C
+    assert _native(hass, wind_id) == pytest.approx(6.2137, abs=1e-3)  # 10 km/h
+    assert _native(hass, rh_id) == pytest.approx(92.0)
+
+    temp, wind = hass.states.get(temp_id), hass.states.get(wind_id)
+    assert (temp.attributes["device_class"], temp.attributes["unit_of_measurement"]
+            ) == ("temperature", "°C")
+    assert float(temp.state) == pytest.approx(21.0)
+    assert (wind.attributes["device_class"], wind.attributes["unit_of_measurement"]
+            ) == ("wind_speed", "km/h")
+    assert float(wind.state) == pytest.approx(10.0)
+    assert hass.states.get(rh_id).attributes["device_class"] == "humidity"
+
+    scheduler = entry.runtime_data.scheduler
+    assert scheduler._forecast_num(temp_id, units.TEMPERATURE) == pytest.approx(69.8)
+    assert scheduler._forecast_num(wind_id, units.SPEED) == pytest.approx(
+        6.2137, abs=1e-3)
 
 
 async def test_forecast_sensors_follow_the_weather_entity_units(
@@ -183,10 +205,8 @@ async def test_forecast_sensors_follow_the_weather_entity_units(
     await _setup_forecast(hass, [
         {"datetime": "2026-06-15T22:00:00+00:00", "temperature": 70.0,
          "humidity": 90, "wind_speed": 3.0}])
-    assert float(hass.states.get(
-        "sensor.geodrops_rachio_forecast_overnight_temp").state) == 70.0
-    assert float(hass.states.get(
-        "sensor.geodrops_rachio_forecast_overnight_wind").state) == 3.0
+    assert _native(hass, "sensor.geodrops_rachio_forecast_overnight_temp") == 70.0
+    assert _native(hass, "sensor.geodrops_rachio_forecast_overnight_wind") == 3.0
 
 
 async def test_action_buttons_created(hass, enable_pyscript_and_rachio):
@@ -374,7 +394,7 @@ async def test_observed_sensor_is_time_weighted(hass, enable_pyscript_and_rachio
     hass.states.async_set("sensor.station_temp", "30.0")
     await hass.async_block_till_done()
     await _tick(hass, freezer, "2026-06-16 06:00:00")
-    assert float(hass.states.get(OBSERVED_TEMP).state) == pytest.approx(90.0 / 7)
+    assert _native(hass, OBSERVED_TEMP) == pytest.approx(90.0 / 7)
 
 
 async def test_observed_window_is_local_not_utc(hass, enable_pyscript_and_rachio, freezer):
@@ -387,7 +407,7 @@ async def test_observed_window_is_local_not_utc(hass, enable_pyscript_and_rachio
     hass.states.async_set("sensor.station_temp", "10.0")
     await hass.async_block_till_done()
     await _tick(hass, freezer, "2026-01-15 10:00:00")
-    assert float(hass.states.get(OBSERVED_TEMP).state) == 10.0
+    assert _native(hass, OBSERVED_TEMP) == 10.0
 
 
 async def test_observed_sensor_seeds_from_the_source_at_startup(
@@ -399,7 +419,7 @@ async def test_observed_sensor_seeds_from_the_source_at_startup(
     hass.states.async_set("sensor.station_temp", "15.0")
     await _setup_observed(hass)
     await _tick(hass, freezer, "2026-06-16 00:30:00")
-    assert float(hass.states.get(OBSERVED_TEMP).state) == 15.0
+    assert _native(hass, OBSERVED_TEMP) == 15.0
 
 
 async def test_observed_sensor_converts_a_metric_station(
@@ -414,9 +434,9 @@ async def test_observed_sensor_converts_a_metric_station(
     await _setup_observed(hass, {**ENTRY_DATA, "bindings": {"weather": {
         "temperature": "sensor.station_temp", "wind": "sensor.station_wind"}}})
     await _tick(hass, freezer, "2026-06-16 00:30:00")
-    assert float(hass.states.get(OBSERVED_TEMP).state) == pytest.approx(68.0)
-    assert float(hass.states.get(
-        "sensor.geodrops_rachio_observed_overnight_wind").state) == pytest.approx(10.0)
+    assert _native(hass, OBSERVED_TEMP) == pytest.approx(68.0)
+    assert _native(hass, "sensor.geodrops_rachio_observed_overnight_wind"
+                   ) == pytest.approx(10.0)
 
 
 async def test_observed_sensor_keeps_its_samples_across_a_restart(
@@ -431,7 +451,7 @@ async def test_observed_sensor_keeps_its_samples_across_a_restart(
     await _setup_observed(hass)       # source sensor absent: nothing to seed
     await _tick(hass, freezer, "2026-06-16 02:00:00")
     # 10 for 1h, then 40 carried from 00:00 to 02:00.
-    assert float(hass.states.get(OBSERVED_TEMP).state) == pytest.approx(30.0)
+    assert _native(hass, OBSERVED_TEMP) == pytest.approx(30.0)
 
 
 async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
@@ -751,7 +771,7 @@ async def test_observed_sensor_ignores_non_numeric_readings(
     hass.states.async_set("sensor.station_temp", "unavailable")
     await hass.async_block_till_done()
     await _tick(hass, freezer, "2026-06-16 02:00:00")
-    assert float(hass.states.get(OBSERVED_TEMP).state) == 10.0
+    assert _native(hass, OBSERVED_TEMP) == 10.0
 
 
 async def test_observed_sensor_skips_corrupt_restored_samples(
@@ -766,4 +786,4 @@ async def test_observed_sensor_skips_corrupt_restored_samples(
     await _setup_observed(hass)
     await _tick(hass, freezer, "2026-06-16 01:30:00")
     # Only the one well-formed, tz-aware sample survives.
-    assert float(hass.states.get(OBSERVED_TEMP).state) == 20.0
+    assert _native(hass, OBSERVED_TEMP) == 20.0
