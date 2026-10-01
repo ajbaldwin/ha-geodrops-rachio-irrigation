@@ -784,7 +784,7 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
     # 2: the Rachio API key is stored in the entry (was a secrets.yaml name).
     # 3: the settings (SETTINGS_KEYS) are in the entry's options.
     # Minor bumps so older releases can still load the entry (rollback).
-    MINOR_VERSION = 3
+    MINOR_VERSION = 4
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {"zones": []}
