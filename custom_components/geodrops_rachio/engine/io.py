@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 
+from .. import units
 from ..brain import blocks
 from .store import EFFICACY, PENDING_OBS, RUN_ACTIVE, ZONE_WATERED
 
@@ -204,11 +205,15 @@ class IOMixin:
         overnight run->settle window? Uses the daily rain-accumulation gauge (resets at
         midnight), read at the mid-morning settle pass — the runs are all post-midnight,
         so today's accumulation covers the run and its settling. Missing/non-numeric
-        reads fail safe to False (don't discard the observation on a gauge glitch)."""
+        reads fail safe to False (don't discard the observation on a gauge glitch).
+        The gauge's reading is converted from its unit into mm."""
+        gauge = bindings.weather.rain_today
         try:
-            val = float(self._state_get(bindings.weather.rain_today))
+            val = float(self._state_get(gauge))
         except (TypeError, ValueError):
             return False
+        val = units.to_scheduler(
+            val, units.unit_of(self.port.attrs(gauge)), units.PRECIPITATION)
         return val > tun.rain_confounder_mm
 
     async def _append_pending_obs(self, records):
