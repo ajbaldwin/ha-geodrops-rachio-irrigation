@@ -42,6 +42,7 @@ WEATHER_INPUT = {
     "weather_wind": "sensor.tempest_sensor_wind_speed_average",
     "weather_rain_last_hour": "sensor.tempest_rain_last_hour",
     "weather_precip_type": "sensor.tempest_sensor_precipitation_type",
+    "weather_rain_today": "sensor.backyard_rain_today",
     "precipitation_chance_prefix": "sensor.precipitation_chance_",
     "precipitation_amount_prefix": "sensor.precipitation_amount_",
 }
@@ -139,6 +140,7 @@ async def test_happy_path_creates_entry(hass, enable_pyscript_and_rachio):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], BINDINGS_INPUT)
         assert result["step_id"] == "weather"
+        assert "weather_rain_today" in _field_names(result)
 
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], WEATHER_INPUT)
@@ -162,6 +164,7 @@ async def test_happy_path_creates_entry(hass, enable_pyscript_and_rachio):
     assert bindings["drought_level_select"] == "select.geodrops_rachio_drought_level"
     assert bindings["sun"] == {
         "dawn": "sensor.sun_next_dawn", "sunrise": "sensor.sun_next_rising"}
+    assert bindings["weather"]["rain_today"] == "sensor.backyard_rain_today"
     assert result["result"].data["zones"][0]["key"] == "front"
     # Settings are options; the rest is setup data.
     assert result["result"].options == {
@@ -641,9 +644,13 @@ async def test_options_bindings_prefills_and_edits_core_only(hass, enable_pyscri
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], edited)
         assert result["step_id"] == "menu"
-    # Core changed; weather sub-dict preserved verbatim (edit independence).
+    # Core changed; weather sub-dict preserved (edit independence). An entry
+    # from before the rain-today field gains its default, the gauge the
+    # engine already read.
     assert entry.data["bindings"]["calendar_entity"] == "calendar.changed"
-    assert entry.data["bindings"]["weather"] == ORIGINAL_BINDINGS["weather"]
+    assert entry.data["bindings"]["weather"] == dict(
+        ORIGINAL_BINDINGS["weather"],
+        rain_today="sensor.tempest_precipitation_today")
     assert entry.data["bindings"]["derived"]["precipitation_chance_prefix"] == (
         "sensor.precipitation_chance_")
 
@@ -660,9 +667,33 @@ async def test_options_weather_edit_preserves_core(hass, enable_pyscript_and_rac
             result["flow_id"], changed_weather)
         assert result["step_id"] == "menu"
     assert entry.data["bindings"]["weather"]["humidity"] == "sensor.new_humidity"
+    assert entry.data["bindings"]["weather"]["rain_today"] == (
+        "sensor.backyard_rain_today")
     # Core preserved from the original entry.
     assert entry.data["bindings"]["calendar_entity"] == "calendar.lawn"
     assert entry.data["bindings"]["notify_service"] == "notify.phone"
+
+
+def _default(result, field):
+    return next(f for f in result["data_schema"].schema if f == field).default()
+
+
+@pytest.mark.parametrize(("weather", "expected"), [
+    ({}, "sensor.tempest_precipitation_today"),
+    ({"rain_today": "sensor.backyard_rain_today"}, "sensor.backyard_rain_today"),
+])
+async def test_options_weather_prefills_rain_today(
+        hass, enable_pyscript_and_rachio, weather, expected):
+    """An entry from before the field offers the Tempest default; a picked
+    gauge is offered back."""
+    bindings = dict(ORIGINAL_BINDINGS,
+                    weather=dict(ORIGINAL_BINDINGS["weather"], **weather))
+    entry = _options_entry(hass, bindings=bindings)
+    with _patch_poll():
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "weather"})
+    assert _default(result, "weather_rain_today") == expected
 
 
 async def test_options_connect_replaces_the_key(hass, enable_pyscript_and_rachio):
