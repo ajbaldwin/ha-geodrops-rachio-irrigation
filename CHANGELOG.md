@@ -8,6 +8,12 @@ section per released version, newest first.
 
 ### Changes
 
+- **Weather readings are converted to the scheduler's units** (°F, mph,
+  mm) from the unit each sensor reports, and the forecast from the weather
+  entity's units, so metric installs and metric weather stations no longer
+  misjudge the disease window, rain checks and forecast calibration. The
+  overnight weather sensors still show °F and mph. A sensor with no unit is
+  read as before.
 - **The Irrigation Controls entities' names now start with the device's
   name**, as the zone entities' already do: *Stop irrigation* shows as
   *Irrigation Controls Stop irrigation*. Entity IDs are unchanged, and names
