@@ -149,7 +149,7 @@ or in progress. Pressing **Done** with nothing changed does not reload.
 | Advanced | Active Watering Calibration on/off, and the overrides below. |
 
 **Advanced overrides.** Any of these can be set in the overrides YAML (defaults
-shown). Units are °F, mph and mm.
+shown). Units are °F, mph and mm; readings in other units are converted.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -312,11 +312,6 @@ Keep a newly seeded zone out of the plan and calibration:
 - **Rachio and GeoDrops only.** The scheduler needs Rachio zone switches and
   GeoDrops moisture sensors; there is no generic mode.
 - **One instance** per Home Assistant.
-- **Units are not converted.** The scheduler compares weather readings with
-  thresholds in °F, mph and mm, so bind weather-station sensors that report in
-  those units. The forecast is read in Home Assistant's unit system, so on a
-  metric install the forecast-based decisions (disease window, forecast
-  calibration) see °C and km/h as °F and mph.
 - **Rachio app runs** are recorded from Rachio's webhooks: a missed webhook
   can lose or stretch one, and a run in progress across a restart is not
   recorded.

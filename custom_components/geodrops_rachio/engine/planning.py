@@ -8,6 +8,7 @@ import datetime as dt
 import logging
 import random
 
+from .. import units
 from ..brain import (
     calibration, config, dosing, drought, evaluate, plan, sensors, weather)
 
@@ -136,14 +137,16 @@ class PlanningMixin:
         # NameError when an entity does not exist at all (distinct from a present-
         # but-"unavailable" value that float() rejects), so catch NameError too and
         # warn once per missing entity (a wrong/absent entity id is a misconfig).
-        def num(entity, default=0.0):
+        # Each reading is converted from its sensor's unit into the
+        # scheduler's (°F, mph, mm); the defaults are already in those.
+        def num(entity, kind, default=0.0):
             raw = self.port.state(entity)
             if raw is None:
                 _LOGGER.warning("weather entity %r not found; using %s",
                                 entity, default)
                 return default
             try:
-                return float(raw)
+                return self._in_scheduler_units(entity, float(raw), kind)
             except (ValueError, TypeError):
                 return default
 
@@ -157,17 +160,24 @@ class PlanningMixin:
 
         wx_ids = self._current_bindings.weather
         return weather.WeatherReading(
-            temp_f=num(wx_ids.temperature),
-            rh_pct=num(wx_ids.humidity),
+            temp_f=num(wx_ids.temperature, units.TEMPERATURE),
+            rh_pct=num(wx_ids.humidity, None),
             # Averaged local wind smooths momentary lulls that would otherwise
             # falsely trip the "stagnant" disease signal on a once-per-night read.
-            wind_mph=num(wx_ids.wind),
-            rain_last_hour_mm=num(wx_ids.rain_last_hour),
+            wind_mph=num(wx_ids.wind, units.SPEED),
+            rain_last_hour_mm=num(wx_ids.rain_last_hour, units.PRECIPITATION),
             precip_type=text(wx_ids.precip_type) or "none",
         )
 
-    def _forecast_num(self, entity):
-        """Read a numeric forecast sensor. Returns None when unusable.
+    def _in_scheduler_units(self, entity, value, kind):
+        """`value`, read from `entity`, converted from the unit that entity
+        reports into the scheduler's unit for `kind` (units.to_scheduler)."""
+        return units.to_scheduler(
+            value, units.unit_of(self.port.attrs(entity)), kind)
+
+    def _forecast_num(self, entity, kind=None):
+        """Read a numeric forecast sensor, in the scheduler's unit for `kind`.
+        Returns None when unusable.
 
         Forecast data is an optimisation, never a prerequisite: a missing entity
         (state.get raises NameError — gotcha #10) or an `unknown` / `unavailable`
@@ -180,10 +190,11 @@ class PlanningMixin:
             _LOGGER.warning("forecast entity %r not found", entity)
             return None
         try:
-            return float(raw)
+            value = float(raw)
         except (TypeError, ValueError):
             _LOGGER.warning("forecast entity %r unusable (%r)", entity, raw)
             return None
+        return self._in_scheduler_units(entity, value, kind)
 
     def _read_forecast_weather(self):
         """A WeatherReading describing the OVERNIGHT hours, for the window cap only.
@@ -198,9 +209,9 @@ class PlanningMixin:
         mirrors the HA adverse-conditions automation.
         """
         d = self._current_bindings.derived.forecast_overnight
-        temp_f = self._forecast_num(d["temp"])
+        temp_f = self._forecast_num(d["temp"], units.TEMPERATURE)
         rh_pct = self._forecast_num(d["humidity"])
-        wind_mph = self._forecast_num(d["wind"])
+        wind_mph = self._forecast_num(d["wind"], units.SPEED)
         if temp_f is None or rh_pct is None or wind_mph is None:
             return None
         return weather.WeatherReading(
@@ -221,9 +232,9 @@ class PlanningMixin:
         sensors.
         """
         d = bindings.derived.observed_overnight
-        temp_f = self._forecast_num(d["temp"])
+        temp_f = self._forecast_num(d["temp"], units.TEMPERATURE)
         rh_pct = self._forecast_num(d["humidity"])
-        wind_mph = self._forecast_num(d["wind"])
+        wind_mph = self._forecast_num(d["wind"], units.SPEED)
         if temp_f is None or rh_pct is None or wind_mph is None:
             return None
         return weather.WeatherReading(
@@ -237,7 +248,8 @@ class PlanningMixin:
         publishes sensors for 12/18/24 h."""
         d = self._current_bindings.derived
         prob = self._forecast_num(f"{d.precipitation_chance_prefix}{horizon_hours}_hour")
-        amount = self._forecast_num(f"{d.precipitation_amount_prefix}{horizon_hours}_hour")
+        amount = self._forecast_num(
+            f"{d.precipitation_amount_prefix}{horizon_hours}_hour", units.PRECIPITATION)
         return prob, amount
 
     def _read_zone_signals(self, zone):

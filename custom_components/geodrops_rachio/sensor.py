@@ -5,14 +5,15 @@ from homeassistant.components.sensor import (
     RestoreSensor, SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.const import (
     MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, EntityCategory,
-    UnitOfLength)
+    UnitOfLength, UnitOfSpeed, UnitOfTemperature)
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
     async_track_state_change_event, async_track_time_interval)
 from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.util import dt as dt_util
-from . import weather_derive
+from homeassistant.util.unit_system import METRIC_SYSTEM
+from . import units, weather_derive
 from .coordinator import GeodropsRachioConfigEntry, ZoneStateCoordinator
 from .engine.scheduler import Scheduler
 from .entity import GeodropsRachioEntity, GeodropsRachioZoneEntity
@@ -27,9 +28,17 @@ _FORECAST_INTERVAL = dt.timedelta(hours=1)
 # How often the observed means recompute with nothing changing: a steady reading
 # is still accruing time, and the 06:00 read should see the window's tail.
 _OBSERVED_RECOMPUTE_INTERVAL = dt.timedelta(minutes=5)
-# (key suffix, forecast field, unit)
-_FIELDS = [("temp", "temperature", "°F"), ("humidity", "humidity", "%"),
-           ("wind", "wind_speed", "mph")]
+# (key suffix, forecast field, unit, units kind). Published in the scheduler's
+# units whatever the sources report: the scheduler reads these sensors, and
+# without a device_class HA leaves the unit alone.
+_FIELDS = [
+    ("temp", "temperature", UnitOfTemperature.FAHRENHEIT, units.TEMPERATURE),
+    ("humidity", "humidity", PERCENTAGE, None),
+    ("wind", "wind_speed", UnitOfSpeed.MILES_PER_HOUR, units.SPEED),
+]
+# The weather entity attribute naming the unit its forecast reports a field in.
+_FORECAST_UNIT_ATTR = {"temperature": "temperature_unit",
+                       "wind_speed": "wind_speed_unit"}
 
 # (suffix, coordinator-key, device_class, unit, display_precision). The
 # calibration fields and refill depth are diagnostic (_ZONE_DIAGNOSTIC).
@@ -106,16 +115,18 @@ class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
     Samples survive a restart (restore data), the source's reading at startup
     counts from then, and the value is recomputed on a timer as well as on each
     change — a steady reading is still accruing time when nothing changes.
+    Each reading is converted from the source's unit as it arrives.
     """
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_suggested_display_precision = 1
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
-                 source: str | None, unit: str) -> None:
+                 source: str | None, unit: str, kind: str | None) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, f"observed_overnight_{key}")
         self._attr_native_unit_of_measurement = unit
         self._source = source
+        self._kind = kind
         self._samples: list[tuple[dt.datetime, float]] = []
 
     @property
@@ -142,6 +153,7 @@ class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
             val = float(state.state)
         except (ValueError, TypeError):
             return
+        val = units.to_scheduler(val, units.unit_of(state.attributes), self._kind)
         # Local time: the window is in the home's timezone (the scheduler
         # calibrates at 06:00 local), not UTC.
         self._samples.append((dt_util.now(), val))
@@ -166,17 +178,21 @@ class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
 
 class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
     """Tonight's forecast mean of one weather field, from the bound weather
-    entity's hourly forecast. Unavailable while that forecast cannot be read."""
+    entity's hourly forecast. Unavailable while that forecast cannot be read.
+
+    The forecast comes in the weather entity's units (Home Assistant's unit
+    system unless set on the entity) and is converted into this sensor's."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_suggested_display_precision = 1
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str, field: str,
-                 source: str | None, unit: str) -> None:
+                 source: str | None, unit: str, kind: str | None) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, f"forecast_overnight_{key}")
         self._attr_native_unit_of_measurement = unit
         self._field = field
         self._source = source
+        self._kind = kind
 
     async def async_added_to_hass(self) -> None:
         if self._source:
@@ -193,6 +209,8 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
             periods = (resp or {}).get(self._source, {}).get("forecast", [])
             value = weather_derive.overnight_forecast_mean(
                 periods, self._field, dt_util.now())
+            if value is not None:
+                value = units.to_scheduler(value, self._forecast_unit(), self._kind)
         except Exception as err:
             # Once per outage; the hourly retries log at debug.
             if self._attr_available:
@@ -210,6 +228,24 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
         self._attr_available = True
         self._attr_native_value = value
         self.async_write_ha_state()
+
+    def _forecast_unit(self) -> str | None:
+        """The unit the weather entity reports this field in: its own
+        `<field>_unit` attribute, else what a weather entity defaults to in
+        Home Assistant's unit system."""
+        attr = _FORECAST_UNIT_ATTR.get(self._field)
+        if attr is None:
+            return None
+        st = self.hass.states.get(self._source)
+        if st is not None and st.attributes.get(attr):
+            return st.attributes[attr]
+        if self._field == "temperature":
+            return self.hass.config.units.temperature_unit
+        # Weather entities default to km/h on a metric install, not the unit
+        # system's m/s.
+        if self.hass.config.units is METRIC_SYSTEM:
+            return UnitOfSpeed.KILOMETERS_PER_HOUR
+        return self.hass.config.units.wind_speed_unit
 
 
 class ZoneCoordinatorSensor(GeodropsRachioZoneEntity, SensorEntity):
@@ -408,11 +444,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
     scheduler = entry.runtime_data.scheduler
     entities: list[SensorEntity] = [SchedulerStatusSensor(entry, scheduler)]
     entities += [RecordSensor(entry, scheduler, *r) for r in _RECORDS]
-    for key, field, unit in _FIELDS:
+    for key, field, unit, kind in _FIELDS:
         entities.append(ObservedOvernightSensor(
-            entry, key, weather.get(field if field != "wind_speed" else "wind"), unit))
+            entry, key, weather.get(field if field != "wind_speed" else "wind"),
+            unit, kind))
         entities.append(ForecastOvernightSensor(
-            entry, key, field, forecast_entity, unit))
+            entry, key, field, forecast_entity, unit, kind))
 
     coordinator = entry.runtime_data.coordinator
     hub_id = entry.runtime_data.hub_device_id

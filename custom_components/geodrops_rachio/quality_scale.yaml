@@ -122,7 +122,8 @@ rules:
     comment: >-
       The overnight weather sensors could take temperature, humidity and wind
       speed classes, but those convert the state to the home's units, and the
-      calibration reads them in °F and mph.
+      calibration reads them in °F and mph (the sensors convert their sources
+      into those units).
   entity-disabled-by-default:
     status: done
     comment: >-
