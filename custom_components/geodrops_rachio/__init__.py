@@ -5,9 +5,11 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HassJob, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 
 from . import config_writer, entity_renames, issues, owned_entities, rachio_client
 from .const import DOMAIN, PLATFORMS
@@ -24,6 +26,16 @@ _LOGGER = logging.getLogger(__name__)
 # The secrets.yaml name entries before 1.2 read the Rachio API key from when
 # they did not name one.
 _LEGACY_SECRET_NAME = "rachio_api_key"
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    # For the whole integration, so a rename that lands while an entry reloads
+    # is still followed (see entity_renames.async_track_renames).
+    entity_renames.async_track_renames(
+        hass, lambda entry, old, new: _on_rename(hass, entry, old, new))
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant,
@@ -76,8 +88,6 @@ async def async_setup_entry(hass: HomeAssistant,
     entry.async_on_unload(
         hass.async_add_shutdown_job(HassJob(scheduler.async_shutdown)))
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
-    entry.async_on_unload(entity_renames.async_track_renames(
-        hass, entry, lambda old, new: _on_rename(hass, entry, old, new)))
     entry.async_on_unload(issues.async_track_missing(hass, entry))
     # Re-raised by the next setup if still true; a disabled or deleted entry
     # must not leave it behind.
