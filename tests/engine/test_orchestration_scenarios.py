@@ -173,3 +173,32 @@ async def test_preview_in_standby_publishes_zero_zones(freezer):
     value, attrs = eng.records["preview"]["value"], eng.records["preview"]["attributes"]
     assert value == 0
     assert attrs["standby"] is True
+
+
+async def test_standby_note_without_dawn_is_recorded_now(freezer, caplog):
+    """Standby files its note at the window's end; with no dawn sensor it is
+    filed at the current time instead of failing the night."""
+    caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    w.set("switch.geodrops_rachio_standby", "on")
+    w.remove("sensor.sun_next_dawn")
+    eng = native_engine(w, data, *ALL_MIXINS)
+    await eng._plan_and_run(True, "nightly")
+    assert eng.records["last_run"]["attributes"]["skipped"] == "standby"
+    assert "dawn unavailable for standby note" in caplog.text
+
+
+async def test_run_now_waters_through_a_rain_forecast(freezer, caplog):
+    """A manual run expresses intent to water: the rain forecast is logged,
+    not obeyed."""
+    caplog.set_level(logging.WARNING, logger=ENGINE_LOGGER_PREFIX)
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    w.set("sensor.precipitation_chance_18_hour", "90")
+    w.set("sensor.precipitation_amount_18_hour", "25")
+    eng = native_engine(w, data, *ALL_MIXINS)
+    await eng._plan_and_run(False, "run_now")
+    rec = eng.records["last_run"]
+    assert "skipped" not in rec["attributes"] and rec["value"] == 2
+    assert "watering anyway (manual run)" in caplog.text
