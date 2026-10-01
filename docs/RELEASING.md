@@ -81,15 +81,10 @@ CHANGELOG sections:
 
      `pytest-homeassistant-custom-component` cannot run natively on Windows (it
      imports the Unix-only `fcntl`), so this suite runs inside a Linux Docker
-     container. Build the image once (or after `Dockerfile.test` /
-     `requirements_test.txt` change):
-
-     ```bash
-     docker build -f Dockerfile.test -t geodrops-test .
-     ```
-
-     `tools/test.sh` runs `pytest` in that container (arguments are
-     forwarded), which collects **both** `tests/` and `tests_brain/` —
+     container. `tools/test.sh` builds the `geodrops-rachio-test` image from
+     `Dockerfile.test` (cached after the first run; a separate tag because the
+     GeoDrops repo's script rebuilds `geodrops-test` with an older Home
+     Assistant) and runs `pytest` in it (arguments are forwarded), which collects **both** `tests/` and `tests_brain/` —
      including `tests/engine/`'s scenario tests, which run the engine through
      whole nights, runs and restarts and compare every effect with a golden
      fixture (see below). CI (`.github/workflows/ci.yml`) runs the same suite
