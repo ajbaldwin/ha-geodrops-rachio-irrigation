@@ -539,7 +539,7 @@ async def test_migration_moves_the_key_out_of_secrets_yaml(
     entry.add_to_hass(hass)
     with patch("custom_components.geodrops_rachio._async_check_api_key", AsyncMock()):
         assert await hass.config_entries.async_setup(entry.entry_id)
-    assert (entry.version, entry.minor_version) == (1, 3)
+    assert (entry.version, entry.minor_version) == (1, 4)
     assert entry.data["api_key"] == "K1"
     # Kept for a rollback to a release that still reads it.
     assert entry.data["bindings"] == {"rachio_api_key_secret": "lawn_key",
@@ -552,7 +552,7 @@ async def test_migration_without_a_readable_key_asks_for_one(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.minor_version == 3 and entry.data["api_key"] == ""
+    assert entry.minor_version == 4 and entry.data["api_key"] == ""
     assert entry.state is ConfigEntryState.LOADED
     assert [f["context"]["source"] for f in hass.config_entries.flow.async_progress()
             ] == ["reauth"]
@@ -576,7 +576,7 @@ async def test_migration_moves_the_settings_into_options(
     entry.add_to_hass(hass)
     with patch("custom_components.geodrops_rachio._async_check_api_key", AsyncMock()):
         assert await hass.config_entries.async_setup(entry.entry_id)
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
     assert entry.options == {"self_calibration_enabled": True,
                              "advanced_overrides": "rain_skip_probability_pct: 80"}
     assert entry.data["self_calibration_enabled"] is True

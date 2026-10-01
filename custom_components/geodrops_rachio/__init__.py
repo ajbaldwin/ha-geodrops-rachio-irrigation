@@ -124,7 +124,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """1.1 named a secrets.yaml entry holding the Rachio API key; 1.2 stores the
     key in the entry. A key that cannot be read is left empty and setup asks
     for it (reauth). 1.3 keeps the settings (const.SETTINGS_KEYS) in the
-    entry's options rather than its data.
+    entry's options rather than its data. 1.4 drops the bindings of the
+    retired switches.
 
     Minor versions, so each change stays loadable by older releases (Home
     Assistant loads an entry with a newer minor version of the same major): a
@@ -152,6 +153,15 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
              **entry.data})
         hass.config_entries.async_update_entry(
             entry, options={**entry.options, **settings}, minor_version=3)
+    if entry.minor_version < 4:
+        # Entries made before 1.1 bind the retired switches (see
+        # _RETIRED_ENTITIES); setup deletes those, so the missing-entities
+        # check would report the bindings. Nothing since 1.1 reads them.
+        data = copy.deepcopy(dict(entry.data))
+        bindings = data.get("bindings", {})
+        for key in _RETIRED_BINDINGS:
+            bindings.pop(key, None)
+        hass.config_entries.async_update_entry(entry, data=data, minor_version=4)
     return True
 
 
@@ -169,6 +179,8 @@ def _purge_orphan_zone_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
 # (platform, unique-id suffix) of entities a past version created and this one
 # no longer does; left in the registry they would linger as unavailable.
 _RETIRED_ENTITIES = (("switch", "dew_formed"), ("switch", "run_active"))
+# The bindings that pointed the engine at them.
+_RETIRED_BINDINGS = ("dew_formed_boolean", "run_active_boolean")
 
 
 def _purge_retired_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:

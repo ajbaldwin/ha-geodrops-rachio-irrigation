@@ -100,3 +100,28 @@ async def test_unloading_clears_the_issue(hass, enable_pyscript_and_rachio):
     assert _issue(hass, entry) is not None
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert _issue(hass, entry) is None
+
+
+async def test_retired_switch_bindings_are_not_reported(hass, enable_pyscript_and_rachio):
+    """An entry from before 1.1 still binds the retired Dew formed and Run
+    active switches; setup deletes the switches, and the migration the
+    bindings, so neither is reported missing."""
+    for eid in BOUND:
+        hass.states.async_set(eid, "1")
+    entry = MockConfigEntry(domain=DOMAIN, minor_version=3, data={
+        **DATA, "api_key": "k",
+        "bindings": {**DATA["bindings"],
+                     "dew_formed_boolean": "switch.geodrops_rachio_dew_formed",
+                     "run_active_boolean": "switch.geodrops_rachio_run_active"}})
+    entry.add_to_hass(hass)
+    reg = er.async_get(hass)
+    for key in ("dew_formed", "run_active"):
+        reg.async_get_or_create(
+            "switch", DOMAIN, f"{entry.entry_id}_{key}",
+            suggested_object_id=f"geodrops_rachio_{key}", config_entry=entry)
+    with patch("custom_components.geodrops_rachio._async_check_api_key", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.minor_version == 4
+    assert entry.data["bindings"] == DATA["bindings"]
+    assert _issue(hass, entry) is None
