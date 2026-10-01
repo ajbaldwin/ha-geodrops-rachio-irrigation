@@ -28,13 +28,16 @@ _FORECAST_INTERVAL = dt.timedelta(hours=1)
 # How often the observed means recompute with nothing changing: a steady reading
 # is still accruing time, and the 06:00 read should see the window's tail.
 _OBSERVED_RECOMPUTE_INTERVAL = dt.timedelta(minutes=5)
-# (key suffix, forecast field, unit, units kind). Published in the scheduler's
-# units whatever the sources report: the scheduler reads these sensors, and
-# without a device_class HA leaves the unit alone.
+# (key suffix, forecast field, device class, native unit, units kind). Native
+# values are in the scheduler's units whatever the sources report. The device
+# class lets HA show them in the home's units; the scheduler reads them back
+# through units.to_scheduler, so the unit HA displays does not matter.
 _FIELDS = [
-    ("temp", "temperature", UnitOfTemperature.FAHRENHEIT, units.TEMPERATURE),
-    ("humidity", "humidity", PERCENTAGE, None),
-    ("wind", "wind_speed", UnitOfSpeed.MILES_PER_HOUR, units.SPEED),
+    ("temp", "temperature", SensorDeviceClass.TEMPERATURE,
+     UnitOfTemperature.FAHRENHEIT, units.TEMPERATURE),
+    ("humidity", "humidity", SensorDeviceClass.HUMIDITY, PERCENTAGE, None),
+    ("wind", "wind_speed", SensorDeviceClass.WIND_SPEED,
+     UnitOfSpeed.MILES_PER_HOUR, units.SPEED),
 ]
 # The weather entity attribute naming the unit its forecast reports a field in.
 _FORECAST_UNIT_ATTR = {"temperature": "temperature_unit",
@@ -122,8 +125,10 @@ class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
     _attr_suggested_display_precision = 1
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
-                 source: str | None, unit: str, kind: str | None) -> None:
+                 source: str | None, device_class: SensorDeviceClass,
+                 unit: str, kind: str | None) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, f"observed_overnight_{key}")
+        self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._source = source
         self._kind = kind
@@ -187,8 +192,10 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
     _attr_suggested_display_precision = 1
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str, field: str,
-                 source: str | None, unit: str, kind: str | None) -> None:
+                 source: str | None, device_class: SensorDeviceClass,
+                 unit: str, kind: str | None) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, f"forecast_overnight_{key}")
+        self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._field = field
         self._source = source
@@ -444,12 +451,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
     scheduler = entry.runtime_data.scheduler
     entities: list[SensorEntity] = [SchedulerStatusSensor(entry, scheduler)]
     entities += [RecordSensor(entry, scheduler, *r) for r in _RECORDS]
-    for key, field, unit, kind in _FIELDS:
+    for key, field, device_class, unit, kind in _FIELDS:
         entities.append(ObservedOvernightSensor(
             entry, key, weather.get(field if field != "wind_speed" else "wind"),
-            unit, kind))
+            device_class, unit, kind))
         entities.append(ForecastOvernightSensor(
-            entry, key, field, forecast_entity, unit, kind))
+            entry, key, field, forecast_entity, device_class, unit, kind))
 
     coordinator = entry.runtime_data.coordinator
     hub_id = entry.runtime_data.hub_device_id

@@ -118,12 +118,13 @@ rules:
       the calibration, refill-depth and overnight-weather sensors are
       diagnostic.
   entity-device-class:
-    status: todo
+    status: done
     comment: >-
-      The overnight weather sensors could take temperature, humidity and wind
-      speed classes, but those convert the state to the home's units, and the
-      calibration reads them in °F and mph (the sensors convert their sources
-      into those units).
+      Overnight weather sensors are temperature, humidity and wind speed (shown
+      in the home's units; the scheduler converts what it reads). Moisture,
+      durations, timestamps and the running indicator have classes. Refill
+      depth has none on purpose: a distance class would show 7 mm as 0.28 in.
+      Efficacy, deficit and the record counts have no matching class.
   entity-disabled-by-default:
     status: done
     comment: >-
