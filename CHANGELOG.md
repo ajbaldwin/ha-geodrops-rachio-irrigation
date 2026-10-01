@@ -8,6 +8,10 @@ section per released version, newest first.
 
 ### Changes
 
+- **Fix: renaming several bound entities at once followed only the first**
+  (for example renaming a device together with its entities). Each rename is
+  now written to the integration's settings, even one that arrives while the
+  integration is reloading for the previous one.
 - **Weather readings are converted to the scheduler's units** (°F, mph,
   mm) from the unit each sensor reports, and the forecast from the weather
   entity's units, so metric installs and metric weather stations no longer
