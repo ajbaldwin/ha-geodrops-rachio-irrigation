@@ -28,7 +28,7 @@ _LEGACY_SECRET_NAME = "rachio_api_key"
 
 async def async_setup_entry(hass: HomeAssistant,
                             entry: GeodropsRachioConfigEntry) -> bool:
-    data = dict(entry.data)
+    data = config_writer.entry_config(entry.data, entry.options)
     try:
         config_writer.build_config(data)  # validates advanced_overrides
     except ValueError as err:
@@ -113,12 +113,15 @@ async def _async_check_api_key(hass: HomeAssistant, entry: ConfigEntry,
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """1.1 named a secrets.yaml entry holding the Rachio API key; 1.2 stores the
     key in the entry. A key that cannot be read is left empty and setup asks
-    for it (reauth).
+    for it (reauth). 1.3 keeps the settings (const.SETTINGS_KEYS) in the
+    entry's options rather than its data.
 
-    A minor version, so the change stays loadable by older releases (Home
+    Minor versions, so each change stays loadable by older releases (Home
     Assistant loads an entry with a newer minor version of the same major): a
     rollback keeps the entry and its calibration history. For the same reason
-    the secrets.yaml name stays in the bindings, unused here."""
+    the secrets.yaml name stays in the bindings, and the settings' copies in
+    the data, unused here (a rollback reads the settings as they were when
+    migrated)."""
     if entry.version > 1:
         return False
     if entry.minor_version < 2:
@@ -133,6 +136,12 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         else:
             _LOGGER.warning("No Rachio API key found in secrets.yaml (%s); "
                             "Home Assistant will ask for it", name)
+    if entry.minor_version < 3:
+        _data, settings = config_writer.split_settings(
+            {"self_calibration_enabled": False, "advanced_overrides": "",
+             **entry.data})
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, **settings}, minor_version=3)
     return True
 
 

@@ -24,8 +24,8 @@ from homeassistant.const import CONF_API_KEY
 from homeassistant.core import callback
 from homeassistant.helpers import aiohttp_client, selector
 
-from .const import DOMAIN
-from .config_writer import build_config
+from .const import DOMAIN, SETTINGS_KEYS
+from .config_writer import build_config, entry_config, split_settings
 from .entity_renames import replace_entity_id
 from .rachio_client import (
     RachioAuthError,
@@ -171,7 +171,9 @@ class _BindingsWizardSteps:
         return dict(self._existing.get("bindings", {}))
 
     def _persist(self) -> None:
-        """Options-only: write the in-progress _data to the config entry now.
+        """Options-only: write the in-progress _data to the config entry now,
+        the settings to its options and the rest to its data (the settings'
+        pre-1.3 copies in the data are kept for a rollback).
 
         The reload listener is suppressed while the dialog is open (see
         __init__._reload_on_options), so this saves each edit durably WITHOUT
@@ -183,8 +185,11 @@ class _BindingsWizardSteps:
         runtime = getattr(self.config_entry, "runtime_data", None)
         for old, new in (runtime.renamed if runtime else {}).items():
             self._data = replace_entity_id(self._data, old, new)
+        entry = self.config_entry
+        data, options = split_settings(self._data)
+        data.update({k: entry.data[k] for k in SETTINGS_KEYS if k in entry.data})
         self.hass.config_entries.async_update_entry(
-            self.config_entry, data=self._data)
+            entry, data=data, options={**entry.options, **options})
 
     def _core_from_bindings(self) -> dict[str, Any]:
         """The Core-step field set, read back out of _data['bindings'].
@@ -443,22 +448,11 @@ class _BindingsWizardSteps:
 
     async def async_step_menu(self, user_input=None):
         """Options hub. Every sub-step returns here; 'Done' saves and reloads.
-
-        Inline label dict (not a translated list) so the menu never renders
-        blank before this integration's translations load.
-        """
+        The labels are translated (options.step.menu.menu_options)."""
         return self.async_show_menu(
             step_id="menu",
-            menu_options={
-                "connect": "Connect Your Rachio Account",
-                "bindings": "Core Setup",
-                "weather": "Weather Station",
-                "add_zone": "Add a zone",
-                "edit_zone": "Edit a zone",
-                "remove_zone": "Remove a zone",
-                "advanced": "Advanced",
-                "finish": "Done",
-            })
+            menu_options=["connect", "bindings", "weather", "add_zone",
+                          "edit_zone", "remove_zone", "advanced", "finish"])
 
     async def async_step_add_zone(self, user_input=None):
         self._editing_key = None
@@ -779,8 +773,9 @@ class _BindingsWizardSteps:
 class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, domain=DOMAIN):
     VERSION = 1
     # 2: the Rachio API key is stored in the entry (was a secrets.yaml name).
-    # A minor bump so older releases can still load the entry (rollback).
-    MINOR_VERSION = 2
+    # 3: the settings (SETTINGS_KEYS) are in the entry's options.
+    # Minor bumps so older releases can still load the entry (rollback).
+    MINOR_VERSION = 3
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {"zones": []}
@@ -803,8 +798,9 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
         return await self.async_step_connect()
 
     async def _async_finish(self):
+        data, options = split_settings(self._data)
         return self.async_create_entry(
-            title="GeoDrops + Rachio Irrigation", data=self._data)
+            title="GeoDrops + Rachio Irrigation", data=data, options=options)
 
     async def async_step_reauth(self, entry_data):
         """Rachio rejected the stored API key (or there is none yet)."""
@@ -874,7 +870,8 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         self._guarding: bool = False
 
     async def async_step_init(self, user_input=None):
-        self._existing = dict(self.config_entry.data)
+        self._existing = entry_config(
+            self.config_entry.data, self.config_entry.options)
         # Seed _data fully so any early sub-step persists a COMPLETE entry — an
         # unopened section (bindings, zones, calib, overrides) is kept verbatim.
         self._data["bindings"] = dict(self._existing.get("bindings", {}))
@@ -907,7 +904,9 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         # cancels a waiting or watering run (v0.9.x left the run alone too).
         from . import async_reload_if_changed
         await async_reload_if_changed(self.hass, entry)
-        return self.async_create_entry(title="", data={})
+        # The flow's result becomes the entry's options: the settings _persist
+        # just wrote, so finishing changes nothing more.
+        return self.async_create_entry(data=dict(entry.options))
 
     def _release_guard(self) -> bool:
         """Clear suppress_reload; returns whether this flow still held it."""
