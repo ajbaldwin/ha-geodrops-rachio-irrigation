@@ -1,8 +1,10 @@
 from __future__ import annotations
 import datetime as dt
+from collections.abc import Sequence
+from typing import Any
 
 
-def overnight_mean(samples: list[float | None]) -> float | None:
+def overnight_mean(samples: Sequence[float | None]) -> float | None:
     vals = [s for s in samples if s is not None]
     if not vals:
         return None
@@ -81,7 +83,7 @@ def prune_observed(samples: list[tuple[dt.datetime, float]],
     return before[-1:] + [s for s in samples if s[0] >= start]
 
 
-def overnight_forecast_mean(periods: list[dict], field: str,
+def overnight_forecast_mean(periods: list[dict[str, Any]], field: str,
                             now: dt.datetime) -> float | None:
     start, end = overnight_window(now)
     vals: list[float] = []

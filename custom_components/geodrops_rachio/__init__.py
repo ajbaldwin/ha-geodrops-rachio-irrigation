@@ -1,5 +1,9 @@
+import asyncio
 import copy
 import logging
+from typing import Any
+
+import aiohttp
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_API_KEY
@@ -51,7 +55,8 @@ async def async_setup_entry(hass: HomeAssistant,
     store = await async_open_store(hass, entry.entry_id)
     session = async_get_clientsession(hass)
 
-    async def fetch_zone_data():
+    async def fetch_zone_data() -> tuple[
+            dict[str, float], dict[str, float], dict[str, float]]:
         # Read at each fetch, so a key replaced by reauth applies without a
         # reload (which would cancel a waiting or watering run).
         key = entry.data.get(CONF_API_KEY)
@@ -102,7 +107,7 @@ async def async_setup_entry(hass: HomeAssistant,
 
 
 async def _async_check_api_key(hass: HomeAssistant, entry: ConfigEntry,
-                               session) -> None:
+                               session: aiohttp.ClientSession) -> None:
     """Ask for a new key at once if Rachio rejects the stored one.
 
     Setup does not wait for this: the scheduler waters from the zones' stored
@@ -192,7 +197,7 @@ def _purge_retired_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
             reg.async_remove(entity_id)
 
 
-def _snapshot(entry: ConfigEntry) -> dict:
+def _snapshot(entry: ConfigEntry) -> dict[str, Any]:
     # Without the API key: the running scheduler reads it from the entry on each
     # fetch, so replacing it needs no reload.
     data = {k: v for k, v in entry.data.items() if k != CONF_API_KEY}
@@ -247,7 +252,7 @@ def _reload_when_run_ends(hass: HomeAssistant, entry: GeodropsRachioConfigEntry,
     runtime.reload_after_run = True
 
     @callback
-    def _run_ended(_task) -> None:
+    def _run_ended(_task: asyncio.Task[Any]) -> None:
         # Only for the entry instance that deferred it: a reload in between has
         # already rebound the renamed entities.
         if (_runtime(entry) is runtime
@@ -255,7 +260,9 @@ def _reload_when_run_ends(hass: HomeAssistant, entry: GeodropsRachioConfigEntry,
             hass.async_create_task(async_reload_if_changed(hass, entry),
                                    "geodrops_rachio_reload_after_rename")
 
-    runtime.scheduler.run_task.add_done_callback(_run_ended)
+    task = runtime.scheduler.run_task
+    assert task is not None  # the caller checked _run_in_flight
+    task.add_done_callback(_run_ended)
 
 
 async def _reload_on_options(hass: HomeAssistant,
