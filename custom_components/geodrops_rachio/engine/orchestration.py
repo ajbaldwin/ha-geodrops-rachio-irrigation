@@ -7,15 +7,21 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+from collections.abc import Iterable, Mapping
+from typing import Any
 
-from ..brain import calibration, dosing, evaluate, plan, report_format, sensors
+from ..brain import (calibration, config, dosing, evaluate, plan, report_format,
+                     sensors)
+from .planning import PlanningMixin
+from .runner import RunnerMixin
 from .store import RUN_PROGRESS, WAITING_MARKER
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class OrchestrationMixin:
-    async def _write_waiting_marker(self, window_end_iso, stamp, trigger):
+class OrchestrationMixin(PlanningMixin, RunnerMixin):
+    async def _write_waiting_marker(self, window_end_iso: str, stamp: str,
+                                    trigger: str) -> None:
         """Persist that a run is WAITING for its pre-dawn window (see
         WAITING_MARKER_PATH). Written just before the wait sleep. A failure to
         persist must not take down the run — the wait still happens in memory; only
@@ -28,7 +34,7 @@ class OrchestrationMixin:
         except Exception as err:
             _LOGGER.warning("could not persist waiting marker (%s)", err)
 
-    async def _clear_waiting_marker(self):
+    async def _clear_waiting_marker(self) -> None:
         """Remove the waiting marker. Idempotent (see _delete_file); called both when
         the wait ends and after startup consumes it."""
         try:
@@ -36,7 +42,7 @@ class OrchestrationMixin:
         except Exception as err:
             _LOGGER.warning("could not clear waiting marker (%s)", err)
 
-    def _read_waiting_marker(self):
+    def _read_waiting_marker(self) -> Any:
         """The parsed waiting marker, or None when absent/unreadable."""
         try:
             return self.store.read(WAITING_MARKER)
@@ -44,8 +50,11 @@ class OrchestrationMixin:
             _LOGGER.warning("could not read waiting marker (%s)", err)
             return None
 
-    async def _publish_last_run(self, stamp, trigger, ctx=None, result=None, outcome=None,
-                                skipped=None):
+    async def _publish_last_run(self, stamp: str, trigger: str,
+                                ctx: Mapping[str, Any] | None = None,
+                                result: report_format.RunResult | None = None,
+                                outcome: Mapping[str, Any] | None = None,
+                                skipped: str | None = None) -> None:
         """Full, untruncated record of what the nightly run actually did.
 
         The run used to leave behind one Logbook line and a recap; everything
@@ -55,7 +64,7 @@ class OrchestrationMixin:
         (threshold calibration, quantized-vs-planned minutes) were simply
         unanswerable after the fact. This state is that record.
         """
-        attributes = {
+        attributes: dict[str, Any] = {
             "friendly_name": "Irrigation Last Run",
             "updated": stamp,
             # Which trigger produced this record. Without it the state is ambiguous:
@@ -86,7 +95,7 @@ class OrchestrationMixin:
             })
             doses = ctx["doses"]
             attributes["dosing_sources"] = ctx["dosing_sources"]
-            dosing_detail = {}
+            dosing_detail: dict[str, dict[str, Any]] = {}
             for k in the_plan.watered:
                 d = doses[k]
                 dosing_detail[k] = {
@@ -99,7 +108,7 @@ class OrchestrationMixin:
                 }
             attributes["dosing"] = dosing_detail
             cal_store = self._read_efficacy_store()
-            calibration_detail = {}
+            calibration_detail: dict[str, dict[str, Any]] = {}
             for k in the_plan.watered:
                 crec = cal_store.get(k) or {}
                 calibration_detail[k] = {
@@ -157,7 +166,8 @@ class OrchestrationMixin:
             nightly["friendly_name"] = "Irrigation Last Nightly Run"
             await self._publish_record("last_nightly", value, nightly)
 
-    async def _plan_and_run(self, wait, trigger, resume=None):
+    async def _plan_and_run(self, wait: bool, trigger: str,
+                            resume: Mapping[str, float] | None = None) -> None:
         """Plan and water. `wait=True` (nightly) sleeps until the pre-dawn window;
         `wait=False` (run-now) executes immediately.
 
@@ -276,25 +286,27 @@ class OrchestrationMixin:
                         if now_w >= start or not pending_recovery:
                             continue
                         rstore = self._read_efficacy_store()
-                        still_pending = []
+                        still_pending: list[str] = []
                         for rk in pending_recovery:
                             rzc = cfg.zones[rk]
                             rreading = sensors.read_zone(rzc, self._read_zone_signals(rzc))
-                            if not rreading.online:
+                            rdominant = rreading.dominant
+                            # An online reading always carries a dominant value.
+                            if not rreading.online or rdominant is None:
                                 still_pending.append(rk)
                                 continue
                             rrec = rstore.get(rk) or {}
                             rpinned = rzc.refill_span_pts > 0
                             if not calibration.should_probe(
                                     rrec.get("state", "calibrating"),
-                                    rreading.dominant, rpinned, tun):
+                                    rdominant, rpinned, tun):
                                 continue  # converged or above ceiling: nothing to gain
                             rbase = ctx["api_runtimes"].get(rzc.rachio_zone_id) or rzc.runtime_minutes
                             rfull = plan.cycles_minutes(rbase, 1.0)
                             rpm = calibration.probe_minutes(
                                 rfull, rrec.get("prior_minutes"), rrec.get("last_rise"), tun)
                             rpm = calibration.cap_for_saturation(
-                                rpm, rreading.dominant, rrec.get("efficacy"), tun)
+                                rpm, rdominant, rrec.get("efficacy"), tun)
                             rpm = min(rpm, rfull)
                             trial_minutes = dict(ctx["minutes"])
                             trial_minutes[rk] = rpm
@@ -558,7 +570,8 @@ class OrchestrationMixin:
             self._watering_active = False
             self._run_in_progress = False
 
-    def _apply_resume(self, ctx, owed, cfg, tun):
+    def _apply_resume(self, ctx: dict[str, Any], owed: Mapping[str, float],
+                      cfg: config.Config, tun: config.Tunables) -> None:
         """Replace the moisture-based plan in `ctx` with one for what is owed.
 
         Zones keep tonight's priority order; one no longer configured is dropped,
@@ -582,7 +595,7 @@ class OrchestrationMixin:
                    start=ctx["end"] - dt.timedelta(minutes=the_plan.span_minutes),
                    recovery_candidates=[])
 
-    async def _preview(self):
+    async def _preview(self) -> None:
         """Report the plan that WOULD run — no valves opened, no calendar written.
 
         Three surfaces (title 'Irrigation preview' on the notification carries the
@@ -617,7 +630,7 @@ class OrchestrationMixin:
             self._current_cfg = _saved_cfg
             self._current_bindings = _saved_bindings
 
-    async def _preview_body(self, cfg, stamp):
+    async def _preview_body(self, cfg: config.Config, stamp: str) -> None:
         """The preview computation itself, split out so _preview() can wrap it in a
         save/restore of the run-scoped globals (_current_cfg/_current_bindings) this
         body reads through _is_standby / _plan_context / _notify."""
@@ -705,6 +718,7 @@ class OrchestrationMixin:
         )
 
         fwx = ctx["forecast_wx"]
+        forecast_weather: dict[str, Any]
         if fwx is None:
             forecast_weather = {}
         else:
@@ -753,7 +767,9 @@ class OrchestrationMixin:
             },
         )
 
-    async def _log_zone_outcomes(self, cfg, watered, delivered, uncompleted):
+    async def _log_zone_outcomes(self, cfg: config.Config, watered: Iterable[str],
+                                 delivered: Mapping[str, float],
+                                 uncompleted: Mapping[str, str]) -> None:
         """File each zone's result under the ZONE, not just the run.
 
         This is what makes "what has this zone been doing?" a filter rather than a
@@ -779,7 +795,10 @@ class OrchestrationMixin:
                 entity_id=zone.rachio_switch,
             )
 
-    async def _report(self, result, tun, event_time=None, started_at=None, ended_at=None):
+    async def _report(self, result: report_format.RunResult, tun: config.Tunables,
+                      event_time: dt.datetime | None = None,
+                      started_at: dt.datetime | None = None,
+                      ended_at: dt.datetime | None = None) -> None:
         """Notify + write the calendar entry.
 
         When water actually ran, `started_at`/`ended_at` make the entry SPAN the
@@ -815,7 +834,7 @@ class OrchestrationMixin:
         try:
             await self.port.call(
                 "calendar", "create_event", {
-                    "entity_id": self._current_bindings.calendar_entity,
+                    "entity_id": self._loaded_bindings().calendar_entity,
                     "summary": title, "description": desc,
                     "start_date_time": start_dt.isoformat(),
                     "end_date_time": end_dt.isoformat()},

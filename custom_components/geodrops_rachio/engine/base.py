@@ -25,11 +25,15 @@ LOGBOOK_NAME = "Irrigation"
 # A night publishes a few dozen records; this holds several nights' worth.
 RECORD_HISTORY_MAX = 500
 
+# (runtimes_minutes, refill_depths_mm, refill_spans_pts), each keyed by Rachio
+# zone id: one live pull (rachio_client.async_fetch_zone_data).
+type ZoneData = tuple[dict[str, float], dict[str, float], dict[str, float]]
+
 
 class EngineBase:
     def __init__(self, port: HAPort, store: EngineStore,
-                 load_raw_config: Callable[[], dict],
-                 fetch_zone_data: Callable[[], Awaitable[tuple[dict, dict, dict]]]) -> None:
+                 load_raw_config: Callable[[], dict[str, Any]],
+                 fetch_zone_data: Callable[[], Awaitable[ZoneData]]) -> None:
         self.port = port
         self.store = store
         self._load_raw_config = load_raw_config
@@ -37,15 +41,18 @@ class EngineBase:
         self._manual_stop = False
         self.api_calls = 0     # Rachio-affecting service calls (start/stop) — the real budget
         self.state_polls = 0   # local HA state reads (free); tracked separately
-        self._runtime_cache = {"ts": 0.0, "runtimes": {}, "depths": {}, "spans": {}}
+        self._runtime_cache: dict[str, Any] = {
+            "ts": 0.0, "runtimes": {}, "depths": {}, "spans": {}}
         # The last Rachio fetch failed; logged once until one succeeds.
         self._rachio_failing = False
-        self._current_tun = None
-        self._current_cfg = None
-        self._current_bindings = None
+        # The config the current entry point loaded (None before the first);
+        # read through _loaded_cfg() and friends.
+        self._current_tun: config.Tunables | None = None
+        self._current_cfg: config.Config | None = None
+        self._current_bindings: config.HABindings | None = None
         self._run_in_progress = False
         self._watering_active = False
-        self._rain_since = None
+        self._rain_since: float | None = None
         # Serialises read-modify-writes of the pending calibration queue (the
         # settle poll awaits a fetch between its read and its write).
         self._obs_lock = asyncio.Lock()
@@ -54,10 +61,10 @@ class EngineBase:
         # it was first seen off after that.
         self._valve_on: set[str] = set()
         self._valve_closed: dict[str, dt.datetime] = {}
-        self.records: dict[str, dict] = {}
+        self.records: dict[str, dict[str, Any]] = {}
         # Recent publishes, oldest first — a debugging/test trail, so bounded: the
         # engine lives as long as Home Assistant does.
-        self.record_history: deque[tuple[str, Any, dict]] = deque(
+        self.record_history: deque[tuple[str, Any, dict[str, Any]]] = deque(
             maxlen=RECORD_HISTORY_MAX)
         self._listeners: list[Callable[[], None]] = []
         self.store.on_write = self._notify_listeners
@@ -68,13 +75,26 @@ class EngineBase:
                 self.records[name] = doc
 
     # --- plumbing ------------------------------------------------------------
-    def _load_cfg(self):
+    def _load_cfg(self) -> config.Config:
         return config.parse_config(self._load_raw_config())
+
+    def _loaded_cfg(self) -> config.Config:
+        """The config the current entry point loaded; every path that reads
+        it loads one first."""
+        if self._current_cfg is None:
+            raise RuntimeError("no scheduler config loaded")
+        return self._current_cfg
+
+    def _loaded_bindings(self) -> config.HABindings:
+        """The loaded config's bindings (see _loaded_cfg)."""
+        if self._current_bindings is None:
+            raise RuntimeError("no scheduler config loaded")
+        return self._current_bindings
 
     def _naive_now(self) -> dt.datetime:
         return self.port.now().replace(tzinfo=None)
 
-    def _state_get(self, entity_id: str):
+    def _state_get(self, entity_id: str) -> str:
         """`self.port.state(entity_id)`, but RAISE `NameError(entity_id)` when the
         entity does not exist — matching pyscript's `state.get`.
 
@@ -117,12 +137,13 @@ class EngineBase:
             except Exception:
                 _LOGGER.exception("record listener %r failed", cb)
 
-    def _publish(self, name: str, value, attributes: dict) -> None:
+    def _publish(self, name: str, value: Any, attributes: dict[str, Any]) -> None:
         self.records[name] = {"value": value, "attributes": attributes}
         self.record_history.append((name, value, attributes))
         self._notify_listeners()
 
-    async def _publish_record(self, name, value, attributes):
+    async def _publish_record(self, name: str, value: Any,
+                              attributes: dict[str, Any]) -> None:
         """Publish a diagnostic state AND persist it, so a restart cannot erase it.
 
         A persistence failure must never take down the run that produced the
@@ -135,7 +156,7 @@ class EngineBase:
         except Exception as err:
             _LOGGER.warning("could not persist %s (%s)", name, err)
 
-    def _restore_records(self):
+    def _restore_records(self) -> None:
         """Re-publish persisted diagnostic states after a restart."""
         for name in PERSISTED_RECORDS:
             data = self.store.read(record_key(name))
@@ -144,7 +165,7 @@ class EngineBase:
             self._publish(name, data["value"], data["attributes"])
 
     # --- ported: legacy lines 146-212 -----------------------------------------
-    async def _activity(self, message, entity_id=None):
+    async def _activity(self, message: str, entity_id: str | None = None) -> None:
         """Record a normal-operation event in the HA Logbook (the activity log),
         NOT the system log. The system log (log.warning/log.error) is reserved for
         errors and failures. Use this for routine events: runs, previews, refreshes,
@@ -167,7 +188,7 @@ class EngineBase:
         except ServiceNotFound:
             _LOGGER.debug("logbook not loaded; not recorded: %s", message)
 
-    async def _notify(self, message, title):
+    async def _notify(self, message: str, title: str) -> None:
         """Send a push, tolerant of a missing/renamed notify service.
 
         A notify failure must cost only the push — never the run's records or a
@@ -181,7 +202,7 @@ class EngineBase:
         """
         try:
             await self.port.call(
-                "notify", self._current_bindings.notify_service.split(".", 1)[-1],
+                "notify", self._loaded_bindings().notify_service.split(".", 1)[-1],
                 {"message": message, "title": title},
             )
         except Exception as err:
@@ -189,7 +210,7 @@ class EngineBase:
                 "notification failed (%s); run records were still written", err
             )
 
-    def _set_status(self, status, detail=None):
+    def _set_status(self, status: str, detail: str | None = None) -> None:
         """Publish what the scheduler is doing right now.
 
         HA logs a state CHANGE to the Logbook by itself, attached to the entity and

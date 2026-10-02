@@ -156,9 +156,7 @@ rules:
   async-dependency: done
   inject-websession: done
   strict-typing:
-    status: todo
+    status: done
     comment: >-
-      Adopted a package at a time: mypy.ini makes everything strict and
-      exempts what is not converted yet, and CI runs mypy. brain/ and the
-      integration modules are done; engine/ (most errors: mixins using
-      attributes only their combined class defines) is next.
+      mypy.ini runs the whole integration under mypy --strict with no
+      exemptions, and CI runs mypy on every push.
