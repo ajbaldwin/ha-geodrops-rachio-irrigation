@@ -30,7 +30,8 @@ def zone_device_info(entry: ConfigEntry, key: str, hub_device_id: str) -> Device
     if _HAS_VIA_DEVICE_ID:
         info["via_device_id"] = hub_device_id
     else:
-        info["via_device"] = (DOMAIN, entry.entry_id)
+        # Home Assistant before via_device_id; its DeviceInfo has this key.
+        info["via_device"] = (DOMAIN, entry.entry_id)  # type: ignore[typeddict-unknown-key]
     return info
 
 

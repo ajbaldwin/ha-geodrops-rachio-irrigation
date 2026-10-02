@@ -14,14 +14,15 @@ See: .superpowers/sdd/2026-09-12-ha-integration-wrapper/task-5-addendum.md
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryState, ConfigFlowResult
 from homeassistant.const import CONF_API_KEY
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import aiohttp_client, selector
 
 from .const import DOMAIN, SETTINGS_KEYS
@@ -93,11 +94,19 @@ def _api_key_schema() -> vol.Schema:
         selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD))})
 
 
-def _prereqs_met(hass) -> bool:
+def _form(schema: vol.Schema) -> Any:
+    """`schema` as async_show_form and add_suggested_values_to_schema take it.
+
+    Home Assistant 2026.10 types those as probatio schemas; 2026.9 and older
+    build forms with voluptuous only. Both accept a voluptuous schema."""
+    return schema
+
+
+def _prereqs_met(hass: HomeAssistant) -> bool:
     return all(c in hass.config.components for c in REQUIRED_COMPONENTS)
 
 
-def _zone_label(zone: dict) -> str:
+def _zone_label(zone: Mapping[str, Any]) -> str:
     """Human label for a live Rachio zone in the picker dropdown."""
     name = zone.get("name") or "Zone"
     num = zone.get("zoneNumber")
@@ -113,7 +122,7 @@ def _slug(name: str) -> str:
     return slug(name)
 
 
-def _optional_number(name: str, default):
+def _optional_number(name: str, default: float | None) -> vol.Marker:
     """Voluptuous key that pre-fills a number when known, else requires entry."""
     if default is None:
         return vol.Required(name)
@@ -151,7 +160,13 @@ def _assemble_bindings(core: dict[str, Any], weather: dict[str, Any]) -> dict[st
     }
 
 
-class _BindingsWizardSteps:
+if TYPE_CHECKING:
+    _FlowBase = config_entries.ConfigEntryBaseFlow
+else:
+    _FlowBase = object
+
+
+class _BindingsWizardSteps(_FlowBase):
     """Step implementations shared by the config flow and the options flow.
 
     Both flows walk the same `bindings -> weather -> zone(s) -> advanced`
@@ -160,14 +175,34 @@ class _BindingsWizardSteps:
     the final step is persisted (`_async_finish`, implemented per-flow).
     """
 
-    hass: Any
     _data: dict[str, Any]
     _core: dict[str, Any]
     _existing: dict[str, Any]
+    _live_zones: list[dict[str, Any]]
+    _picked_zone: dict[str, Any] | None
+    _devices: list[dict[str, Any]]
+    _api_key: str | None
+    _account_id: str | None
+    _editing_key: str | None
+    _selected_key: str | None
+    _removing: bool
     # The options flow has the manage-zones menu as its hub; the first-install
     # config flow does not. Adding a zone returns to that menu in the options
     # flow, and uses the add-another/advanced path in the config flow.
     _is_options: bool = False
+
+    if TYPE_CHECKING:
+        # From the flow this is mixed into, each used only on that flow's path
+        # (see _is_options): config_entry from the options flow, the unique-id
+        # helpers from the config flow.
+        @property
+        def config_entry(self) -> config_entries.ConfigEntry: ...
+
+        async def async_set_unique_id(
+            self, unique_id: str | None = None, *, raise_on_progress: bool = True
+        ) -> config_entries.ConfigEntry | None: ...
+
+        def _abort_if_unique_id_configured(self) -> None: ...
 
     def _existing_bindings(self) -> dict[str, Any]:
         return dict(self._existing.get("bindings", {}))
@@ -252,7 +287,8 @@ class _BindingsWizardSteps:
         self._api_key = key
         return None
 
-    async def async_step_connect(self, user_input=None):
+    async def async_step_connect(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Collect and check the Rachio API key.
 
         Runs first so the device-name field can be a live dropdown of the user's
@@ -281,9 +317,9 @@ class _BindingsWizardSteps:
                 self._data[CONF_API_KEY] = key
                 return await self.async_step_bindings()
         return self.async_show_form(
-            step_id="connect", data_schema=_api_key_schema(), errors=errors)
+            step_id="connect", data_schema=_form(_api_key_schema()), errors=errors)
 
-    def _device_name_field(self, default):
+    def _device_name_field(self, default: str | None) -> tuple[vol.Marker, Any]:
         """(key, selector) for device name: a dropdown of fetched controllers,
         or a free-text field when none were fetched."""
         if self._devices:
@@ -332,7 +368,7 @@ class _BindingsWizardSteps:
             f"notify.{name}" for name in services
             if name not in GENERIC_NOTIFY_SERVICES)
 
-    def _notify_service_field(self, default):
+    def _notify_service_field(self, default: str | None) -> tuple[vol.Marker, Any]:
         options = self._notify_options()
         if options:
             if default not in options:
@@ -352,7 +388,7 @@ class _BindingsWizardSteps:
         return bool(name) and name not in GENERIC_NOTIFY_SERVICES and (
             self.hass.services.has_service("notify", name))
 
-    def _build_bindings_schema(self, defaults: dict) -> vol.Schema:
+    def _build_bindings_schema(self, defaults: Mapping[str, Any]) -> vol.Schema:
         notify_key, notify_selector = self._notify_service_field(
             defaults.get("notify_service"))
         device_key, device_selector = self._device_name_field(
@@ -372,7 +408,8 @@ class _BindingsWizardSteps:
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="weather")),
         })
 
-    async def async_step_bindings(self, user_input=None):
+    async def async_step_bindings(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             if not self._notify_service_valid(user_input["notify_service"]):
@@ -394,11 +431,12 @@ class _BindingsWizardSteps:
                 return await self.async_step_weather()
 
         defaults = user_input if user_input is not None else self._existing_bindings()
-        schema = self._build_bindings_schema(defaults)
+        schema = _form(self._build_bindings_schema(defaults))
         return self.async_show_form(
             step_id="bindings", data_schema=schema, errors=errors)
 
-    async def async_step_weather(self, user_input=None):
+    async def async_step_weather(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             if self._is_options:
                 self._data["bindings"] = _assemble_bindings(
@@ -453,9 +491,10 @@ class _BindingsWizardSteps:
                     DEFAULT_PRECIPITATION_AMOUNT_PREFIX),
             ): str,
         })
-        return self.async_show_form(step_id="weather", data_schema=schema)
+        return self.async_show_form(step_id="weather", data_schema=_form(schema))
 
-    async def async_step_menu(self, user_input=None):
+    async def async_step_menu(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Options hub. Every sub-step returns here; 'Done' saves and reloads.
         The labels are translated (options.step.menu.menu_options)."""
         return self.async_show_menu(
@@ -463,23 +502,28 @@ class _BindingsWizardSteps:
             menu_options=["connect", "bindings", "weather", "add_zone",
                           "edit_zone", "remove_zone", "advanced", "finish"])
 
-    async def async_step_add_zone(self, user_input=None):
+    async def async_step_add_zone(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         self._editing_key = None
         return await self.async_step_zone()
 
-    async def async_step_finish(self, user_input=None):
+    async def async_step_finish(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         # Options-hub "Done": persist, drop the reload guard, restart once.
         return await self._async_finish()
 
-    async def async_step_edit_zone(self, user_input=None):
+    async def async_step_edit_zone(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         self._removing = False
         return await self.async_step_pick_zone()
 
-    async def async_step_remove_zone(self, user_input=None):
+    async def async_step_remove_zone(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         self._removing = True
         return await self.async_step_pick_zone()
 
-    async def async_step_pick_zone(self, user_input=None):
+    async def async_step_pick_zone(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         keys = [z["key"] for z in self._data["zones"]]
         if user_input is not None:
             self._selected_key = user_input["zone"]
@@ -491,9 +535,10 @@ class _BindingsWizardSteps:
         schema = vol.Schema({vol.Required("zone"): selector.SelectSelector(
             selector.SelectSelectorConfig(options=keys,
                                           mode=selector.SelectSelectorMode.DROPDOWN))})
-        return self.async_show_form(step_id="pick_zone", data_schema=schema)
+        return self.async_show_form(step_id="pick_zone", data_schema=_form(schema))
 
-    async def async_step_confirm_remove(self, user_input=None):
+    async def async_step_confirm_remove(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             if user_input.get("confirm"):
                 self._data["zones"] = [
@@ -501,31 +546,30 @@ class _BindingsWizardSteps:
                 self._persist()
             return await self.async_step_menu()
         schema = vol.Schema({vol.Required("confirm", default=False): bool})
-        return self.async_show_form(step_id="confirm_remove", data_schema=schema)
+        return self.async_show_form(step_id="confirm_remove", data_schema=_form(schema))
 
-    def _stored_zone(self, key):
+    def _stored_zone(self, key: str | None) -> dict[str, Any]:
         return next((z for z in self._data["zones"] if z["key"] == key), {})
 
-    def _rachio_switch_selector(self):
+    def _rachio_switch_selector(self) -> selector.EntitySelector:
         """Switch picker constrained to the Rachio integration's entities."""
         return selector.EntitySelector(selector.EntitySelectorConfig(
             domain="switch", integration="rachio"))
 
-    def _target_range_selector(self):
-        return selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    {"value": "dry", "label": "Dry"},
-                    {"value": "dry_plus", "label": "Dry+"},
-                    {"value": "moist", "label": "Moist"},
-                    {"value": "moist_plus", "label": "Moist+"},
-                    {"value": "wet", "label": "Wet"},
-                    {"value": "wet_plus", "label": "Wet+"},
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            ))
+    def _target_range_selector(self) -> selector.SelectSelector:
+        options: list[selector.SelectOptionDict] = [
+            {"value": "dry", "label": "Dry"},
+            {"value": "dry_plus", "label": "Dry+"},
+            {"value": "moist", "label": "Moist"},
+            {"value": "moist_plus", "label": "Moist+"},
+            {"value": "wet", "label": "Wet"},
+            {"value": "wet_plus", "label": "Wet+"},
+        ]
+        return selector.SelectSelector(selector.SelectSelectorConfig(
+            options=options, mode=selector.SelectSelectorMode.DROPDOWN))
 
-    def _append_zone(self, user_input, *, rachio_zone_id: str = "") -> None:
+    def _append_zone(self, user_input: Mapping[str, Any], *,
+                     rachio_zone_id: str = "") -> None:
         zone = {
             "key": user_input["key"],
             "rachio_switch": user_input["rachio_switch"],
@@ -545,7 +589,8 @@ class _BindingsWizardSteps:
             zone["rachio_zone_id"] = rachio_zone_id
         self._data["zones"].append(zone)
 
-    async def async_step_zone(self, user_input=None):
+    async def async_step_zone(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Pick a zone from the live Rachio list, or fall back to manual entry.
 
         When the wizard could not reach Rachio (`_live_zones` empty) this is the
@@ -562,7 +607,7 @@ class _BindingsWizardSteps:
                 (z for z in live if z["id"] == picked), None)
             return await self.async_step_zone_details()
 
-        options = [
+        options: list[selector.SelectOptionDict] = [
             {"value": z["id"], "label": _zone_label(z)} for z in live
         ]
         options.append(
@@ -572,9 +617,9 @@ class _BindingsWizardSteps:
                 selector.SelectSelector(selector.SelectSelectorConfig(
                     options=options, mode=selector.SelectSelectorMode.DROPDOWN)),
         })
-        return self.async_show_form(step_id="zone", data_schema=schema)
+        return self.async_show_form(step_id="zone", data_schema=_form(schema))
 
-    def _guess_switch(self, zone_name: str):
+    def _guess_switch(self, zone_name: str) -> str | None:
         """Best-guess HA switch entity for a Rachio zone, matched by name.
 
         The Rachio integration names its zone switches after the zone (e.g.
@@ -600,7 +645,8 @@ class _BindingsWizardSteps:
                 return eid
         return None
 
-    async def async_step_zone_details(self, user_input=None):
+    async def async_step_zone_details(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Collect a zone's entities, with runtime/refill/key pre-filled from
         the picked Rachio zone (all still editable).
 
@@ -650,7 +696,7 @@ class _BindingsWizardSteps:
         switch_key = (
             vol.Optional("rachio_switch", default=switch_guess) if switch_guess
             else vol.Required("rachio_switch"))
-        schema_dict: dict = {}
+        schema_dict: dict[vol.Marker, Any] = {}
         if not editing:
             schema_dict[vol.Required("key", default=_slug(pz.get("name", "")))] = str
         schema_dict[switch_key] = self._rachio_switch_selector()
@@ -681,7 +727,7 @@ class _BindingsWizardSteps:
         schema_dict[vol.Optional("spray", default=stored.get("spray", False))] = bool
         if not editing and not self._is_options:
             schema_dict[vol.Optional("add_another_zone", default=False)] = bool
-        schema = vol.Schema(schema_dict)
+        schema = _form(vol.Schema(schema_dict))
         # On a validation re-render (duplicate key), keep everything the user
         # already typed instead of resetting to the pre-fill defaults.
         if user_input is not None:
@@ -689,7 +735,8 @@ class _BindingsWizardSteps:
         return self.async_show_form(
             step_id="zone_details", data_schema=schema, errors=errors)
 
-    async def _async_step_zone_manual(self, user_input=None):
+    async def _async_step_zone_manual(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             if any(slug(user_input["key"]) == slug(z["key"])
@@ -726,7 +773,7 @@ class _BindingsWizardSteps:
         }
         if not self._is_options:
             schema[vol.Optional("add_another_zone", default=False)] = bool
-        data_schema = vol.Schema(schema)
+        data_schema = _form(vol.Schema(schema))
         # On a validation re-render (duplicate key), keep the user's typed fields
         # rather than clearing the form.
         if user_input is not None:
@@ -734,7 +781,8 @@ class _BindingsWizardSteps:
         return self.async_show_form(
             step_id="zone", data_schema=data_schema, errors=errors)
 
-    async def async_step_advanced(self, user_input=None):
+    async def async_step_advanced(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             calib = user_input["self_calibration_enabled"]
@@ -759,7 +807,7 @@ class _BindingsWizardSteps:
                 self._data["advanced_overrides"] = overrides
                 return await self._async_finish()
 
-        schema = vol.Schema({
+        schema = _form(vol.Schema({
             vol.Optional(
                 "self_calibration_enabled",
                 default=self._existing.get("self_calibration_enabled", False),
@@ -768,14 +816,14 @@ class _BindingsWizardSteps:
                 "advanced_overrides",
                 default=self._existing.get("advanced_overrides", ""),
             ): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-        })
+        }))
         # On a validation re-render keep what the admin typed.
         if user_input is not None:
             schema = self.add_suggested_values_to_schema(schema, user_input)
         return self.async_show_form(
             step_id="advanced", data_schema=schema, errors=errors)
 
-    async def _async_finish(self):
+    async def _async_finish(self) -> ConfigFlowResult:
         raise NotImplementedError
 
 
@@ -790,37 +838,41 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
         self._data: dict[str, Any] = {"zones": []}
         self._core: dict[str, Any] = {}
         self._existing: dict[str, Any] = {}
-        self._live_zones: list[dict] = []
-        self._picked_zone: dict | None = None
-        self._devices: list[dict] = []
+        self._live_zones: list[dict[str, Any]] = []
+        self._picked_zone: dict[str, Any] | None = None
+        self._devices: list[dict[str, Any]] = []
         self._api_key: str | None = None
         self._account_id: str | None = None
         self._editing_key: str | None = None
         self._selected_key: str | None = None
         self._removing: bool = False
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
         if not _prereqs_met(self.hass):
             return self.async_abort(reason="missing_prerequisites")
         return await self.async_step_connect()
 
-    async def _async_finish(self):
+    async def _async_finish(self) -> ConfigFlowResult:
         data, options = split_settings(self._data)
         return self.async_create_entry(
             title="GeoDrops + Rachio Irrigation", data=data, options=options)
 
-    async def async_step_reauth(self, entry_data):
+    async def async_step_reauth(
+            self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         """Rachio rejected the stored API key (or there is none yet)."""
         return await self.async_step_reauth_confirm()
 
-    async def async_step_reauth_confirm(self, user_input=None):
+    async def async_step_reauth_confirm(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._async_replace_key(
             "reauth_confirm", self._get_reauth_entry(), "reauth_successful",
             user_input)
 
-    async def async_step_reconfigure(self, user_input=None):
+    async def async_step_reconfigure(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Replace the Rachio API key by choice, e.g. after regenerating it.
         Everything else set up in the wizard is changed under Configure."""
         return await self._async_replace_key(
@@ -829,7 +881,8 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
 
     async def _async_replace_key(self, step_id: str,
                                  entry: config_entries.ConfigEntry,
-                                 success: str, user_input):
+                                 success: str, user_input: dict[str, Any] | None,
+                                 ) -> ConfigFlowResult:
         """Ask for a new API key for `entry`'s Rachio account and store it."""
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -849,7 +902,7 @@ class GeodropsRachioConfigFlow(config_entries.ConfigFlow, _BindingsWizardSteps, 
                     self.hass.config_entries.async_schedule_reload(entry.entry_id)
                 return self.async_abort(reason=success)
         return self.async_show_form(
-            step_id=step_id, data_schema=_api_key_schema(), errors=errors)
+            step_id=step_id, data_schema=_form(_api_key_schema()), errors=errors)
 
     @staticmethod
     @callback
@@ -868,9 +921,9 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         self._data: dict[str, Any] = {"zones": []}
         self._core: dict[str, Any] = {}
         self._existing: dict[str, Any] = {}
-        self._live_zones: list[dict] = []
-        self._picked_zone: dict | None = None
-        self._devices: list[dict] = []
+        self._live_zones: list[dict[str, Any]] = []
+        self._picked_zone: dict[str, Any] | None = None
+        self._devices: list[dict[str, Any]] = []
         self._api_key: str | None = None
         self._account_id: str | None = None
         self._editing_key: str | None = None
@@ -878,7 +931,8 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
         self._removing: bool = False
         self._guarding: bool = False
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(
+            self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         self._existing = entry_config(
             self.config_entry.data, self.config_entry.options)
         # Seed _data fully so any early sub-step persists a COMPLETE entry — an
@@ -903,7 +957,7 @@ class GeodropsRachioOptionsFlow(config_entries.OptionsFlow, _BindingsWizardSteps
             await self._connect_rachio(self._data[CONF_API_KEY])
         return await self.async_step_menu()
 
-    async def _async_finish(self):
+    async def _async_finish(self) -> ConfigFlowResult:
         entry = self.config_entry
         # Data is already persisted per-step; this is a no-op unless the admin
         # went straight to Done. Persist happens while the guard is still up.

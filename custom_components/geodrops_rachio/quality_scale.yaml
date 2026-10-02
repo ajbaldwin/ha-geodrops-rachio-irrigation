@@ -159,6 +159,6 @@ rules:
     status: todo
     comment: >-
       Adopted a package at a time: mypy.ini makes everything strict and
-      exempts what is not converted yet, and CI runs mypy. brain/ is done;
-      the integration modules and engine/ (most errors: mixins using
-      attributes only their combined class defines) are next.
+      exempts what is not converted yet, and CI runs mypy. brain/ and the
+      integration modules are done; engine/ (most errors: mixins using
+      attributes only their combined class defines) is next.

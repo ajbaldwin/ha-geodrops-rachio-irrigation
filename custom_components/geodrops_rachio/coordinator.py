@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING, Any
@@ -26,7 +27,8 @@ _REJECT_PHRASES = {
 }
 
 
-def format_calibration_status(state, n_obs, last_reject_reason) -> str | None:
+def format_calibration_status(state: str | None, n_obs: int | None,
+                              last_reject_reason: str | None) -> str | None:
     """One human label folding the raw calibration state together with progress
     and, when a zone is stuck, why.
 
@@ -42,7 +44,7 @@ def format_calibration_status(state, n_obs, last_reject_reason) -> str | None:
     label = state.replace("_", " ").title()
     if state == "converged":
         return label
-    phrase = _REJECT_PHRASES.get(last_reject_reason)
+    phrase = _REJECT_PHRASES.get(last_reject_reason or "")
     if phrase:
         return f"{label} — {phrase}"
     if n_obs:
@@ -50,7 +52,7 @@ def format_calibration_status(state, n_obs, last_reject_reason) -> str | None:
     return label
 
 
-def parse_last_nightly(attrs: dict, key: str) -> dict:
+def parse_last_nightly(attrs: Mapping[str, Any] | None, key: str) -> dict[str, Any]:
     attrs = attrs or {}
     delivered = attrs.get("delivered_minutes") or {}
     watered = attrs.get("watered") or []
@@ -69,7 +71,8 @@ def parse_last_nightly(attrs: dict, key: str) -> dict:
     }
 
 
-def parse_nightly_calibration(attrs: dict, key: str) -> dict:
+def parse_nightly_calibration(attrs: Mapping[str, Any] | None,
+                              key: str) -> dict[str, Any]:
     """Per-zone calibration published live on the last_nightly record. Only the
     zones watered that night appear; missing keys fall back to the efficacy
     file (which lags and carries no `state` for excluded zones)."""
@@ -79,12 +82,13 @@ def parse_nightly_calibration(attrs: dict, key: str) -> dict:
             "last_reject_reason": cal.get("last_reject_reason")}
 
 
-def parse_preview(attrs: dict, key: str) -> dict:
+def parse_preview(attrs: Mapping[str, Any] | None, key: str) -> dict[str, Any]:
     planned = (attrs or {}).get("planned_minutes") or {}
     return {"planned_runtime": planned.get(key)}
 
 
-def parse_refill_depth(runtimes_attrs: dict, rachio_zone_id: str, static_mm) -> dict:
+def parse_refill_depth(runtimes_attrs: Mapping[str, Any] | None, rachio_zone_id: str,
+                       static_mm: float | None) -> dict[str, Any]:
     """Per-zone refill depth in mm (Rachio's "depth of water" for the zone).
 
     Prefer the live value Rachio last reported — published on the runtimes
@@ -97,7 +101,7 @@ def parse_refill_depth(runtimes_attrs: dict, rachio_zone_id: str, static_mm) -> 
     return {"refill_depth": val if val is not None else static_mm}
 
 
-def parse_efficacy(store: dict, key: str) -> dict:
+def parse_efficacy(store: Mapping[str, Any] | None, key: str) -> dict[str, Any]:
     rec = (store or {}).get(key) or {}
     return {"efficacy": rec.get("efficacy"), "calibration_state": rec.get("state"),
             "n_obs": rec.get("n_obs", 0),
@@ -137,13 +141,13 @@ class ZoneStateCoordinator:
         self.hass = hass
         self.entry = entry
         self._scheduler = scheduler
-        self._listeners: list = []
-        self._unsub = None
+        self._listeners: list[Callable[[], None]] = []
+        self._unsub: Callable[[], None] | None = None
 
-    def add_listener(self, cb) -> None:
+    def add_listener(self, cb: Callable[[], None]) -> None:
         self._listeners.append(cb)
 
-    def remove_listener(self, cb) -> None:
+    def remove_listener(self, cb: Callable[[], None]) -> None:
         if cb in self._listeners:
             self._listeners.remove(cb)
 
@@ -157,14 +161,15 @@ class ZoneStateCoordinator:
             except Exception:
                 _LOGGER.exception("sensor update %r failed", cb)
 
-    def _attrs(self, name: str) -> dict | None:
+    def _attrs(self, name: str) -> dict[str, Any] | None:
         rec = self._scheduler.records.get(name)
         return rec["attributes"] if rec is not None else None
 
-    def data_for(self, key: str) -> dict:
-        out = {"planned_runtime": None, "last_delivered_runtime": None,
-               "last_watered": None, "efficacy": None, "calibration_state": None,
-               "refill_depth": None, "target_floor": None}
+    def data_for(self, key: str) -> dict[str, Any]:
+        out: dict[str, Any] = {"planned_runtime": None, "last_delivered_runtime": None,
+                               "last_watered": None, "efficacy": None,
+                               "calibration_state": None,
+                               "refill_depth": None, "target_floor": None}
         ln = self._attrs("last_nightly")
         if ln is not None:
             out.update(parse_last_nightly(ln, key))
@@ -180,8 +185,8 @@ class ZoneStateCoordinator:
             out["target_floor"] = (tg.get("target_floors") or {}).get(key)
         # Refill depth: config snapshot from the wizard, overlaid with the live
         # Rachio value when a refresh has published it.
-        zcfg = next((z for z in self.entry.data.get("zones", [])
-                     if z.get("key") == key), {})
+        zcfg: dict[str, Any] = next((z for z in self.entry.data.get("zones", [])
+                                     if z.get("key") == key), {})
         rt = self._attrs("runtimes")
         out.update(parse_refill_depth(
             rt if rt is not None else {},

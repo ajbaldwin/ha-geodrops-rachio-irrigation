@@ -90,13 +90,17 @@ def async_track_renames(
 
     @callback
     def _is_bound_rename(event_data: er.EventEntityRegistryUpdatedData) -> bool:
+        if event_data["action"] != "update":
+            return False
         old = event_data.get("old_entity_id")
-        return (event_data["action"] == "update" and old is not None
-                and bool(_binding_entries(hass, old)))
+        return old is not None and bool(_binding_entries(hass, old))
 
     @callback
     def _on_registry_update(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
-        old, new = event.data["old_entity_id"], event.data["entity_id"]
+        data = event.data
+        if data["action"] != "update":
+            return  # the event filter passes only renames
+        old, new = data["old_entity_id"], data["entity_id"]
         reg_entry = er.async_get(hass).async_get(new)
         for entry in _binding_entries(hass, old):
             if reg_entry is not None and reg_entry.config_entry_id == entry.entry_id \
