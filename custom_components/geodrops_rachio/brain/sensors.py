@@ -1,6 +1,7 @@
 """Read a zone's GeoDrops signals and decide online/offline. Pure Python."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .config import ZoneConfig, enum_key, state_rank
@@ -65,7 +66,7 @@ def read_zone(zone: ZoneConfig, signals: ZoneSignals) -> ZoneReading:
     )
 
 
-def all_training(qualities) -> bool:
+def all_training(qualities: Iterable[str | None]) -> bool:
     """True when all three depths report Training: the probe is still learning
     the site, so a reading taken now says nothing about the water it got."""
     keys = [enum_key(q) for q in qualities]

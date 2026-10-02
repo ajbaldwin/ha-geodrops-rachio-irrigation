@@ -11,8 +11,12 @@ Pure Python (no pyscript names). plan.py is untouched; this consumes its slots.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .blocks import ZoneRun
+
+if TYPE_CHECKING:
+    from .plan import Slot
 
 # Slack for float dust from drought-scaled runtimes (mirrors blocks.py).
 _EPS = 1e-9
@@ -25,7 +29,7 @@ class Step:
     minutes: int          # whole minutes
 
 
-def plan_program(slots: list) -> list:
+def plan_program(slots: list[Slot]) -> list[Step]:
     """Flatten a plan's slots into an ordered water/pause Step list.
 
     Watering slots are quantized by cumulative floor across the WHOLE night (as
@@ -35,7 +39,7 @@ def plan_program(slots: list) -> list:
     stays one gap. Leading and trailing pauses are dropped (nothing to keep the
     schedule alive for).
     """
-    steps = []
+    steps: list[Step] = []
     cumulative = 0.0
     allocated = 0
     for slot in slots:
@@ -52,8 +56,8 @@ def plan_program(slots: list) -> list:
     return _normalize(steps)
 
 
-def _normalize(steps: list) -> list:
-    merged = []
+def _normalize(steps: list[Step]) -> list[Step]:
+    merged: list[Step] = []
     for s in steps:
         if s.kind == "pause" and merged and merged[-1].kind == "pause":
             merged[-1] = Step("pause", None, merged[-1].minutes + s.minutes)
@@ -66,31 +70,31 @@ def _normalize(steps: list) -> list:
     return merged
 
 
-def water_minutes(steps: list) -> dict:
+def water_minutes(steps: list[Step]) -> dict[str, int]:
     """{zone_key: minutes} across the water Steps: what they hand Rachio."""
-    out = {}
+    out: dict[str, int] = {}
     for s in steps:
-        if s.kind == "water":
+        if s.kind == "water" and s.zone_key is not None:
             out[s.zone_key] = out.get(s.zone_key, 0) + s.minutes
     return out
 
 
-def program_runs(steps: list) -> list:
+def program_runs(steps: list[Step]) -> list[ZoneRun]:
     """The water Steps as ZoneRuns, in order — the single schedule's entity list."""
-    runs = []
+    runs: list[ZoneRun] = []
     for s in steps:
-        if s.kind == "water":
+        if s.kind == "water" and s.zone_key is not None:
             runs.append(ZoneRun(zone_key=s.zone_key, minutes=s.minutes))
     return runs
 
 
 @dataclass(frozen=True)
 class Segment:
-    steps: list      # water/pause Steps executed under ONE schedule call
+    steps: list[Step]  # water/pause Steps executed under ONE schedule call
     gap_after: int   # idle minutes AFTER this segment (0 = none / last segment)
 
 
-def segment_program(steps: list, max_pauses: int) -> list:
+def segment_program(steps: list[Step], max_pauses: int) -> list[Segment]:
     """Split a program into per-schedule segments.
 
     Each segment is submitted as its own `start_multiple_zone_schedule`; the
@@ -102,8 +106,8 @@ def segment_program(steps: list, max_pauses: int) -> list:
     adjacent pauses), so a break-triggering pause always has water after it.
     """
     unbounded = max_pauses <= 0
-    segments = []
-    current = []
+    segments: list[Segment] = []
+    current: list[Step] = []
     pauses_in_current = 0
     for s in steps:
         if s.kind == "pause":

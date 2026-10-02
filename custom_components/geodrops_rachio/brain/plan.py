@@ -1,6 +1,8 @@
 """Cycle-and-soak interleaving scheduler. Pure Python."""
 from __future__ import annotations
 
+import datetime as dt
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .config import Tunables
@@ -17,7 +19,7 @@ class Slot:
 @dataclass(frozen=True)
 class Plan:
     slots: list[Slot]
-    span_minutes: int
+    span_minutes: float
     watered: list[str]
     dropped: list[str]
 
@@ -26,35 +28,34 @@ def cycles_minutes(runtime_min: float, scale: float) -> float:
     return runtime_min * scale
 
 
-def fits_window(now, end, span_minutes) -> bool:
+def fits_window(now: dt.datetime, end: dt.datetime, span_minutes: float) -> bool:
     """True iff a run of `span_minutes` beginning at `now` finishes at or before
     `end` (the window close). Boundary inclusive. Used to decide whether a
     recovered zone's probe still fits before the pre-dawn window shuts.
     """
-    import datetime as _dt
-    return now + _dt.timedelta(minutes=span_minutes) <= end
+    return now + dt.timedelta(minutes=span_minutes) <= end
 
 
-def span_of(slots: list) -> int:
+def span_of(slots: list[Slot]) -> float:
     # pyscript has no generator expressions; use a list comprehension.
     return sum([s.minutes for s in slots])
 
 
 def build_sequence(
-    zones_priority: list,
-    minutes_by_zone: dict,
-    geo: dict,
-    adjacency: dict,
+    zones_priority: list[str],
+    minutes_by_zone: Mapping[str, float],
+    geo: Mapping[str, str],
+    adjacency: Mapping[str, Sequence[str]],
     cycle_min: int,
     soak_min: int,
-) -> list:
+) -> list[Slot]:
     remaining = {z: minutes_by_zone[z] for z in zones_priority}
-    last_end = {z: None for z in zones_priority}
+    last_end: dict[str, float | None] = {z: None for z in zones_priority}
     priority_index = {z: i for i, z in enumerate(zones_priority)}
-    clock = 0
-    prev_zone = None
-    prev_geo = None
-    slots = []
+    clock: float = 0
+    prev_zone: str | None = None
+    prev_geo: str | None = None
+    slots: list[Slot] = []
 
     # NOTE (pyscript): the readiness test is inlined into the comprehension
     # below rather than living in a nested `def ready(z)`. pyscript nested
@@ -65,7 +66,7 @@ def build_sequence(
         ready_zones = [
             z for z in zones_priority
             if remaining[z] > _EPS
-            and (last_end[z] is None or clock >= last_end[z] + soak_min)
+            and ((end := last_end[z]) is None or clock >= end + soak_min)
         ]
         if ready_zones:
             if prev_zone is None:
@@ -91,7 +92,9 @@ def build_sequence(
             prev_geo = geo[chosen]
         else:
             pending = [z for z in zones_priority if remaining[z] > _EPS]
-            next_ready = min([last_end[z] + soak_min for z in pending])
+            # A pending zone that is not ready has watered, so its end is set.
+            next_ready = min([end + soak_min for z in pending
+                              if (end := last_end[z]) is not None])
             slots.append(Slot(None, next_ready - clock))
             clock = next_ready
             prev_zone = None
@@ -101,10 +104,10 @@ def build_sequence(
 
 
 def build_plan(
-    zones_priority: list,
-    minutes_by_zone: dict,
-    geo: dict,
-    adjacency: dict,
+    zones_priority: list[str],
+    minutes_by_zone: Mapping[str, float],
+    geo: Mapping[str, str],
+    adjacency: Mapping[str, Sequence[str]],
     cap_minutes: float,
     t: Tunables,
 ) -> Plan:

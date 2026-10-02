@@ -9,7 +9,12 @@ nothing running.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .plan import Slot
 
 # Slack for float dust: 0.7-scaled runtimes land on values like 42.699999999999996,
 # which a bare floor() would charge a whole minute for.
@@ -30,14 +35,14 @@ class ZoneRun:
 @dataclass(frozen=True)
 class Block:
     kind: str            # "zones" (one Rachio call) | "idle" (sleep, nothing on)
-    slots: list          # plan.Slot list; empty for an idle block
+    slots: list[Slot]    # empty for an idle block
     minutes: float       # planned length of the block
 
 
-def group_blocks(slots: list) -> list:
+def group_blocks(slots: list[Slot]) -> list[Block]:
     """Split a plan's slots into maximal watering blocks separated by idle."""
-    result = []
-    current = []
+    result: list[Block] = []
+    current: list[Slot] = []
     for slot in slots:
         if slot.zone_key is None:
             if current:
@@ -51,7 +56,7 @@ def group_blocks(slots: list) -> list:
     return result
 
 
-def quantize(slots: list) -> list:
+def quantize(slots: list[Slot]) -> list[ZoneRun]:
     """Whole-minute runs for one block's slots, allocated by cumulative floor.
 
     Rachio takes an integer number of minutes per zone, but scaled drought
@@ -64,10 +69,12 @@ def quantize(slots: list) -> list:
     Runs that come out at zero minutes are dropped: `int(0.4) * 60` would put a
     zero-duration zone into the schedule.
     """
-    runs = []
+    runs: list[ZoneRun] = []
     cumulative = 0.0
     allocated = 0
     for slot in slots:
+        if slot.zone_key is None:
+            continue  # a zone block holds no idle slots
         cumulative += slot.minutes
         minutes = int(cumulative + _EPS) - allocated
         if minutes > 0:
@@ -76,7 +83,7 @@ def quantize(slots: list) -> list:
     return runs
 
 
-def entity_ids(runs: list, switch_by_zone: dict) -> list:
+def entity_ids(runs: list[ZoneRun], switch_by_zone: Mapping[str, str]) -> list[str]:
     """Zone switches, one entry per run — repeats intended.
 
     The Rachio service does NOT de-duplicate its entity list (confirmed on the
@@ -86,7 +93,7 @@ def entity_ids(runs: list, switch_by_zone: dict) -> list:
     return [switch_by_zone[r.zone_key] for r in runs]
 
 
-def duration_csv(runs: list) -> str:
+def duration_csv(runs: list[ZoneRun]) -> str:
     """Minutes for each run, positionally paired with `entity_ids`.
 
     The service validates this with `cv.ensure_list_csv`, then walks it in step
@@ -95,7 +102,7 @@ def duration_csv(runs: list) -> str:
     return ",".join([str(r.minutes) for r in runs])
 
 
-def delivered(runs: list, elapsed_seconds: float) -> dict:
+def delivered(runs: list[ZoneRun], elapsed_seconds: float) -> dict[str, float]:
     """{zone_key: minutes} actually watered by a block that ran `elapsed`.
 
     Rachio walks the block itself, so when a block ends early the scheduler
@@ -103,7 +110,7 @@ def delivered(runs: list, elapsed_seconds: float) -> dict:
     recovers that: time fills the runs in sequence, the last one reached gets
     whatever is left, and zones never reached are absent rather than zero.
     """
-    result = {}
+    result: dict[str, float] = {}
     remaining = max(0.0, elapsed_seconds / 60.0)
     for run in runs:
         if remaining < _MIN_CREDIT_MINUTES:
@@ -114,7 +121,7 @@ def delivered(runs: list, elapsed_seconds: float) -> dict:
     return result
 
 
-def _zone_block(slots: list) -> Block:
+def _zone_block(slots: list[Slot]) -> Block:
     # pyscript has no generator expressions; use a list comprehension.
     return Block(
         kind="zones",

@@ -1,7 +1,9 @@
 """Config model and loader for the irrigation scheduler. Pure Python."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
 
 import yaml
 
@@ -137,16 +139,16 @@ END_ANCHOR_SENSORS = {
 }
 
 
-def end_anchor_sensor(name) -> str:
+def end_anchor_sensor(name: str | None) -> str:
     """HA sensor giving the end anchor for `name` ("dawn" | "sunrise").
 
     Anything unrecognised, empty, or None falls back to dawn: an unknown anchor
     must shrink the window, never silently extend watering past sunrise.
     """
-    return END_ANCHOR_SENSORS.get(name, END_ANCHOR_SENSORS["dawn"])
+    return END_ANCHOR_SENSORS.get(name or "", END_ANCHOR_SENSORS["dawn"])
 
 
-def resolved_end_offset(profile, global_offset: int) -> int:
+def resolved_end_offset(profile: DroughtProfile, global_offset: int) -> int:
     """The end offset in effect for a profile: its own if set, else the global.
 
     Tests `is not None`, not truthiness, so a per-level 0 ("finish exactly at the
@@ -182,10 +184,10 @@ class ZoneConfig:
     rachio_switch: str
     dominant_sensor: str
     state_sensor: str
-    quality_sensors: tuple
+    quality_sensors: tuple[str, ...]
     target_range: str
     geography: str
-    adjacency: tuple
+    adjacency: tuple[str, ...]
     # full-refill runtime (Rachio-computed, seeded static); defaults keep direct
     # ZoneConfig construction in tests simple — load_config always supplies it.
     runtime_minutes: float = 0.0
@@ -229,10 +231,20 @@ class SunAnchors:
     sunrise: str = "sensor.sun_next_rising"
 
 
+_FORECAST_DEFAULT = {"temp": "sensor.forecast_overnight_temp",
+                     "humidity": "sensor.forecast_overnight_humidity",
+                     "wind": "sensor.forecast_overnight_wind"}
+_OBSERVED_DEFAULT = {"temp": "sensor.observed_overnight_temp",
+                     "humidity": "sensor.observed_overnight_humidity",
+                     "wind": "sensor.observed_overnight_wind"}
+
+
 @dataclass(frozen=True)
 class DerivedSensors:
-    forecast_overnight: dict = None
-    observed_overnight: dict = None
+    forecast_overnight: dict[str, str] = field(
+        default_factory=lambda: dict(_FORECAST_DEFAULT))
+    observed_overnight: dict[str, str] = field(
+        default_factory=lambda: dict(_OBSERVED_DEFAULT))
     precipitation_chance_prefix: str = "sensor.precipitation_chance_"
     precipitation_amount_prefix: str = "sensor.precipitation_amount_"
 
@@ -253,22 +265,15 @@ class HABindings:
 
 @dataclass(frozen=True)
 class Config:
-    bands: dict
+    bands: dict[str, Band]
     tunables: Tunables
-    zones: dict
-    drought_profiles: dict
+    zones: dict[str, ZoneConfig]
+    drought_profiles: dict[str, DroughtProfile]
     bindings: HABindings = HABindings()
 
 
-_FORECAST_DEFAULT = {"temp": "sensor.forecast_overnight_temp",
-                     "humidity": "sensor.forecast_overnight_humidity",
-                     "wind": "sensor.forecast_overnight_wind"}
-_OBSERVED_DEFAULT = {"temp": "sensor.observed_overnight_temp",
-                     "humidity": "sensor.observed_overnight_humidity",
-                     "wind": "sensor.observed_overnight_wind"}
-
-
-def _merge(defaults: dict, override) -> dict:
+def _merge(defaults: Mapping[str, Any],
+           override: Mapping[str, Any] | None) -> dict[str, Any]:
     out = dict(defaults)
     if override:
         for k, v in override.items():
@@ -276,7 +281,7 @@ def _merge(defaults: dict, override) -> dict:
     return out
 
 
-def parse_bindings(raw: dict) -> HABindings:
+def parse_bindings(raw: Mapping[str, Any] | None) -> HABindings:
     ha = (raw or {}).get("homeassistant", {}) or {}
     w = ha.get("weather", {}) or {}
     s = ha.get("sun", {}) or {}
@@ -311,23 +316,23 @@ def parse_bindings(raw: dict) -> HABindings:
     )
 
 
-def parse_config(raw: dict) -> Config:
+def parse_config(raw: Mapping[str, Any]) -> Config:
     # NOTE (pyscript): explicit loops only — no `with`, no comprehensions that
     # reference enclosing-function locals. pyscript scopes those differently from
     # CPython and raises NameError. This function runs in pyscript's interpreter,
     # so it must not touch `open`/file I/O either — the caller passes a parsed
     # dict (the app reads the file via a @pyscript_compile helper).
-    bands = {}
+    bands: dict[str, Band] = {}
     for name, vals in raw["bands"].items():
         bands[name] = Band(**vals)
 
     tunables = Tunables(**raw.get("tunables", {}))
 
-    profiles = {}
+    profiles: dict[str, DroughtProfile] = {}
     for name, vals in raw["drought_profiles"].items():
         profiles[name] = DroughtProfile(**vals)
 
-    zones = {}
+    zones: dict[str, ZoneConfig] = {}
     for key, z in raw["zones"].items():
         zones[key] = ZoneConfig(
             key=key,
@@ -364,9 +369,9 @@ def load_config(path: str) -> Config:
     return parse_config(raw)
 
 
-def spray_switches(cfg) -> list:
+def spray_switches(cfg: Config) -> list[str]:
     """rachio_switch of every zone flagged spray=True."""
-    out = []
+    out: list[str] = []
     for zone in cfg.zones.values():
         if zone.spray:
             out.append(zone.rachio_switch)

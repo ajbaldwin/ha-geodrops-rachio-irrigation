@@ -21,7 +21,7 @@ def _clamp(value: float, low: float, high: float) -> float:
 def dose_zone(
     dominant_now: float,
     refill_target: float,
-    span_pts,               # float | None; None/<=0 -> fallback (frac=1)
+    span_pts: float | None,  # None/<=0 -> fallback (frac=1)
     span_source: str,       # "live" | "config" — where span_pts came from
     full_refill_min: float,
     refill_depth_mm: float,

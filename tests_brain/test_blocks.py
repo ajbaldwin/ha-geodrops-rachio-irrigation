@@ -104,6 +104,13 @@ def test_every_run_is_a_positive_whole_number_of_minutes():
         assert run.minutes >= 1
 
 
+def test_quantize_ignores_idle_slots():
+    # A zone block never holds one; if handed one it waters nothing for it.
+    runs = blocks.quantize([Slot("a", 5.0), Slot(None, 20.0), Slot("b", 5.0)])
+
+    assert [(r.zone_key, r.minutes) for r in runs] == [("a", 5), ("b", 5)]
+
+
 def test_quantized_total_never_exceeds_the_planned_total():
     # The guarantee the window depends on: quantization can pull the finish
     # earlier, never later. Exercised against every drought runtime_scale.
