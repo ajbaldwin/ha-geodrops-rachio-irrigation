@@ -195,16 +195,18 @@ class ZoneStateCoordinator:
         if pv is not None:
             out.update(parse_preview(pv, key))
         out.update(parse_efficacy(self._scheduler.store.read(EFFICACY) or {}, key))
-        # The live nightly calibration wins over the file where it has a value:
-        # the file carries no `state` for these zones (only excluded_since).
+        # The store is written at every probe finalize, so it is the freshest
+        # source: where it has a `state` it wins. The nightly snapshot is frozen at
+        # run time (a probe finalizing hours later never reaches it) and only
+        # fills in zones the store has no state for (only excluded_since).
         if ln is not None:
             cal = parse_nightly_calibration(ln, key)
-            if cal["calibration_state"] is not None:
+            if out["calibration_state"] is None and cal["calibration_state"] is not None:
                 out["calibration_state"] = cal["calibration_state"]
                 # Take progress + reject reason from the same source as the state.
                 out["n_obs"] = cal["n_obs"]
                 out["last_reject_reason"] = cal["last_reject_reason"]
-            if cal["efficacy"] is not None:
+            if out["efficacy"] is None and cal["efficacy"] is not None:
                 out["efficacy"] = cal["efficacy"]
         # Fold the raw state + progress + why-stuck into one display label; drop
         # the helper keys so the returned dict keeps its documented shape.
