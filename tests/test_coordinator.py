@@ -162,6 +162,27 @@ def test_data_for_reads_scheduler_records(hass):
     assert out["calibration_state"] == "Calibrating (2/3)"
 
 
+def test_store_calibration_wins_over_stale_nightly_snapshot(hass):
+    # A probe finalized hours after the nightly run: the store has 2 accepted
+    # observations, the nightly snapshot (taken at run time) still says 1.
+    entry = SimpleNamespace(data={"zones": [{"key": "front"}, {"key": "back"}]})
+    sched = _scheduler_stub(
+        records={"last_nightly": {"value": 1, "attributes": {
+            "calibration": {
+                "front": {"state": "recalibrating", "n_obs": 1, "efficacy": None},
+                "back": {"state": "calibrating", "n_obs": 1, "efficacy": 0.2}}}}},
+        docs={"efficacy": {"front": {"state": "recalibrating", "n_obs": 2,
+                                     "efficacy": 0.325, "last_reject_reason": None},
+                           # no state in the store: the nightly snapshot fills in
+                           "back": {"excluded_since": "2026-09-20T19:54:38-04:00"}}})
+    c = ZoneStateCoordinator(hass, entry, sched)
+    front, back = c.data_for("front"), c.data_for("back")
+    assert front["calibration_state"] == "Recalibrating (2/3)"
+    assert front["efficacy"] == 0.325
+    assert back["calibration_state"] == "Calibrating (1/3)"
+    assert back["efficacy"] == 0.2
+
+
 def test_zone_watered_wins_over_last_nightly(hass):
     entry = SimpleNamespace(data={"zones": [{"key": "front"}, {"key": "back"}]})
     sched = _scheduler_stub(
