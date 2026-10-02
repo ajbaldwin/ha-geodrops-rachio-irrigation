@@ -1,2 +1,4 @@
 pytest-homeassistant-custom-component
 pyyaml
+mypy==2.4.0
+types-PyYAML

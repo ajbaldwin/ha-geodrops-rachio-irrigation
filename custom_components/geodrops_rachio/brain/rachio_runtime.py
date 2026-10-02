@@ -5,15 +5,17 @@ the fetching and hands the raw `zones` array here.
 """
 from __future__ import annotations
 
+from typing import Any
 
-def parse_runtimes(zones_json: list) -> dict:
+
+def parse_runtimes(zones_json: list[dict[str, Any]]) -> dict[str, float]:
     """Map each Rachio zone `id` -> full-refill runtime in minutes.
 
     Uses the zone `runtime` field (seconds). Zones without an `id` or without a
     numeric `runtime` are skipped, so a partial/garbled payload degrades to
     fewer entries rather than raising.
     """
-    result = {}
+    result: dict[str, float] = {}
     for zone in zones_json:
         zone_id = zone.get("id")
         runtime = zone.get("runtime")
@@ -26,7 +28,7 @@ def parse_runtimes(zones_json: list) -> dict:
     return result
 
 
-def parse_refill_depths(zones_json: list) -> dict:
+def parse_refill_depths(zones_json: list[dict[str, Any]]) -> dict[str, float]:
     """Map each Rachio zone `id` -> refill depth in millimetres.
 
     Uses the zone `depthOfWater` field (inches): the water that must enter the
@@ -43,7 +45,7 @@ def parse_refill_depths(zones_json: list) -> dict:
     are skipped, so a partial payload degrades to fewer entries rather than
     raising.
     """
-    result = {}
+    result: dict[str, float] = {}
     for zone in zones_json:
         zone_id = zone.get("id")
         depth_in = zone.get("depthOfWater")
@@ -56,7 +58,7 @@ def parse_refill_depths(zones_json: list) -> dict:
     return result
 
 
-def parse_refill_spans(zones_json: list) -> dict:
+def parse_refill_spans(zones_json: list[dict[str, Any]]) -> dict[str, float]:
     """Map each Rachio zone `id` -> refill span in `dominant` points.
 
     A full Rachio refill raises soil moisture by `availableWater * MAD` of the
@@ -68,7 +70,7 @@ def parse_refill_spans(zones_json: list) -> dict:
     `managementAllowedDepletion`, are skipped, so a partial payload degrades to
     fewer entries rather than raising.
     """
-    result = {}
+    result: dict[str, float] = {}
     for zone in zones_json:
         zone_id = zone.get("id")
         aw = zone.get("availableWater")

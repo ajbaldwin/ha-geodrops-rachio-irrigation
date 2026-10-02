@@ -11,13 +11,19 @@ not even start — Rachio is refusing water now).
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .program import Step
+
 CONTINUE_ABORT = "continue-abort"
 RECOVER = "recover"
 GIVE_UP = "give-up"
 
 
-def verdict(aborted_reason, delivered_since_issue, is_recovery_schedule,
-            retries_used, max_retries):
+def verdict(aborted_reason: str | None, delivered_since_issue: float,
+            is_recovery_schedule: bool, retries_used: int, max_retries: int) -> str:
     """Decide the response to a segment abort.
 
     Returns CONTINUE_ABORT | RECOVER | GIVE_UP.
@@ -43,7 +49,7 @@ def verdict(aborted_reason, delivered_since_issue, is_recovery_schedule,
     return CONTINUE_ABORT
 
 
-def classify_non_start(aborted_reason, stopped_before):
+def classify_non_start(aborted_reason: str | None, stopped_before: bool) -> str | None:
     """Tell a Rachio drop from an external stop that the end grace absorbed.
 
     A drop happens while the device is paused (the cumulative-pause limit), with
@@ -59,7 +65,7 @@ def classify_non_start(aborted_reason, stopped_before):
     return aborted_reason
 
 
-def remaining_after(steps, stopped_index):
+def remaining_after(steps: list[Step], stopped_index: int) -> list[Step]:
     """Program Steps still owed after a drop at `stopped_index`.
 
     The water step that failed delivered nothing (never-started credits zero), so
@@ -77,7 +83,7 @@ RE_ARM = "re-arm"
 MISSED = "missed"
 
 
-def startup_action(marker, now_iso):
+def startup_action(marker: Mapping[str, Any] | None, now_iso: str) -> str:
     """Decide what _on_startup does about a planned-but-waiting run.
 
     The nightly plans at 23:00 then sleeps until the pre-dawn window. A restart
@@ -118,9 +124,10 @@ MIN_OWED_MINUTES = 1.0
 STALE_AFTER_HOURS = 12
 
 
-def owed_minutes(planned, delivered, min_minutes=MIN_OWED_MINUTES):
+def owed_minutes(planned: Mapping[str, float], delivered: Mapping[str, float] | None,
+                 min_minutes: float = MIN_OWED_MINUTES) -> dict[str, float]:
     """{zone: minutes} still owed: planned minus delivered, crumbs dropped."""
-    owed = {}
+    owed: dict[str, float] = {}
     for zone, minutes in planned.items():
         left = minutes - (delivered or {}).get(zone, 0)
         if left >= min_minutes:
@@ -128,7 +135,7 @@ def owed_minutes(planned, delivered, min_minutes=MIN_OWED_MINUTES):
     return owed
 
 
-def resume_action(progress, now_iso):
+def resume_action(progress: object, now_iso: str) -> tuple[str, dict[str, float]]:
     """Decide what startup does about a night's persisted run progress.
 
     Returns (IGNORE | RESUME | INTERRUPTED, owed). The run writes its plan and

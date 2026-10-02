@@ -96,7 +96,17 @@ CHANGELOG sections:
      print(c.__version__)"`): Python 3.13, and 3.14 release candidates, quietly
      get an older HA, below the `hacs.json` minimum.
 
-   Both suites must pass before releasing.
+   - **Type check, in the same image:**
+
+     ```bash
+     bash tools/typecheck.sh
+     ```
+
+     Runs `mypy` as configured in `mypy.ini`: strict, except for the packages
+     still listed there with `ignore_errors` (not converted yet). CI runs it
+     too.
+
+   Both suites and the type check must pass before releasing.
 
    The quality scale (`custom_components/geodrops_rachio/quality_scale.yaml`)
    claims every module above 95% coverage and `config_flow.py` at 100%. A

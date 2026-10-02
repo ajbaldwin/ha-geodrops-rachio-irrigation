@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 # Never zero: HA's Local Calendar enforces a minimum event duration of one
@@ -84,8 +85,8 @@ def format_notification(r: RunResult) -> str:
 
 def format_preview(
     drought_level: str,
-    planned: list,
-    skipped: dict,
+    planned: list[tuple[str, float]],
+    skipped: Mapping[str, str],
     window_note: str = "",
     watering_note: str = "",
 ) -> str:
@@ -145,7 +146,8 @@ def format_calendar(r: RunResult, tun_cycle: int, tun_soak: int) -> tuple[str, s
     return (title, "\n".join(lines))
 
 
-def calendar_span(started_at, ended_at, fallback):
+def calendar_span(started_at: dt.datetime | None, ended_at: dt.datetime | None,
+                  fallback: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
     """(start, end) for the recap's calendar entry, in ONE timezone.
 
     Both ends MUST carry the same UTC offset. HA's calendar.create_event
