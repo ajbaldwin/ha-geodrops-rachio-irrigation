@@ -1,16 +1,19 @@
 from __future__ import annotations
 import datetime as dt
 import logging
+from typing import Any, cast
 from homeassistant.components.sensor import (
-    RestoreSensor, SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
+    SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.const import (
     MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, EntityCategory,
     UnitOfLength, UnitOfSpeed, UnitOfTemperature)
-from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.core import (
+    Event, EventStateChangedData, HomeAssistant, State, callback)
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
     async_track_state_change_event, async_track_time_interval)
-from homeassistant.helpers.restore_state import ExtraStoredData
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
+from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import METRIC_SYSTEM
 from . import units, weather_derive
@@ -67,7 +70,7 @@ _ZONE_FIELDS = [
 _ZONE_DIAGNOSTIC = {"efficacy", "calibration_state", "refill_depth"}
 
 
-def _pretty_status(value):
+def _pretty_status(value: StateType) -> StateType:
     """Title-case a scheduler status/state word for display.
 
     The scheduler emits lowercase, underscore-joined tokens ("watering",
@@ -93,11 +96,11 @@ class _ObservedSamples(ExtraStoredData):
     def __init__(self, samples: list[tuple[dt.datetime, float]]) -> None:
         self.samples = samples
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {"samples": [[t.isoformat(), v] for t, v in self.samples]}
 
     @staticmethod
-    def parse(data: dict | None) -> list[tuple[dt.datetime, float]]:
+    def parse(data: dict[str, Any] | None) -> list[tuple[dt.datetime, float]]:
         out = []
         for item in (data or {}).get("samples") or []:
             try:
@@ -110,7 +113,7 @@ class _ObservedSamples(ExtraStoredData):
         return sorted(out)
 
 
-class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
+class ObservedOvernightSensor(GeodropsRachioEntity, SensorEntity, RestoreEntity):
     """Time-weighted mean of a weather reading over last night's window
     (weather_derive.observed_overnight_window), the observed side of the 06:00
     forecast calibration.
@@ -151,7 +154,7 @@ class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
             self.hass, self._on_tick, _OBSERVED_RECOMPUTE_INTERVAL))
         self._recompute()
 
-    def _add_sample(self, state) -> None:
+    def _add_sample(self, state: State | None) -> None:
         if state is None:
             return
         try:
@@ -170,13 +173,13 @@ class ObservedOvernightSensor(GeodropsRachioEntity, RestoreSensor):
             self._samples, now)
 
     @callback
-    def _on_source(self, event) -> None:
+    def _on_source(self, event: Event[EventStateChangedData]) -> None:
         self._add_sample(event.data.get("new_state"))
         self._recompute()
         self.async_write_ha_state()
 
     @callback
-    def _on_tick(self, _now) -> None:
+    def _on_tick(self, _now: dt.datetime) -> None:
         self._recompute()
         self.async_write_ha_state()
 
@@ -207,13 +210,16 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
                 self.hass, self._refresh, _FORECAST_INTERVAL))
             await self._refresh(None)
 
-    async def _refresh(self, _now) -> None:
+    async def _refresh(self, _now: dt.datetime | None) -> None:
+        if not self._source:
+            return  # only scheduled for a bound weather entity
         try:
             resp = await self.hass.services.async_call(
                 "weather", "get_forecasts",
                 {"entity_id": self._source, "type": "hourly"},
                 blocking=True, return_response=True)
-            periods = (resp or {}).get(self._source, {}).get("forecast", [])
+            forecasts = cast(dict[str, Any], resp or {})
+            periods = forecasts.get(self._source, {}).get("forecast", [])
             value = weather_derive.overnight_forecast_mean(
                 periods, self._field, dt_util.now())
             if value is not None:
@@ -241,11 +247,12 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
         `<field>_unit` attribute, else what a weather entity defaults to in
         Home Assistant's unit system."""
         attr = _FORECAST_UNIT_ATTR.get(self._field)
-        if attr is None:
+        if attr is None or not self._source:
             return None
         st = self.hass.states.get(self._source)
         if st is not None and st.attributes.get(attr):
-            return st.attributes[attr]
+            unit: str = st.attributes[attr]
+            return unit
         if self._field == "temperature":
             return self.hass.config.units.temperature_unit
         # Weather entities default to km/h on a metric install, not the unit
@@ -317,7 +324,7 @@ class ZoneMoistureSensor(GeodropsRachioZoneEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         @callback
-        def _mirror(event=None) -> None:
+        def _mirror(event: Event[EventStateChangedData] | None = None) -> None:
             st = self.hass.states.get(self._source) if self._source else None
             # Unbound reads unknown rather than unavailable: nothing is down.
             self._attr_available = not self._source or not _source_down(st)
@@ -362,7 +369,7 @@ class ZoneDeficitSensor(GeodropsRachioZoneEntity, SensorEntity):
         self._update()
 
     @callback
-    def _update(self, event=None) -> None:
+    def _update(self, event: Event[EventStateChangedData] | None = None) -> None:
         floor = self._coord.data_for(self._key).get("target_floor")
         moisture = None
         st = self.hass.states.get(self._source) if self._source else None
@@ -465,9 +472,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
             entry, z["key"], hub_id, z.get("dominant_sensor")))
         entities.append(ZoneDeficitSensor(
             entry, z["key"], hub_id, coordinator, z.get("dominant_sensor")))
-        for suffix, ckey, dc, unit, precision in _ZONE_FIELDS:
+        for suffix, ckey, dc, zone_unit, precision in _ZONE_FIELDS:
             entities.append(ZoneCoordinatorSensor(
-                entry, z["key"], hub_id, coordinator, suffix, ckey, dc, unit,
+                entry, z["key"], hub_id, coordinator, suffix, ckey, dc, zone_unit,
                 precision))
 
     async_add_entities(entities)

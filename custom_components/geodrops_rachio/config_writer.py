@@ -8,7 +8,7 @@ from .const import SETTINGS_KEYS
 from .util import slug
 
 
-def entry_config(data: Mapping[str, Any], options: Mapping[str, Any]) -> dict:
+def entry_config(data: Mapping[str, Any], options: Mapping[str, Any]) -> dict[str, Any]:
     """An entry's whole configuration: the setup data, with the settings
     (SETTINGS_KEYS) taken from its options. Entries before 1.3 kept the
     settings in data, and still carry a copy there for a rollback."""
@@ -17,7 +17,8 @@ def entry_config(data: Mapping[str, Any], options: Mapping[str, Any]) -> dict:
     return merged
 
 
-def split_settings(config: Mapping[str, Any]) -> tuple[dict, dict]:
+def split_settings(
+        config: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """(data, options) for a whole configuration: entry_config reversed."""
     data = {k: v for k, v in config.items() if k not in SETTINGS_KEYS}
     options = {k: config[k] for k in SETTINGS_KEYS if k in config}
@@ -71,15 +72,15 @@ _DEFAULT_DROUGHT_PROFILES = {
 }
 
 
-def _copy_bands() -> dict:
+def _copy_bands() -> dict[str, Any]:
     return {name: dict(vals) for name, vals in _DEFAULT_BANDS.items()}
 
 
-def _copy_drought_profiles() -> dict:
+def _copy_drought_profiles() -> dict[str, Any]:
     return {name: dict(vals) for name, vals in _DEFAULT_DROUGHT_PROFILES.items()}
 
 
-def _deep_merge(base: dict, overlay: dict) -> dict:
+def _deep_merge(base: Mapping[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for k, v in overlay.items():
         if isinstance(v, dict) and isinstance(out.get(k), dict):
@@ -89,7 +90,7 @@ def _deep_merge(base: dict, overlay: dict) -> dict:
     return out
 
 
-def build_config(data: dict) -> dict:
+def build_config(data: Mapping[str, Any]) -> dict[str, Any]:
     tunables = dict(_DEFAULT_TUNABLES)
     tunables["self_calibration_enabled"] = bool(data.get("self_calibration_enabled"))
     drought_profiles = _copy_drought_profiles()

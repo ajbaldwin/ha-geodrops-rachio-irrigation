@@ -8,6 +8,9 @@ before conversion existed.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT, UnitOfLength, UnitOfSpeed, UnitOfTemperature,
     UnitOfVolumetricFlux)
@@ -20,7 +23,7 @@ PRECIPITATION = "precipitation"
 
 # A rain gauge may report its hourly or daily total as a rate; an hour's rain
 # in mm/h is that hour's depth in mm, so a rate converts within its time base.
-_FLUX_TO_MM = {
+_FLUX_TO_MM: dict[str, str] = {
     UnitOfVolumetricFlux.MILLIMETERS_PER_HOUR: UnitOfVolumetricFlux.MILLIMETERS_PER_HOUR,
     UnitOfVolumetricFlux.INCHES_PER_HOUR: UnitOfVolumetricFlux.MILLIMETERS_PER_HOUR,
     UnitOfVolumetricFlux.MILLIMETERS_PER_DAY: UnitOfVolumetricFlux.MILLIMETERS_PER_DAY,
@@ -28,9 +31,10 @@ _FLUX_TO_MM = {
 }
 
 
-def unit_of(attrs: dict) -> str | None:
+def unit_of(attrs: Mapping[str, Any]) -> str | None:
     """The unit a state's attributes report, if any."""
-    return attrs.get(ATTR_UNIT_OF_MEASUREMENT)
+    unit: str | None = attrs.get(ATTR_UNIT_OF_MEASUREMENT)
+    return unit
 
 
 def to_scheduler(value: float, unit: str | None, kind: str | None) -> float:

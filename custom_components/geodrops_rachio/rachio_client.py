@@ -26,8 +26,10 @@ from urllib.parse import quote
 import aiohttp
 import yaml
 
+from homeassistant.core import HomeAssistant
+
 RACHIO_BASE = "https://api.rach.io/1/public/"
-_HTTP_TIMEOUT_S = 15
+_HTTP_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 
 class RachioError(Exception):
@@ -42,13 +44,13 @@ class RachioConnectionError(RachioError):
     """Rachio could not be reached or answered with an error."""
 
 
-def parse_devices(devices_json: list) -> list[dict]:
+def parse_devices(devices_json: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Map the account's Rachio devices to ``{id, name}`` for the picker.
 
     Devices without an `id` are skipped so a partial payload degrades to fewer
     entries rather than raising.
     """
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for device in devices_json:
         device_id = device.get("id")
         if not device_id:
@@ -57,7 +59,7 @@ def parse_devices(devices_json: list) -> list[dict]:
     return out
 
 
-def parse_zones(zones_json: list) -> list[dict]:
+def parse_zones(zones_json: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Map a Rachio device `zones` array to the fields the wizard needs.
 
     Returns one dict per enabled zone that has an `id`:
@@ -67,7 +69,7 @@ def parse_zones(zones_json: list) -> list[dict]:
     the number by hand. Zones without an `id`, or explicitly ``enabled: False``,
     are skipped.
     """
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for zone in zones_json:
         zone_id = zone.get("id")
         if not zone_id or zone.get("enabled") is False:
@@ -84,7 +86,8 @@ def parse_zones(zones_json: list) -> list[dict]:
     return out
 
 
-def _to_float(value: Any, *, divide_by: float = 1.0, multiply_by: float = 1.0):
+def _to_float(value: Any, *, divide_by: float = 1.0,
+              multiply_by: float = 1.0) -> float | None:
     if value is None:
         return None
     try:
@@ -113,7 +116,7 @@ def resolve_secret_text(text: str, name: str) -> str | None:
     return None
 
 
-async def resolve_secret(hass, name: str) -> str | None:
+async def resolve_secret(hass: HomeAssistant, name: str) -> str | None:
     """Read <config>/secrets.yaml and resolve secret `name`; None on any failure."""
     path = hass.config.path("secrets.yaml")
 
@@ -130,11 +133,11 @@ async def resolve_secret(hass, name: str) -> str | None:
     return resolve_secret_text(text, name)
 
 
-async def _get_json(session, path, key):
+async def _get_json(session: aiohttp.ClientSession, path: str, key: str) -> Any:
     headers = {"Authorization": "Bearer " + key}
     try:
         async with session.get(RACHIO_BASE + path, headers=headers,
-                               timeout=_HTTP_TIMEOUT_S) as resp:
+                               timeout=_HTTP_TIMEOUT) as resp:
             if resp.status in (401, 403):
                 raise RachioAuthError(f"Rachio rejected the API key (HTTP {resp.status})")
             if resp.status >= 400:
@@ -145,14 +148,15 @@ async def _get_json(session, path, key):
             f"Rachio API unreachable ({type(err).__name__})") from err
 
 
-async def _person(session, key: str) -> dict:
+async def _person(session: aiohttp.ClientSession, key: str) -> dict[str, Any]:
     person = await _get_json(session, "person/info", key)
     if not isinstance(person, dict) or not isinstance(person.get("id"), str):
         raise RachioConnectionError("Rachio API returned no account id")
     return person
 
 
-async def async_fetch_account(session, key: str) -> tuple[str, list[dict]]:
+async def async_fetch_account(
+        session: aiohttp.ClientSession, key: str) -> tuple[str, list[dict[str, Any]]]:
     """(account id, controllers as ``[{id, name}]``) for API key `key`.
 
     Two hops (person/info -> person/{id}). Raises RachioAuthError when the key
@@ -163,7 +167,8 @@ async def async_fetch_account(session, key: str) -> tuple[str, list[dict]]:
     return person["id"], parse_devices(payload.get("devices", []))
 
 
-async def async_fetch_device_zones(session, key: str, device_id: str) -> list[dict]:
+async def async_fetch_device_zones(
+        session: aiohttp.ClientSession, key: str, device_id: str) -> list[dict[str, Any]]:
     """Fetch one device's zones, parsed for the wizard (device/{id}).
 
     Raises RachioError; the caller falls back to the manual zone form.
@@ -172,7 +177,8 @@ async def async_fetch_device_zones(session, key: str, device_id: str) -> list[di
     return parse_zones(payload.get("zones", []))
 
 
-async def async_fetch_zone_data(session, key: str) -> tuple[dict, dict, dict]:
+async def async_fetch_zone_data(session: aiohttp.ClientSession, key: str) -> tuple[
+        dict[str, float], dict[str, float], dict[str, float]]:
     """(runtimes_minutes, refill_depths_mm, refill_spans_pts), each keyed by
     Rachio zone id, across every controller on the account — one pass over the
     device payloads (ported from the pyscript app's _fetch_zone_data). Raises
@@ -181,9 +187,9 @@ async def async_fetch_zone_data(session, key: str) -> tuple[dict, dict, dict]:
 
     person = await _person(session, key)
     payload = await _get_json(session, "person/" + quote(person["id"]), key)
-    runtimes: dict = {}
-    depths: dict = {}
-    spans: dict = {}
+    runtimes: dict[str, float] = {}
+    depths: dict[str, float] = {}
+    spans: dict[str, float] = {}
     for device in payload.get("devices", []):
         dev = await _get_json(session, "device/" + quote(device["id"]), key)
         zones = dev.get("zones", [])
