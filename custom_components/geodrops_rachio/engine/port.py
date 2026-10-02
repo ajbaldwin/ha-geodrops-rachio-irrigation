@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 from collections.abc import Callable
-from typing import Protocol
+from typing import Any, Protocol
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -18,11 +18,11 @@ from homeassistant.util import dt as dt_util
 class HAPort(Protocol):
     def state(self, entity_id: str) -> str | None: ...
 
-    def attrs(self, entity_id: str) -> dict: ...
+    def attrs(self, entity_id: str) -> dict[str, Any]: ...
 
     def last_updated(self, entity_id: str) -> dt.datetime | None: ...
 
-    async def call(self, domain: str, service: str, data: dict, *,
+    async def call(self, domain: str, service: str, data: dict[str, Any], *,
                    blocking: bool = False) -> None: ...
 
     async def sleep(self, seconds: float) -> None: ...
@@ -47,7 +47,7 @@ class HassPort:
         st = self.hass.states.get(self._resolve(entity_id))
         return st.state if st is not None else None
 
-    def attrs(self, entity_id: str) -> dict:
+    def attrs(self, entity_id: str) -> dict[str, Any]:
         st = self.hass.states.get(self._resolve(entity_id))
         return dict(st.attributes) if st is not None else {}
 
@@ -55,7 +55,7 @@ class HassPort:
         st = self.hass.states.get(self._resolve(entity_id))
         return st.last_updated if st is not None else None
 
-    async def call(self, domain: str, service: str, data: dict, *,
+    async def call(self, domain: str, service: str, data: dict[str, Any], *,
                    blocking: bool = False) -> None:
         target = data.get("entity_id")
         if isinstance(target, str):

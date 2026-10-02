@@ -18,7 +18,7 @@ _USABLE_QUALITY = {"good", "poor"}
 class ZoneSignals:
     dominant: str
     state: str
-    qualities: tuple[str, str, str]
+    qualities: tuple[str, ...]
 
 
 @dataclass(frozen=True)

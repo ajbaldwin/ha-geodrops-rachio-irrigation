@@ -20,9 +20,15 @@ memory; a restart mid-run loses that run.
 """
 from __future__ import annotations
 
+import asyncio
+import datetime as dt
 import logging
+from collections.abc import Coroutine
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import callback
+from homeassistant.core import Event, EventStateChangedData, callback
+
+from .io import IOMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +38,17 @@ _LOGGER = logging.getLogger(__name__)
 NATIVE_GAP_S = 120
 
 
-class NativeRunMixin:
+class NativeRunMixin(IOMixin):
+    # switch -> zone key; the open Rachio session; its pending close.
+    _native_switches: dict[str, str]
+    _native_session: dict[str, Any] | None
+    _native_close_task: asyncio.Task[None] | None
+
+    if TYPE_CHECKING:
+        # The Scheduler's; native tracking only runs inside one.
+        def _spawn_job(self, coro: Coroutine[Any, Any, None], name: str,
+                       ) -> asyncio.Task[None]: ...
+
     def _init_native_tracking(self) -> None:
         """Map each managed zone's Rachio switch to its zone key. A config that
         will not load disables tracking (the nightly run reports its own error)."""
@@ -46,13 +62,13 @@ class NativeRunMixin:
         self._native_switches = {z.rachio_switch: k for k, z in cfg.zones.items()}
 
     @callback
-    def _on_switch_event(self, event) -> None:
+    def _on_switch_event(self, event: Event[EventStateChangedData]) -> None:
         data = event.data
         old, new = data.get("old_state"), data.get("new_state")
         self._on_zone_switch(data["entity_id"], old.state if old is not None else None,
                              new.state if new is not None else None)
 
-    def _on_zone_switch(self, switch, old, new) -> None:
+    def _on_zone_switch(self, switch: str, old: str | None, new: str | None) -> None:
         zone = self._native_switches.get(switch)
         if zone is None or old == new:
             return
@@ -96,7 +112,7 @@ class NativeRunMixin:
                 self._close_native_after_gap(session), "geodrops_rachio_native")
 
     @staticmethod
-    def _end_native_spans(session, now) -> None:
+    def _end_native_spans(session: dict[str, Any], now: dt.datetime) -> None:
         for span in session["zones"].values():
             if span["on_since"] is not None:
                 span["seconds"] += (now - span["on_since"]).total_seconds()
@@ -109,13 +125,13 @@ class NativeRunMixin:
         if task is not None and not task.done():
             task.cancel()
 
-    async def _close_native_after_gap(self, session) -> None:
+    async def _close_native_after_gap(self, session: dict[str, Any]) -> None:
         # Anything that ends or extends the session first cancels this task.
         await self.port.sleep(NATIVE_GAP_S)
         self._native_session = None
         await self._finish_native_session(session)
 
-    async def _finish_native_session(self, session) -> None:
+    async def _finish_native_session(self, session: dict[str, Any]) -> None:
         zones = session["zones"]
         watered = [k for k, span in zones.items() if span["seconds"] > 0]
         if not watered:
