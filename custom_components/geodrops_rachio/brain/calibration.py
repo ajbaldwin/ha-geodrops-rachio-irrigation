@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .config import Tunables
 
 
 def efficacy_to_span(efficacy: float, full_refill_min: float) -> float:
@@ -13,7 +18,8 @@ def efficacy_to_span(efficacy: float, full_refill_min: float) -> float:
     return efficacy * full_refill_min
 
 
-def probe_minutes(full_refill_min: float, prior_minutes, last_rise, t) -> float:
+def probe_minutes(full_refill_min: float, prior_minutes: float | None,
+                  last_rise: float | None, t: Tunables) -> float:
     """Calculate probe window size for next calibration cycle.
 
     `t` is a Tunables object with .probe_fraction, .probe_floor_minutes,
@@ -31,7 +37,8 @@ def probe_minutes(full_refill_min: float, prior_minutes, last_rise, t) -> float:
         return prior_minutes
 
 
-def cap_for_saturation(minutes: float, dominant_now: float, efficacy, t) -> float:
+def cap_for_saturation(minutes: float, dominant_now: float, efficacy: float | None,
+                       t: Tunables) -> float:
     """Cap probe minutes to prevent saturation.
 
     If efficacy is known (not None and > 0), calculates the maximum watering
@@ -60,7 +67,7 @@ class Observation:
     sensor_ok: bool
 
 
-def classify(obs: Observation, t) -> str:
+def classify(obs: Observation, t: Tunables) -> str:
     """Classify observation quality; returns "ok" or a reject reason.
 
     Priority order (first match wins):
@@ -84,7 +91,7 @@ def classify(obs: Observation, t) -> str:
     return "ok"
 
 
-def update_efficacy(prev, obs: Observation, t) -> float:
+def update_efficacy(prev: float | None, obs: Observation, t: Tunables) -> float:
     """Update efficacy with EWMA from a new observation.
 
     efficacy_obs = (settled - pre) / minutes
@@ -97,7 +104,7 @@ def update_efficacy(prev, obs: Observation, t) -> float:
     return t.calibration_ewma_alpha * efficacy_obs + (1 - t.calibration_ewma_alpha) * prev
 
 
-def converged(recent, t) -> bool:
+def converged(recent: Sequence[float], t: Tunables) -> bool:
     """Check if recent efficacy samples have converged.
 
     recent: list of efficacy values
@@ -131,7 +138,8 @@ def converged(recent, t) -> bool:
     return (max_val - min_val) <= tolerance_band
 
 
-def next_state(state: str, converged_flag: bool, training: bool, miss_streak: int, t) -> str:
+def next_state(state: str, converged_flag: bool, training: bool, miss_streak: int,
+               t: Tunables) -> str:
     """State machine: compute next calibration state.
 
     Transitions:
@@ -154,7 +162,8 @@ def next_state(state: str, converged_flag: bool, training: bool, miss_streak: in
     return state
 
 
-def exclusion_return(rec, now, threshold_hours: float) -> dict:
+def exclusion_return(rec: Mapping[str, Any], now: dt.datetime,
+                     threshold_hours: float) -> dict[str, Any]:
     """Resolve a zone's return from exclusion, given its efficacy record.
 
     If the record carries an `excluded_since` stamp and the zone was excluded for
@@ -182,7 +191,8 @@ def exclusion_return(rec, now, threshold_hours: float) -> dict:
     return out
 
 
-def apply_reject(zrec: dict, reason: str, minutes: float, rise: float, t) -> dict:
+def apply_reject(zrec: Mapping[str, Any], reason: str, minutes: float, rise: float,
+                 t: Tunables) -> dict[str, Any]:
     """Return a copy of zrec updated for a rejected calibration observation.
 
     Both dose-size rejects resize the probe so it self-corrects toward the clean
@@ -205,7 +215,7 @@ def apply_reject(zrec: dict, reason: str, minutes: float, rise: float, t) -> dic
     return out
 
 
-def should_probe(state: str, dominant_now: float, pinned: bool, t) -> bool:
+def should_probe(state: str, dominant_now: float, pinned: bool, t: Tunables) -> bool:
     """Determine whether to probe (collect calibration observation) now.
 
     Returns True iff:
@@ -227,7 +237,8 @@ def should_probe(state: str, dominant_now: float, pinned: bool, t) -> bool:
     return True
 
 
-def settle_decision(now, run_end, retain_hours, max_wait_hours, has_sample) -> str:
+def settle_decision(now: dt.datetime, run_end: dt.datetime, retain_hours: float,
+                    max_wait_hours: float, has_sample: bool) -> str:
     """Decide how to handle one pending calibration obs at this poll.
 
     Accumulate model: the poll folds each genuine reading into the obs (peak +
@@ -254,8 +265,11 @@ def settle_decision(now, run_end, retain_hours, max_wait_hours, has_sample) -> s
     return "accumulate"
 
 
-def accumulate_sample(peak, retained, last_seen, value, last_updated,
-                      now, run_end, settle_hours):
+def accumulate_sample(
+        peak: float | None, retained: float | None, last_seen: dt.datetime | None,
+        value: float | None, last_updated: dt.datetime | None, now: dt.datetime,
+        run_end: dt.datetime, settle_hours: float,
+) -> tuple[float | None, float | None, dt.datetime | None, bool]:
     """Fold one candidate sensor reading into an obs accumulator.
 
     Counts only a genuinely new report (last_updated strictly newer than
@@ -277,7 +291,8 @@ def accumulate_sample(peak, retained, last_seen, value, last_updated,
     return new_peak, new_ret, last_updated, True
 
 
-def retention_factor(pre, peak, retained, floor):
+def retention_factor(pre: float, peak: float, retained: float | None,
+                     floor: float) -> float | None:
     """r = (retained - pre) / (peak - pre), clamped to [floor, 1.0].
 
     None when it cannot be computed: no retained sample, or peak did not rise
@@ -292,7 +307,8 @@ def retention_factor(pre, peak, retained, floor):
     return max(floor, min(1.0, r))
 
 
-def retained_span(efficacy, retention, base, span_min, span_max):
+def retained_span(efficacy: float, retention: float | None, base: float,
+                  span_min: float, span_max: float) -> float:
     """Dominant points a full refill RETAINS = efficacy(peak) * r * base, clamped.
 
     retention None (pre-retention) is treated as 1.0 (peak span).
@@ -302,7 +318,7 @@ def retained_span(efficacy, retention, base, span_min, span_max):
     return max(span_min, min(span_max, span))
 
 
-def ewma(prev, value, alpha):
+def ewma(prev: float | None, value: float, alpha: float) -> float:
     """Exponentially-weighted blend; bootstraps to value when prev is None."""
     if prev is None:
         return value

@@ -1,7 +1,9 @@
 """Disease-aware window cap and rain-abort decision. Pure Python."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, TypedDict
 
 from .config import Tunables
 
@@ -15,7 +17,14 @@ class WeatherReading:
     precip_type: str
 
 
-def pressure_breakdown(w: WeatherReading, t: Tunables) -> dict:
+class PressureBreakdown(TypedDict):
+    warm: bool
+    humid: bool
+    stagnant: bool
+    count: int
+
+
+def pressure_breakdown(w: WeatherReading, t: Tunables) -> PressureBreakdown:
     """Which disease-pressure signals are active, for diagnostics/reporting.
 
     Returns {"warm", "humid", "stagnant": bool, "count": int}.
@@ -82,7 +91,8 @@ def is_rain_abort(w: WeatherReading, t: Tunables, spray_zone_on: bool = False) -
     return hail or (not spray_zone_on) or gauge
 
 
-def is_rain_skip(prob_pct, amount_mm, refill_depth_mm, t: Tunables) -> bool:
+def is_rain_skip(prob_pct: float | None, amount_mm: float | None,
+                 refill_depth_mm: float | None, t: Tunables) -> bool:
     """Is forecast rain enough to make tonight's watering unnecessary?
 
     Requires BOTH a confident forecast and a meaningful amount: probability
@@ -107,7 +117,8 @@ def is_rain_skip(prob_pct, amount_mm, refill_depth_mm, t: Tunables) -> bool:
     return prob_pct >= t.rain_skip_probability_pct and amount_mm >= threshold_mm
 
 
-def rain_sustain_step(condition_holds, hail, rain_since, now, sustain_seconds):
+def rain_sustain_step(condition_holds: bool, hail: bool, rain_since: float | None,
+                      now: float, sustain_seconds: float) -> tuple[bool, float | None]:
     """One poll of the mid-run rain clock: (abort_now, rain_since).
 
     Mirrors the automation's `rain_sustained` trigger: plain rain must persist
@@ -136,7 +147,8 @@ def rain_sustain_step(condition_holds, hail, rain_since, now, sustain_seconds):
 PRESSURE_SIGNAL_NAMES = ("warm", "humid", "stagnant")
 
 
-def pressure_agreement(forecast, observed):
+def pressure_agreement(forecast: Mapping[str, Any],
+                       observed: Mapping[str, Any]) -> dict[str, Any]:
     """Per-signal comparison of two pressure breakdowns, for calibration.
 
     The overnight thresholds (`humid_rh_pct`, `stagnant_wind_mph`) are reasoned
@@ -154,8 +166,8 @@ def pressure_agreement(forecast, observed):
     `forecast-low` means the forecast missed pressure that was really there —
     the direction that sizes the window too generously.
     """
-    signals = {}
-    mismatches = []
+    signals: dict[str, str] = {}
+    mismatches: list[str] = []
     for name in PRESSURE_SIGNAL_NAMES:
         predicted = bool(forecast.get(name))
         actual = bool(observed.get(name))

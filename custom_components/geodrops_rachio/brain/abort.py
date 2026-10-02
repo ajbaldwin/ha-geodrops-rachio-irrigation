@@ -7,7 +7,7 @@ a whole block from one call, so crediting is per block and lives in
 from __future__ import annotations
 
 
-def abort_reason(standby: bool, manual_stop: bool, rain: bool):
+def abort_reason(standby: bool, manual_stop: bool, rain: bool) -> str | None:
     if manual_stop:
         return "manual-abort"
     if rain:
@@ -17,8 +17,9 @@ def abort_reason(standby: bool, manual_stop: bool, rain: bool):
     return None
 
 
-def watch_step(running, seen_on, misses, elapsed_seconds, total_seconds,
-               confirm_seconds, grace_seconds, stop_polls, paused=False):
+def watch_step(running: bool, seen_on: bool, misses: int, elapsed_seconds: float,
+               total_seconds: float, confirm_seconds: float, grace_seconds: float,
+               stop_polls: int, paused: bool = False) -> tuple[str | None, bool, int]:
     """One poll of the in-block watch: (verdict, seen_on, misses).
 
     `verdict` is None while the block looks healthy, otherwise the reason the
@@ -64,7 +65,7 @@ def watch_step(running, seen_on, misses, elapsed_seconds, total_seconds,
     return None, seen_on, misses
 
 
-def off_run(running, seen_on, off_polls):
+def off_run(running: bool, seen_on: bool, off_polls: int) -> int:
     """Consecutive empty polls since watering was last seen.
 
     Unlike `watch_step`'s misses this keeps counting inside the end grace, so

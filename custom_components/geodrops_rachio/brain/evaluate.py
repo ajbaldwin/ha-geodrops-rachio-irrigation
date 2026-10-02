@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Container
 from dataclasses import dataclass
 
 from .drought import EffectiveTarget
@@ -17,7 +18,9 @@ class ZoneEvaluation:
 
 
 def evaluate_zone(reading: ZoneReading, target: EffectiveTarget) -> ZoneEvaluation:
-    if not reading.online:
+    # Online implies a reading; the None checks only say so to the type checker.
+    if (not reading.online or reading.dominant is None
+            or reading.index_rank is None):
         return ZoneEvaluation(reading.key, False, 0, 0.0)
     needs = reading.dominant < target.floor
     return ZoneEvaluation(
@@ -28,7 +31,8 @@ def evaluate_zone(reading: ZoneReading, target: EffectiveTarget) -> ZoneEvaluati
     )
 
 
-def revalidate_zone(online, dominant_now, dosing_source, floor, ceiling):
+def revalidate_zone(online: bool, dominant_now: float | None, dosing_source: str | None,
+                    floor: float, ceiling: float) -> str | None:
     """Re-decide, at window start, whether a PLANNED zone should still water.
 
     The nightly plan is built hours before the pre-dawn window; rain that lands
@@ -45,7 +49,7 @@ def revalidate_zone(online, dominant_now, dosing_source, floor, ceiling):
 
     Boundary is inclusive (>=): a reading exactly at the line drops.
     """
-    if not online:
+    if not online or dominant_now is None:
         return None
     if dosing_source == "probe":
         if dominant_now >= ceiling:
@@ -56,7 +60,8 @@ def revalidate_zone(online, dominant_now, dosing_source, floor, ceiling):
     return None
 
 
-def recovery_candidate(state, uncompleted_reason, sensor_skip_reasons):
+def recovery_candidate(state: str, uncompleted_reason: str | None,
+                       sensor_skip_reasons: Container[str | None]) -> bool:
     """True iff a zone is worth re-checking during the pre-dawn wait: it is
     calibrating/recalibrating AND was skipped from tonight's plan for a SENSOR
     reason (offline / low-quality), so a mid-window sensor recovery could still
@@ -68,7 +73,7 @@ def recovery_candidate(state, uncompleted_reason, sensor_skip_reasons):
     return uncompleted_reason in sensor_skip_reasons
 
 
-def sort_by_priority(evals: list, rng: random.Random) -> list:
+def sort_by_priority(evals: list[ZoneEvaluation], rng: random.Random) -> list[ZoneEvaluation]:
     """Zones needing water, ordered by index deficit, then dominant-% deficit,
     then random.
 
@@ -82,11 +87,11 @@ def sort_by_priority(evals: list, rng: random.Random) -> list:
     objects, which are not orderable.
     """
     needing = [e for e in evals if e.needs_water]
-    decorated = []
+    decorated: list[tuple[int, float, float, int]] = []
     for i in range(len(needing)):
         e = needing[i]
         decorated.append((-e.index_deficit, -e.dominant_deficit, rng.random(), i))
-    result = []
+    result: list[ZoneEvaluation] = []
     for row in sorted(decorated):
         result.append(needing[row[3]])
     return result

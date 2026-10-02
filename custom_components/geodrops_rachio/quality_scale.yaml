@@ -158,7 +158,7 @@ rules:
   strict-typing:
     status: todo
     comment: >-
-      `mypy --strict` reports 810 errors in 33 files (2026-10-01): most are
-      engine mixins using attributes only their combined class defines, plus
-      untyped functions and bare generics. Planned as brain/, the integration
-      modules, engine/, then a CI check.
+      Adopted a package at a time: mypy.ini makes everything strict and
+      exempts what is not converted yet, and CI runs mypy. brain/ is done;
+      the integration modules and engine/ (most errors: mixins using
+      attributes only their combined class defines) are next.
