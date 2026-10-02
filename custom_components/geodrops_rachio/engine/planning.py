@@ -7,10 +7,13 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import random
+from collections.abc import Mapping
+from typing import Any
 
 from .. import units
 from ..brain import (
     calibration, config, dosing, drought, evaluate, plan, sensors, weather)
+from .io import IOMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,10 +23,10 @@ _LOGGER = logging.getLogger(__name__)
 SENSOR_SKIP_REASONS = frozenset(("unavailable", "low_quality"))
 
 
-class PlanningMixin:
+class PlanningMixin(IOMixin):
     # ─── Orchestration ───────────────────────────────────────────────────────
 
-    def _zone_excluded(self, zone):
+    def _zone_excluded(self, zone: config.ZoneConfig) -> bool:
         """True only when the zone's exclude_boolean is explicitly "on".
 
         Empty binding, or a missing/unavailable/renamed entity, fails safe to
@@ -42,7 +45,7 @@ class PlanningMixin:
             return False
         return self.port.state(ent) == "on"
 
-    def _is_standby(self):
+    def _is_standby(self) -> bool:
         # Either standby source disables the system: the Rachio-native switch OR the
         # input_boolean.irrigation_standby helper (the user-facing disable toggle).
         # Reads _current_bindings (module global, not a param) for the same reason
@@ -53,16 +56,17 @@ class PlanningMixin:
         # _rain_condition_now(): a bad/renamed standby entity id must degrade to
         # "not in standby" rather than crash the watch loop.
         standby = False
-        if self.port.state(self._current_bindings.standby_switch) == "on":
+        bindings = self._loaded_bindings()
+        if self.port.state(bindings.standby_switch) == "on":
             standby = True
-        if self.port.state(self._current_bindings.standby_boolean) == "on":
+        if self.port.state(bindings.standby_boolean) == "on":
             standby = True
         return standby
 
-    def _is_manual_stop(self):
+    def _is_manual_stop(self) -> bool:
         return self._manual_stop
 
-    def _is_rain(self):
+    def _is_rain(self) -> bool:
         """Rain-abort predicate for run_plan, structured to match the HA automation
         "Irrigation - Detect Adverse Watering Conditions" so the two do not fight
         over the valves. NB the spray-zone rule diverged on 2026-08-11: this now
@@ -92,7 +96,7 @@ class PlanningMixin:
         )
         return abort_now
 
-    def _rain_condition_now(self):
+    def _rain_condition_now(self) -> tuple[bool, bool]:
         """(condition_holds, is_hail) for the automation's rule, right now.
 
         The single reading both rain gates share, so the "is it raining" question
@@ -111,7 +115,7 @@ class PlanningMixin:
                 spray_on = True
         return weather.is_rain_abort(wx, self._current_tun, spray_on), weather.is_hail(wx)
 
-    def _is_rain_at_start(self):
+    def _is_rain_at_start(self) -> bool:
         """Rain gate for the moment a block is about to begin — NO sustain.
 
         `_is_rain()` cannot return True on its first evaluation: with no history it
@@ -131,7 +135,7 @@ class PlanningMixin:
         holds, _hail = self._rain_condition_now()
         return holds
 
-    def _read_weather(self, tun):
+    def _read_weather(self, tun: config.Tunables) -> weather.WeatherReading:
         # Weather only sizes the disease window; a missing/unavailable sensor must
         # degrade to a default, never crash the run. pyscript's state.get raises
         # NameError when an entity does not exist at all (distinct from a present-
@@ -139,7 +143,7 @@ class PlanningMixin:
         # warn once per missing entity (a wrong/absent entity id is a misconfig).
         # Each reading is converted from its sensor's unit into the
         # scheduler's (°F, mph, mm); the defaults are already in those.
-        def num(entity, kind, default=0.0):
+        def num(entity: str, kind: str | None, default: float = 0.0) -> float:
             raw = self.port.state(entity)
             if raw is None:
                 _LOGGER.warning("weather entity %r not found; using %s",
@@ -150,7 +154,7 @@ class PlanningMixin:
             except (ValueError, TypeError):
                 return default
 
-        def text(entity, default=""):
+        def text(entity: str, default: str = "") -> str:
             raw = self.port.state(entity)
             if raw is None:
                 _LOGGER.warning("weather entity %r not found; using %r",
@@ -158,7 +162,7 @@ class PlanningMixin:
                 return default
             return raw
 
-        wx_ids = self._current_bindings.weather
+        wx_ids = self._loaded_bindings().weather
         return weather.WeatherReading(
             temp_f=num(wx_ids.temperature, units.TEMPERATURE),
             rh_pct=num(wx_ids.humidity, None),
@@ -169,13 +173,13 @@ class PlanningMixin:
             precip_type=text(wx_ids.precip_type) or "none",
         )
 
-    def _in_scheduler_units(self, entity, value, kind):
+    def _in_scheduler_units(self, entity: str, value: float, kind: str | None) -> float:
         """`value`, read from `entity`, converted from the unit that entity
         reports into the scheduler's unit for `kind` (units.to_scheduler)."""
         return units.to_scheduler(
             value, units.unit_of(self.port.attrs(entity)), kind)
 
-    def _forecast_num(self, entity, kind=None):
+    def _forecast_num(self, entity: str, kind: str | None = None) -> float | None:
         """Read a numeric forecast sensor, in the scheduler's unit for `kind`.
         Returns None when unusable.
 
@@ -196,7 +200,7 @@ class PlanningMixin:
             return None
         return self._in_scheduler_units(entity, value, kind)
 
-    def _read_forecast_weather(self):
+    def _read_forecast_weather(self) -> weather.WeatherReading | None:
         """A WeatherReading describing the OVERNIGHT hours, for the window cap only.
 
         Returns None if any component is unavailable, so the caller falls back to
@@ -208,7 +212,7 @@ class PlanningMixin:
         only. Rain ABORT during a run stays instantaneous (_read_weather) and still
         mirrors the HA adverse-conditions automation.
         """
-        d = self._current_bindings.derived.forecast_overnight
+        d = self._loaded_bindings().derived.forecast_overnight
         temp_f = self._forecast_num(d["temp"], units.TEMPERATURE)
         rh_pct = self._forecast_num(d["humidity"])
         wind_mph = self._forecast_num(d["wind"], units.SPEED)
@@ -219,7 +223,8 @@ class PlanningMixin:
             rain_last_hour_mm=0.0, precip_type="none",
         )
 
-    def _read_observed_overnight(self, bindings):
+    def _read_observed_overnight(
+            self, bindings: config.HABindings) -> weather.WeatherReading | None:
         """WeatherReading from the OBSERVED overnight means, or None if unusable.
 
         Deliberately mirrors _read_forecast_overnight: precipitation fields
@@ -242,17 +247,18 @@ class PlanningMixin:
             rain_last_hour_mm=0.0, precip_type="none",
         )
 
-    def _read_forecast_precip(self, horizon_hours):
+    def _read_forecast_precip(
+            self, horizon_hours: int) -> tuple[float | None, float | None]:
         """(probability_pct, amount_mm) for the given horizon; (None, None) if
         unavailable. The horizon comes from the active drought profile, and Task 1
         publishes sensors for 12/18/24 h."""
-        d = self._current_bindings.derived
+        d = self._loaded_bindings().derived
         prob = self._forecast_num(f"{d.precipitation_chance_prefix}{horizon_hours}_hour")
         amount = self._forecast_num(
             f"{d.precipitation_amount_prefix}{horizon_hours}_hour", units.PRECIPITATION)
         return prob, amount
 
-    def _read_zone_signals(self, zone):
+    def _read_zone_signals(self, zone: config.ZoneConfig) -> sensors.ZoneSignals:
         return sensors.ZoneSignals(
             dominant=self._state_get(zone.dominant_sensor),
             state=self._state_get(zone.state_sensor),
@@ -261,7 +267,7 @@ class PlanningMixin:
             qualities=tuple([self._state_get(q) for q in zone.quality_sensors]),
         )
 
-    def _sensor_last_updated(self, entity):
+    def _sensor_last_updated(self, entity: str) -> dt.datetime | None:
         """The HA `last_updated` (tz-aware UTC datetime) of a state entity, or None.
 
         pyscript exposes it as a virtual attribute via state.get("<entity>.last_updated").
@@ -275,10 +281,10 @@ class PlanningMixin:
         except Exception:
             return None
 
-    def _dawn_time(self):
-        return dt.datetime.fromisoformat(self._state_get(self._current_bindings.sun.dawn))
+    def _dawn_time(self) -> dt.datetime:
+        return dt.datetime.fromisoformat(self._state_get(self._loaded_bindings().sun.dawn))
 
-    def _end_anchor_time(self, anchor):
+    def _end_anchor_time(self, anchor: str) -> dt.datetime:
         """When the watering window must finish, for the given anchor.
 
         `anchor` is a drought profile's `end_anchor` ("dawn" | "sunrise"). Falls back
@@ -287,10 +293,8 @@ class PlanningMixin:
         two: a lookup failure must shorten the window, never extend watering past
         sunrise.
         """
-        entity = (
-            self._current_bindings.sun.sunrise if anchor == "sunrise"
-            else self._current_bindings.sun.dawn
-        )
+        sun = self._loaded_bindings().sun
+        entity = sun.sunrise if anchor == "sunrise" else sun.dawn
         raw = self.port.state(entity)
         if raw is None:
             _LOGGER.warning(
@@ -299,7 +303,7 @@ class PlanningMixin:
             return self._dawn_time()
         return dt.datetime.fromisoformat(raw)
 
-    def _resolve_profile(self, cfg):
+    def _resolve_profile(self, cfg: config.Config) -> tuple[str, config.DroughtProfile]:
         """(level, profile) for the current drought selection.
 
         pyscript's state.get raises NameError when the entity does not exist at all
@@ -311,8 +315,8 @@ class PlanningMixin:
         is the least-water profile that still waters.
         """
         level = self.port.state(cfg.bindings.drought_level_select)
-        profile = cfg.drought_profiles.get(level)
-        if profile is None:
+        profile = cfg.drought_profiles.get(level) if level is not None else None
+        if profile is None or level is None:
             _LOGGER.warning(
                 "drought level %r missing or unknown; defaulting to Level 3 - Critical",
                 level
@@ -321,7 +325,7 @@ class PlanningMixin:
             level = "Level 3 - Critical"
         return level, profile
 
-    def _compute_target_floors(self, cfg):
+    def _compute_target_floors(self, cfg: config.Config) -> dict[str, float]:
         """{zone_key: effective target floor} for online, non-excluded zones.
 
         READ-ONLY, unlike _plan_context: it evaluates targets but never touches the
@@ -330,7 +334,7 @@ class PlanningMixin:
         to hydrate the target-floor state without perturbing calibration.
         """
         _level, profile = self._resolve_profile(cfg)
-        floors = {}
+        floors: dict[str, float] = {}
         for key, zone in cfg.zones.items():
             if self._zone_excluded(zone):
                 continue
@@ -340,7 +344,7 @@ class PlanningMixin:
             floors[key] = round(drought.effective_target(zone, cfg.bands, profile).floor, 1)
         return floors
 
-    async def _publish_targets(self, cfg):
+    async def _publish_targets(self, cfg: config.Config) -> None:
         """Publish per-zone target floors to the `targets` record (persisted), so a
         Deficit sensor has a target the moment HA restarts — before the first
         nightly plan. Refreshed at startup and each nightly. Read-only (see
@@ -352,7 +356,7 @@ class PlanningMixin:
             "target_floors": floors,
         })
 
-    async def _plan_context(self, cfg):
+    async def _plan_context(self, cfg: config.Config) -> dict[str, Any]:
         """Evaluate zones and build the full plan — no execution. Shared by the
         real run and the preview so both see identical decisions."""
         tun = cfg.tunables
@@ -364,7 +368,10 @@ class PlanningMixin:
         efficacy_store = self._read_efficacy_store()
         store_dirty = False
         now = self.port.now()
-        evals, targets, uncompleted, dominant_by_zone = [], {}, {}, {}
+        evals: list[evaluate.ZoneEvaluation] = []
+        targets: dict[str, drought.EffectiveTarget] = {}
+        uncompleted: dict[str, str | None] = {}
+        dominant_by_zone: dict[str, float] = {}
         for key, zone in cfg.zones.items():
             rec = efficacy_store.get(key)
             if self._zone_excluded(zone):
@@ -386,7 +393,7 @@ class PlanningMixin:
                     rec, now, tun.recalibrate_after_exclusion_hours)
                 store_dirty = True
             reading = sensors.read_zone(zone, self._read_zone_signals(zone))
-            if not reading.online:
+            if not reading.online or reading.dominant is None:
                 uncompleted[key] = reading.offline_reason
                 continue
             tgt = drought.effective_target(zone, cfg.bands, profile)
@@ -423,13 +430,14 @@ class PlanningMixin:
                 if calibration.should_probe(rec.get("state", "calibrating"),
                                             dominant_by_zone[key], pinned, tun):
                     priority.append(key)
-        minutes = {}
-        runtime_sources = {}
-        doses = {}
-        dosing_sources = {}
+        minutes: dict[str, float] = {}
+        runtime_sources: dict[str, str] = {}
+        doses: dict[str, dosing.DoseResult] = {}
+        dosing_sources: dict[str, str] = {}
         for k in priority:
             zone_cfg = cfg.zones[k]
             live = api_runtimes.get(zone_cfg.rachio_zone_id)
+            base: float
             if live:
                 base = live
                 runtime_sources[k] = "live"
@@ -441,6 +449,7 @@ class PlanningMixin:
             # is used unless the zone is recalibrating (post-swap, efficacy invalid).
             live_span = api_spans.get(zone_cfg.rachio_zone_id)
             eff = efficacy_store.get(k)
+            span_pts: float | None
             if zone_cfg.refill_span_pts > 0:
                 span_pts = zone_cfg.refill_span_pts
                 span_source = "config"
@@ -549,7 +558,7 @@ class PlanningMixin:
         earliest_start = end - dt.timedelta(minutes=cap)
         # Calibrating zones skipped tonight for a bad sensor — the pre-dawn wait
         # re-checks these and folds in a probe if the sensor recovers.
-        recovery_candidates = []
+        recovery_candidates: list[str] = []
         if tun.self_calibration_enabled:
             for _k in cfg.zones:
                 _rec = efficacy_store.get(_k) or {}
@@ -578,7 +587,8 @@ class PlanningMixin:
             "recovery_candidates": recovery_candidates,
         }
 
-    def _pressure_pair(self, ctx):
+    def _pressure_pair(self, ctx: Mapping[str, Any],
+                       ) -> tuple[weather.PressureBreakdown, weather.PressureBreakdown]:
         """(forecast-based, instantaneous) disease-pressure breakdowns.
 
         Report BOTH models: the forecast one drives the cap, the instantaneous one
@@ -592,7 +602,7 @@ class PlanningMixin:
             return pb_instant, pb_instant
         return weather.pressure_breakdown(ctx["forecast_wx"], ctx["tun"]), pb_instant
 
-    def _rain_skip_check(self, ctx):
+    def _rain_skip_check(self, ctx: Mapping[str, Any]) -> tuple[bool, dict[str, Any]]:
         """(should_skip, detail) for the plan in `ctx`.
 
         The amount threshold is a fraction of the deficit-proportional EFFECTIVE
@@ -609,7 +619,7 @@ class PlanningMixin:
             return False, {}
 
         doses = ctx["doses"]
-        depths = []
+        depths: list[float] = []
         for key in planned:
             eff = doses[key].effective_depth_mm
             if eff > 0:

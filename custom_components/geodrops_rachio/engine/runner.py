@@ -6,9 +6,15 @@ Ported from v0.9.15 bundled_app/geodrops_rachio.py lines 70-113 (constants) and
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
+from typing import Any
 
-from ..brain import abort, blocks, program, recovery
+from ..brain import abort, blocks, plan, program, recovery
+from .io import IOMixin
 from .store import RUN_PROGRESS
+
+# A no-argument check the run polls (standby, manual stop, rain).
+type Predicate = Callable[[], bool]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,14 +71,17 @@ RESUME_PROBE_S = 90
 STOP_EVIDENCE_POLLS = 3
 
 
-class RunnerMixin:
+class RunnerMixin(IOMixin):
     # ─── Plan execution (poll-verify + abort watching) ───────────────────────
 
-    def _abort_now(self, is_standby, is_manual_stop, is_rain):
+    def _abort_now(self, is_standby: Predicate, is_manual_stop: Predicate,
+                   is_rain: Predicate) -> str | None:
         return abort.abort_reason(is_standby(), is_manual_stop(), is_rain())
 
-    async def run_plan(self, slots, zone_switches, is_standby, is_manual_stop, is_rain,
-                       is_rain_at_start):
+    async def run_plan(self, slots: list[plan.Slot], zone_switches: Mapping[str, str],
+                       is_standby: Predicate, is_manual_stop: Predicate,
+                       is_rain: Predicate, is_rain_at_start: Predicate,
+                       ) -> dict[str, Any]:
         """Execute a plan block by block.
 
         A block is a maximal run of back-to-back watering slots; Rachio runs the
@@ -83,14 +92,14 @@ class RunnerMixin:
         the operator gets a couple of Rachio notifications a night instead of
         dozens.
         """
-        watered = []
-        delivered = {}
+        watered: list[str] = []
+        delivered: dict[str, float] = {}
         # What we actually asked Rachio for, block by block. Nothing else records
         # the durations that left this app, so without it the whole-minute
         # quantization is invisible after the fact.
-        sent = []
+        sent: list[dict[str, Any]] = []
         all_switches = list(zone_switches.values())
-        planned = {}
+        planned: dict[str, int] = {}
         for block in blocks.group_blocks(slots):
             if block.kind != "idle":
                 for r in blocks.quantize(block.slots):
@@ -196,7 +205,7 @@ class RunnerMixin:
             await self.stop_all(all_switches)
             raise
 
-    async def _begin_progress(self, planned):
+    async def _begin_progress(self, planned: Mapping[str, float]) -> None:
         """Record the night's plan in the run-progress doc the orchestrator opened
         (none outside a planned run, e.g. a runner exercised on its own)."""
         doc = self.store.read(RUN_PROGRESS)
@@ -206,7 +215,7 @@ class RunnerMixin:
         doc["delivered"] = {}
         await self.store.write(RUN_PROGRESS, doc)
 
-    async def _credit_progress(self, credited):
+    async def _credit_progress(self, credited: Mapping[str, float]) -> None:
         """Persist what the night has delivered so far, counting the water step
         (or block) just started as delivered in full: if HA dies mid-step, a
         resumed night is at worst that step short, never watered twice."""
@@ -216,21 +225,24 @@ class RunnerMixin:
         doc["delivered"] = dict(credited)
         await self.store.write(RUN_PROGRESS, doc)
 
-    def _crumb(self, crumbs, event, detail=None):
+    def _crumb(self, crumbs: list[dict[str, Any]], event: str,
+               detail: Any = None) -> None:
         """Append one timestamped execution breadcrumb.
 
         Persisted into the run record so a schedule drop is diagnosable from the
         record alone — the Rachio integration's own log was missing the morning the
         2026-08-27 drop had to be reconstructed from valve history.
         """
-        entry = {"t": self.port.now().strftime("%H:%M:%S"),
+        entry: dict[str, Any] = {"t": self.port.now().strftime("%H:%M:%S"),
                  "event": event}
         if detail is not None:
             entry["detail"] = detail
         crumbs.append(entry)
 
-    async def run_collapsed(self, slots, zone_switches, is_standby, is_manual_stop, is_rain,
-                            is_rain_at_start):
+    async def run_collapsed(
+            self, slots: list[plan.Slot], zone_switches: Mapping[str, str],
+            is_standby: Predicate, is_manual_stop: Predicate, is_rain: Predicate,
+            is_rain_at_start: Predicate) -> dict[str, Any]:
         """Execute a plan as ONE (or few) Rachio schedule(s) with device pauses.
 
         The whole night is flattened into a program (program.plan_program); water
@@ -243,7 +255,7 @@ class RunnerMixin:
         startup recovery can catch an interrupted (even paused) run; teardown is
         device-level (stop_device) so a collapsed schedule is killed outright.
         """
-        tun = self._current_cfg.tunables
+        tun = self._loaded_cfg().tunables
         steps = program.plan_program(slots)
         if not steps:
             return {"watered": [], "aborted_reason": None,
@@ -252,10 +264,10 @@ class RunnerMixin:
         segments = program.segment_program(steps, tun.max_pauses_per_schedule)
         await self._begin_progress(program.water_minutes(steps))
 
-        watered = []
-        delivered = {}
-        sent = []
-        crumbs = []
+        watered: list[str] = []
+        delivered: dict[str, float] = {}
+        sent: list[dict[str, Any]] = []
+        crumbs: list[dict[str, Any]] = []
         retries_used = 0
         recoveries = 0
         all_switches = list(zone_switches.values())
@@ -310,7 +322,7 @@ class RunnerMixin:
                     # recovery verdict can tell a dropped-mid-run schedule from one
                     # Rachio never started.
                     gave = blocks.delivered(runs, watering_seconds)
-                    delivered_since_issue = 0
+                    delivered_since_issue: float = 0
                     for zone_key, minutes in gave.items():
                         delivered[zone_key] = delivered.get(zone_key, 0) + minutes
                         delivered_since_issue += minutes
@@ -367,7 +379,7 @@ class RunnerMixin:
         finally:
             await self.set_run_active(False)
 
-    async def _resume_took_hold(self, all_switches):
+    async def _resume_took_hold(self, all_switches: list[str]) -> bool:
         """After a resume, did a valve actually come back on within the probe window?
 
         A dropped schedule resumes to nothing (a ~2 s valve blip was all 2026-08-27
@@ -384,8 +396,12 @@ class RunnerMixin:
             await self.port.sleep(CHECK_INTERVAL_S)
             waited += CHECK_INTERVAL_S
 
-    async def _walk_segment(self, steps, all_switches, is_standby, is_manual_stop, is_rain,
-                            crumbs, credit_base=None):
+    async def _walk_segment(
+            self, steps: list[program.Step], all_switches: list[str],
+            is_standby: Predicate, is_manual_stop: Predicate, is_rain: Predicate,
+            crumbs: list[dict[str, Any]],
+            credit_base: Mapping[str, float] | None = None,
+    ) -> tuple[str | None, float, int]:
         """Drive one schedule's steps; return (aborted, watering_seconds, stopped_index).
 
         watering_seconds counts only time under water steps (pauses excluded).
@@ -396,11 +412,11 @@ class RunnerMixin:
         on our own clock (spec §3.4 residual). `credit_base` is what the run had
         already delivered before this schedule, for the persisted progress.
         """
-        watering_seconds = 0
+        watering_seconds: float = 0
         just_resumed = False
         # Seconds the last water step was credited past the point its valves were
         # seen going off for good, or None if they were on to the end.
-        overcredit = None
+        overcredit: float | None = None
         for i, step in enumerate(steps):
             if step.kind == "water":
                 if just_resumed and not await self._resume_took_hold(all_switches):
@@ -427,7 +443,7 @@ class RunnerMixin:
                     # (pause_device clamps the same), so our sleep stays in lockstep
                     # with the device's auto-resume; max(1, ...) prevents a
                     # non-positive misconfig from stalling the loop.
-                    span = max(1, min(60, self._current_cfg.tunables.max_pause_minutes, remaining))
+                    span = max(1, min(60, self._loaded_cfg().tunables.max_pause_minutes, remaining))
                     await self.pause_device(span)
                     self._crumb(crumbs, "pause", detail=span)
                     aborted, _p, _s = await self._sleep_watching(
@@ -446,20 +462,21 @@ class RunnerMixin:
                 just_resumed = True
         return None, watering_seconds, len(steps)
 
-    def _non_start(self, overcredit, watering_seconds, index):
+    def _non_start(self, overcredit: float | None, watering_seconds: float,
+                   index: int) -> tuple[str | None, float, int]:
         """A water step that never started: a Rachio drop, unless the previous
         water step's valves were seen going off for good before it ended — then
         it was an external stop the end grace absorbed, credited only up to where
         the water stopped (see recovery.classify_non_start)."""
         reason = recovery.classify_non_start("never-started", overcredit is not None)
-        if reason == "external-stop":
+        if reason == "external-stop" and overcredit is not None:
             _LOGGER.warning(
                 "watering stopped externally near the end of a step; not re-issuing "
                 "the schedule")
             return reason, watering_seconds - overcredit, index
         return reason, watering_seconds, index
 
-    async def _await_block_end(self, zone_switches):
+    async def _await_block_end(self, zone_switches: list[str]) -> None:
         """Wait for a finished block to actually close before moving on.
 
         Rachio's clock starts when it receives the call, a beat after ours starts,
@@ -481,8 +498,10 @@ class RunnerMixin:
         )
         await self.stop_all(zone_switches)
 
-    async def _sleep_watching(self, seconds, is_standby, is_manual_stop, is_rain,
-                              watch_switches=None, paused=False):
+    async def _sleep_watching(
+            self, seconds: float, is_standby: Predicate, is_manual_stop: Predicate,
+            is_rain: Predicate, watch_switches: list[str] | None = None,
+            paused: bool = False) -> tuple[str | None, float, float | None]:
         """Sleep in CHECK_INTERVAL_S chunks while watching for aborts.
 
         Returns (reason, elapsed_seconds, stopped_at); reason is None when the full
@@ -505,12 +524,12 @@ class RunnerMixin:
         nothing may be credited. An external stop reports the FIRST empty poll,
         where the water actually ended, not the poll that finally confirmed it.
         """
-        elapsed = 0
+        elapsed: float = 0
         seen_on = False
         misses = 0
-        stopped_at = 0
+        stopped_at: float = 0
         off_polls = 0
-        off_since = 0
+        off_since: float = 0
         while elapsed < seconds:
             chunk = min(CHECK_INTERVAL_S, seconds - elapsed)
             await self.port.sleep(chunk)
@@ -543,7 +562,8 @@ class RunnerMixin:
         return None, elapsed, None
 
 
-def _merge_minutes(base, more):
+def _merge_minutes(base: Mapping[str, float] | None,
+                   more: Mapping[str, float]) -> dict[str, float]:
     out = dict(base or {})
     for zone, minutes in more.items():
         out[zone] = out.get(zone, 0) + minutes

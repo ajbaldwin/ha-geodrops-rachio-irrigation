@@ -7,8 +7,10 @@ one owned run task.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
-from typing import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import (async_track_state_change_event,
@@ -16,21 +18,24 @@ from homeassistant.helpers.event import (async_track_state_change_event,
 from homeassistant.helpers.start import async_at_started
 
 from ..brain import recovery
-from .base import EngineBase
+from .base import EngineBase, ZoneData
 from .io import IOMixin
 from .learning import LearningMixin
 from .native import NativeRunMixin
 from .orchestration import OrchestrationMixin
 from .planning import PlanningMixin
+from .port import HAPort
 from .runner import RunnerMixin
-from .store import RUN_ACTIVE, RUN_PROGRESS
+from .store import RUN_ACTIVE, RUN_PROGRESS, EngineStore
 
 _LOGGER = logging.getLogger(__name__)
 
 SAFETY_STOP_TIMEOUT_S = 10
 
+type CreateTask = Callable[[Coroutine[Any, Any, None], str], asyncio.Task[None]]
 
-async def _cancel_and_wait(task: asyncio.Task | None) -> None:
+
+async def _cancel_and_wait(task: asyncio.Task[None] | None) -> None:
     """Cancel `task` and wait for it to unwind (its `finally` blocks run).
 
     The task's own CancelledError is absorbed — the caller asked for it — but a
@@ -54,7 +59,7 @@ async def _cancel_and_wait(task: asyncio.Task | None) -> None:
         pass
 
 
-def _log_task_failure(task: asyncio.Task) -> None:
+def _log_task_failure(task: asyncio.Task[None]) -> None:
     """Done-callback: log a crashed run/startup task at once, with traceback
     (pyscript logged a trigger's exception immediately). Retrieving it also
     stops asyncio's "Task exception was never retrieved" at GC time."""
@@ -67,15 +72,17 @@ def _log_task_failure(task: asyncio.Task) -> None:
 
 class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin,
                 RunnerMixin, IOMixin, EngineBase):
-    def __init__(self, port, store, load_raw_config, fetch_zone_data,
-                 create_task: Callable[[Coroutine, str], asyncio.Task]) -> None:
+    def __init__(self, port: HAPort, store: EngineStore,
+                 load_raw_config: Callable[[], dict[str, Any]],
+                 fetch_zone_data: Callable[[], Awaitable[ZoneData]],
+                 create_task: CreateTask) -> None:
         super().__init__(port, store, load_raw_config, fetch_zone_data)
         self._create_task = create_task
-        self.run_task: asyncio.Task | None = None
-        self.startup_task: asyncio.Task | None = None
+        self.run_task: asyncio.Task[None] | None = None
+        self.startup_task: asyncio.Task[None] | None = None
         # In-flight timed jobs (06:00 calibrate, :00/:30 settle), cancelled on
         # shutdown like the run and startup tasks.
-        self._jobs: set[asyncio.Task] = set()
+        self._jobs: set[asyncio.Task[None]] = set()
         self._unsubs: list[Callable[[], None]] = []
         # Serialises every start/cancel of the run task, and counts requests so
         # the LAST caller wins (pyscript's task.unique is synchronous: whoever
@@ -85,8 +92,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         # Rachio-native run tracking (see native.py): managed zone switch ->
         # zone key, the open session, and its pending all-off close.
         self._native_switches: dict[str, str] = {}
-        self._native_session: dict | None = None
-        self._native_close_task: asyncio.Task | None = None
+        self._native_session: dict[str, Any] | None = None
+        self._native_close_task: asyncio.Task[None] | None = None
 
     # --- the one run task (replaces task.unique("geodrops_rachio_run")) -------
     async def _cancel_run(self) -> None:
@@ -101,7 +108,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         task, self.run_task = self.run_task, None
         await _cancel_and_wait(task)
 
-    async def _start_run(self, wait: bool, trigger: str, resume: dict | None = None) -> None:
+    async def _start_run(self, wait: bool, trigger: str,
+                         resume: Mapping[str, float] | None = None) -> None:
         """Replace any run with a fresh `_plan_and_run(wait, trigger)` (finishing
         an interrupted night's `resume` minutes, when given).
 
@@ -136,17 +144,17 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
                    else self._plan_and_run(wait, trigger, resume=resume))
             self.run_task = self._spawn(run, "geodrops_rachio_run")
 
-    def _spawn(self, coro: Coroutine, name: str) -> asyncio.Task:
+    def _spawn(self, coro: Coroutine[Any, Any, None], name: str) -> asyncio.Task[None]:
         task = self._create_task(coro, name)
         task.add_done_callback(_log_task_failure)
         return task
 
     # --- triggers ---------------------------------------------------------
-    async def irrigation_nightly(self, _now=None) -> None:
+    async def irrigation_nightly(self, _now: dt.datetime | None = None) -> None:
         await self._start_run(True, "nightly")
 
     # --- ported: legacy lines 2604-2742 ---------------------------------------
-    async def _on_startup(self):
+    async def _on_startup(self) -> None:
         """Safety net after any HA restart or integration reload.
 
         A run interrupted mid-watering can leave a Rachio valve OPEN: a crash or OOM
@@ -294,7 +302,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         await self._activity("Startup: re-planning the interrupted run from live moisture")
         await self._start_run(True, "startup-heal")
 
-    async def _handle_progress(self, progress, marker_set, running) -> bool:
+    async def _handle_progress(self, progress: Any, marker_set: bool,
+                               running: list[str]) -> bool:
         """Act on an interrupted night's progress; True if startup is done."""
         action, owed = recovery.resume_action(progress, self.port.now().isoformat())
         if action == recovery.IGNORE:
@@ -341,7 +350,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         await self._activity("Stop button pressed")
 
     # --- ported: legacy lines 2766-2791 ---------------------------------------
-    async def async_reset(self):
+    async def async_reset(self) -> None:
         """Cancel a planned or in-progress run and reset the system to idle.
 
         irrigation_stop only raises the manual-stop flag, which the in-run watch
@@ -355,7 +364,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         self._manual_stop = False
         await self.stop_device()  # stop any running/paused Rachio schedule (self-guarding)
         try:
-            await self.stop_all([z.rachio_switch for z in self._current_cfg.zones.values()])
+            await self.stop_all([z.rachio_switch for z in self._loaded_cfg().zones.values()])
         except Exception:
             pass  # no config loaded / nothing open at the zone level
         try:
@@ -369,7 +378,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         await self._activity("Manual reset — planned/running run cancelled; system idle")
 
     # --- ported: legacy lines 2794-2834 ---------------------------------------
-    async def async_refresh_runtimes(self):
+    async def async_refresh_runtimes(self) -> None:
         """Force a live Rachio runtime fetch and record the result — checkable
         without the system log:
           1. Logbook entry named "Irrigation" (Settings -> Logbook / activity log);
@@ -401,7 +410,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             self._current_cfg = saved_cfg
             self._current_bindings = saved_bindings
 
-    async def _refresh_runtimes_body(self):
+    async def _refresh_runtimes_body(self) -> None:
         runtimes = await self.get_runtimes(force=True)
         depths = (await self.get_refill_depths()) if runtimes else {}
         live = bool(runtimes)
@@ -437,19 +446,19 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             self._unsubs.append(async_track_state_change_event(
                 hass, list(self._native_switches), self._on_switch_event))
 
-    async def _on_calibrate_time(self, _now) -> None:
+    async def _on_calibrate_time(self, _now: dt.datetime) -> None:
         self._spawn_job(self.irrigation_calibrate(), "geodrops_rachio_calibrate")
 
-    async def _on_settle_time(self, _now) -> None:
+    async def _on_settle_time(self, _now: dt.datetime) -> None:
         self._spawn_job(self._settle_and_learn(), "geodrops_rachio_settle")
 
-    def _spawn_job(self, coro: Coroutine, name: str) -> asyncio.Task:
+    def _spawn_job(self, coro: Coroutine[Any, Any, None], name: str) -> asyncio.Task[None]:
         task = self._spawn(coro, name)
         self._jobs.add(task)
         task.add_done_callback(self._jobs.discard)
         return task
 
-    async def _on_ha_started(self, _hass) -> None:
+    async def _on_ha_started(self, _hass: HomeAssistant) -> None:
         self.startup_task = self._spawn(
             self._on_startup(), "geodrops_rachio_startup")
 
@@ -485,12 +494,11 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         cancelled mid-pause would leave Rachio to auto-resume the schedule with
         nobody watching. Stop the device and every zone, bounded.
         """
-        bindings = self._current_bindings
-        switches = [z.rachio_switch for z in self._current_cfg.zones.values()]
+        switches = [z.rachio_switch for z in self._loaded_cfg().zones.values()]
         try:
             async with asyncio.timeout(SAFETY_STOP_TIMEOUT_S):
                 await self.port.call("rachio", "stop_watering",
-                                     {"devices": bindings.rachio_device_name},
+                                     {"devices": self._loaded_bindings().rachio_device_name},
                                      blocking=True)
                 for sw in switches:
                     await self.port.call("switch", "turn_off", {"entity_id": sw},

@@ -59,7 +59,8 @@ LEGACY_FILE_KEYS = {
 
 
 class EngineStore:
-    def __init__(self, docs: dict, save: Callable[[dict], Awaitable[None]]) -> None:
+    def __init__(self, docs: dict[str, Any] | None,
+                 save: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
         self._docs = copy.deepcopy(dict(docs or {}))
         self._save = save
         self.on_write: Callable[[], None] | None = None
@@ -85,8 +86,8 @@ class EngineStore:
             self.on_write()
 
 
-def read_legacy_state(state_dir: pathlib.Path) -> dict:
-    docs: dict = {}
+def read_legacy_state(state_dir: pathlib.Path) -> dict[str, Any]:
+    docs: dict[str, Any] = {}
     for fname, key in LEGACY_FILE_KEYS.items():
         path = state_dir / fname
         try:
@@ -112,7 +113,7 @@ def remove_delivered(pyscript_dir: pathlib.Path) -> list[str]:
 
 
 async def async_open_store(hass: HomeAssistant, entry_id: str) -> EngineStore:
-    store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
+    store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
     data = await store.async_load()
     pyscript_dir = pathlib.Path(hass.config.path("pyscript"))
     removed = await hass.async_add_executor_job(remove_delivered, pyscript_dir)
@@ -142,7 +143,7 @@ async def async_open_store(hass: HomeAssistant, entry_id: str) -> EngineStore:
         else:
             _LOGGER.info("created a new store (no legacy state to import)")
 
-    async def _save(docs: dict) -> None:
+    async def _save(docs: dict[str, Any]) -> None:
         await store.async_save({"docs": docs})
 
     return EngineStore(data.get("docs", {}), _save)

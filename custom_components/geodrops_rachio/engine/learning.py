@@ -7,10 +7,13 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+from collections.abc import Mapping
+from typing import Any
 
 from .. import weather_derive
-from ..brain import calibration, sensors, weather
+from ..brain import calibration, config, sensors, weather
 from .base import STATUS_ENTITY
+from .planning import PlanningMixin
 from .store import PENDING_OBS
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,8 +23,8 @@ _LOGGER = logging.getLogger(__name__)
 NIGHTLY_MAX_AGE = dt.timedelta(hours=12)
 
 
-class LearningMixin:
-    async def irrigation_calibrate(self):
+class LearningMixin(PlanningMixin):
+    async def irrigation_calibrate(self) -> None:
         """Score last night's forecast against what actually happened.
 
         Runs at 06:00 for a reason: `sensor.observed_overnight_*` are time-weighted
@@ -57,7 +60,7 @@ class LearningMixin:
         await self._await_run_finished()
         attrs = (self.records.get("last_nightly") or {}).get("attributes")
         forecast_pb = attrs.get("pressure_forecast") if attrs is not None else None
-        if not forecast_pb or not self._nightly_is_recent(attrs):
+        if attrs is None or not forecast_pb or not self._nightly_is_recent(attrs):
             await self._activity("Calibration skipped — no nightly run to compare against")
             return
 
@@ -100,7 +103,7 @@ class LearningMixin:
             entity_id=STATUS_ENTITY,
         )
 
-    async def _await_run_finished(self):
+    async def _await_run_finished(self) -> None:
         """Return once no run is in progress. Follows a replacement run too (a
         reset followed by Run Now), since that one publishes the record."""
         while self._run_in_progress:
@@ -109,7 +112,7 @@ class LearningMixin:
                 return
             await asyncio.wait({task})
 
-    def _nightly_is_recent(self, attrs):
+    def _nightly_is_recent(self, attrs: Mapping[str, Any]) -> bool:
         """Is the last_nightly record from the night just ended? A night with no
         record of its own (HA down, a reset) must not be scored against an older
         night's forecast. A record without a stamp is given the benefit."""
@@ -124,7 +127,7 @@ class LearningMixin:
             planned = planned.astimezone(self.port.now().tzinfo).replace(tzinfo=None)
         return self._naive_now() - planned <= NIGHTLY_MAX_AGE
 
-    async def _settle_and_learn(self):
+    async def _settle_and_learn(self) -> None:
         """Read settled dominant for runs whose settle window has elapsed, reject
         confounded observations, and update per-zone efficacy (feeds the learned span)."""
         try:
@@ -141,14 +144,15 @@ class LearningMixin:
         async with self._obs_lock:
             await self._settle_pending(cfg, tun)
 
-    async def _settle_pending(self, cfg, tun):
+    async def _settle_pending(self, cfg: config.Config, tun: config.Tunables) -> None:
         pending = self.store.read(PENDING_OBS)
         if not isinstance(pending, list) or not pending:
             return
         store = self._read_efficacy_store()
         now = self.port.now()
-        api_runtimes = None      # lazy: only fetched once an obs is ready to measure
-        rained = None            # lazy: same
+        # lazy: only fetched once an obs is ready to measure
+        api_runtimes: dict[str, float] | None = None
+        rained = False           # lazy: set alongside api_runtimes
         remaining = []
         learned = 0
         dropped = 0
@@ -202,7 +206,8 @@ class LearningMixin:
             try:
                 pre = rec.get("pre_dominant")
                 minutes = rec.get("minutes")
-                if pre is None or not minutes:
+                # peak is never None here: "finalize" requires a captured sample.
+                if pre is None or not minutes or peak is None:
                     continue
                 qcn_training = sensors.all_training(signals.qualities)
                 # settled_dominant = PEAK: classify's no_rise (rise<=0) and saturated
