@@ -4,6 +4,19 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.0-beta.4 — Internal type checking; no behaviour change
+
+### Changes
+
+- **No new features or fixes.** The whole integration is now checked by a
+  strict type checker on every change. That touched most of the code,
+  including the setup and options screens, so this beta exists for one
+  soak before v1.3.0. Watering, calibration and every screen should behave
+  exactly as in beta.3.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.0-beta.3 → restart.
+
 ## v1.3.0-beta.3 — Retired-switch warning fixed; Refresh runtimes works at night
 
 ### Changes
