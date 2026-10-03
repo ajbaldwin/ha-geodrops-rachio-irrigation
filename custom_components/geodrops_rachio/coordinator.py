@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -122,6 +122,9 @@ class GeodropsRachioData:
     # What this running entry was set up with; a reload that would not change
     # it is skipped (see async_reload_if_changed).
     setup_snapshot: dict[str, Any]
+    # {zone key: target_range} the target floors were last published for; the
+    # snapshot leaves targets out (see __init__._apply_targets).
+    targets: dict[str, Any] = field(default_factory=dict)
     # An options dialog is open: its edits must not restart the scheduler.
     suppress_reload: bool = False
     # A bound entity was renamed; the update listener that follows rebinds.

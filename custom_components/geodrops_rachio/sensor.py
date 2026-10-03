@@ -17,6 +17,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import METRIC_SYSTEM
 from . import units, weather_derive
+from .brain.config import BAND_ORDER, enum_key
 from .coordinator import GeodropsRachioConfigEntry, ZoneStateCoordinator
 from .engine.scheduler import Scheduler
 from .entity import GeodropsRachioEntity, GeodropsRachioZoneEntity
@@ -306,9 +307,35 @@ def _source_down(state: State | None) -> bool:
     return state is None or state.state == STATE_UNAVAILABLE
 
 
-class ZoneMoistureSensor(GeodropsRachioZoneEntity, SensorEntity):
-    """Live mirror of the zone's own GeoDrops dominant sensor; unavailable
+class _ZoneMirrorSensor(GeodropsRachioZoneEntity, SensorEntity):
+    """Live mirror of one of the zone's own GeoDrops sensors; unavailable
     while that sensor is."""
+
+    def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
+                 hub_device_id: str, suffix: str, source: str | None) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, key, hub_device_id, suffix)
+        self._source = source
+
+    def _value(self, state: State) -> StateType:
+        """This sensor's value for the source's state; None for none."""
+        raise NotImplementedError
+
+    async def async_added_to_hass(self) -> None:
+        @callback
+        def _mirror(event: Event[EventStateChangedData] | None = None) -> None:
+            st = self.hass.states.get(self._source) if self._source else None
+            # Unbound reads unknown rather than unavailable: nothing is down.
+            self._attr_available = not self._source or not _source_down(st)
+            self._attr_native_value = self._value(st) if st else None
+            self.async_write_ha_state()
+        if self._source:
+            self.async_on_remove(async_track_state_change_event(
+                self.hass, [self._source], _mirror))
+        _mirror()
+
+
+class ZoneMoistureSensor(_ZoneMirrorSensor):
+    """The zone's GeoDrops dominant moisture."""
 
     # GeoDrops dominant moisture is a 0-100 percentage; label it so readers see
     # "75.6 %" with a moisture icon instead of a bare number.
@@ -318,28 +345,34 @@ class ZoneMoistureSensor(GeodropsRachioZoneEntity, SensorEntity):
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
                  hub_device_id: str, source: str | None) -> None:
-        super().__init__(entry, ENTITY_ID_FORMAT, key, hub_device_id,
-                         "soil_moisture")
-        self._source = source
+        super().__init__(entry, key, hub_device_id, "soil_moisture", source)
 
-    async def async_added_to_hass(self) -> None:
-        @callback
-        def _mirror(event: Event[EventStateChangedData] | None = None) -> None:
-            st = self.hass.states.get(self._source) if self._source else None
-            # Unbound reads unknown rather than unavailable: nothing is down.
-            self._attr_available = not self._source or not _source_down(st)
-            # A moisture device_class must be numeric, so coerce and let
-            # unknown/missing sources read as no value rather than pushing a
-            # non-numeric state HA would reject.
-            try:
-                self._attr_native_value = float(st.state) if st else None
-            except (TypeError, ValueError):
-                self._attr_native_value = None
-            self.async_write_ha_state()
-        if self._source:
-            self.async_on_remove(async_track_state_change_event(
-                self.hass, [self._source], _mirror))
-        _mirror()
+    def _value(self, state: State) -> StateType:
+        # A moisture device_class must be numeric, so coerce and let
+        # unknown/missing sources read as no value rather than pushing a
+        # non-numeric state HA would reject.
+        try:
+            return float(state.state)
+        except (TypeError, ValueError):
+            return None
+
+
+class ZoneMoistureStateSensor(_ZoneMirrorSensor):
+    """The zone's GeoDrops moisture state (Dry … Wet+), the band its Moisture
+    target select is set in."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = BAND_ORDER
+
+    def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
+                 hub_device_id: str, source: str | None) -> None:
+        super().__init__(entry, key, hub_device_id, "moisture_state", source)
+
+    def _value(self, state: State) -> StateType:
+        # GeoDrops reports the band's label or its key, depending on version;
+        # an enum sensor must hold one of its options.
+        band = enum_key(state.state)
+        return band if band in BAND_ORDER else None
 
 
 class ZoneDeficitSensor(GeodropsRachioZoneEntity, SensorEntity):
@@ -470,6 +503,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
     for z in entry.data.get("zones", []):
         entities.append(ZoneMoistureSensor(
             entry, z["key"], hub_id, z.get("dominant_sensor")))
+        entities.append(ZoneMoistureStateSensor(
+            entry, z["key"], hub_id, z.get("state_sensor")))
         entities.append(ZoneDeficitSensor(
             entry, z["key"], hub_id, coordinator, z.get("dominant_sensor")))
         for suffix, ckey, dc, zone_unit, precision in _ZONE_FIELDS:

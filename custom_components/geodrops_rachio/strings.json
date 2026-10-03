@@ -367,6 +367,17 @@
     "select": {
       "drought_level": {
         "name": "Drought level"
+      },
+      "moisture_target": {
+        "name": "Moisture target",
+        "state": {
+          "dry": "Dry",
+          "dry_plus": "Dry+",
+          "moist": "Moist",
+          "moist_plus": "Moist+",
+          "wet": "Wet",
+          "wet_plus": "Wet+"
+        }
       }
     },
     "sensor": {
@@ -402,6 +413,17 @@
       },
       "soil_moisture": {
         "name": "Soil moisture"
+      },
+      "moisture_state": {
+        "name": "Moisture state",
+        "state": {
+          "dry": "Dry",
+          "dry_plus": "Dry+",
+          "moist": "Moist",
+          "moist_plus": "Moist+",
+          "wet": "Wet",
+          "wet_plus": "Wet+"
+        }
       },
       "deficit": {
         "name": "Deficit"
