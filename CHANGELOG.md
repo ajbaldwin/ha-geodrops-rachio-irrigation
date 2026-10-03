@@ -4,15 +4,24 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
-## v1.3.0-beta.4 — Internal type checking; no behaviour change
+## v1.3.0-beta.4 — Calibration status no longer lags; internal type checking
+
+### Fixes
+
+- **Calibration state sensor updates when a probe finishes.** A probe is
+  scored hours after the nightly run ends, but the per-zone *Calibration
+  state* sensor kept showing the progress from the moment the run started, so
+  an accepted probe (say 2/3) still read 1/3 until the next night. It now
+  reads the saved calibration, so it moves as soon as the probe is scored.
+  Watering and calibration itself are unchanged.
 
 ### Changes
 
-- **No new features or fixes.** The whole integration is now checked by a
+- **Internal type checking.** The whole integration is now checked by a
   strict type checker on every change. That touched most of the code,
   including the setup and options screens, so this beta exists for one
   soak before v1.3.0. Watering, calibration and every screen should behave
-  exactly as in beta.3.
+  exactly as in beta.3 apart from the fix above.
 - **Requires a Home Assistant restart** after updating.
 
 **Rollback:** HACS → Redownload → v1.3.0-beta.3 → restart.
