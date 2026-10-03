@@ -77,7 +77,7 @@ async def test_entities_have_translations_and_categories(
     await hass.async_block_till_done()
     reg = er.async_get(hass)
     entities = er.async_entries_for_config_entry(reg, entry.entry_id)
-    assert len(entities) == 27     # 18 on the hub, 9 per zone
+    assert len(entities) == 29     # 18 on the hub, 11 per zone
     for e in entities:
         assert e.translation_key in strings["entity"][e.domain], e.entity_id
         assert e.original_icon is None, e.entity_id
@@ -787,3 +787,124 @@ async def test_observed_sensor_skips_corrupt_restored_samples(
     await _tick(hass, freezer, "2026-06-16 01:30:00")
     # Only the one well-formed, tz-aware sample survives.
     assert _native(hass, OBSERVED_TEMP) == 20.0
+
+
+_ZONE = {"key": "front", "rachio_switch": "switch.x", "dominant_sensor": "sensor.d",
+         "state_sensor": "sensor.s", "quality_sensors": [], "target_range": "moist",
+         "geography": "front", "runtime_minutes": 20, "refill_depth_mm": 10}
+
+
+async def _setup_zone(hass, **zone):
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        **ENTRY_DATA, "zones": [dict(_ZONE, **zone)],
+        "bindings": {"drought_level_select": "select.geodrops_rachio_drought_level"}})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_zone_moisture_target_select_edits_the_zone_without_a_reload(
+        hass, enable_pyscript_and_rachio):
+    """The select shows the zone's target_range and writes it back to the
+    entry; the change needs no reload and republishes the target floors."""
+    from homeassistant.const import EntityCategory
+    from homeassistant.helpers import entity_registry as er
+    ent = "select.geodrops_rachio_front_moisture_target"
+    entry = await _setup_zone(hass)
+    state = hass.states.get(ent)
+    assert state.state == "moist"
+    assert state.attributes["options"] == [
+        "dry", "dry_plus", "moist", "moist_plus", "wet", "wet_plus"]
+    assert state.name == "Front Moisture target"
+    assert er.async_get(hass).async_get(ent).entity_category is EntityCategory.CONFIG
+
+    scheduler = entry.runtime_data.scheduler
+    with patch.object(scheduler, "async_publish_targets",
+                      AsyncMock()) as publish:
+        await hass.services.async_call("select", "select_option",
+                                       {"entity_id": ent, "option": "wet"},
+                                       blocking=True)
+        await hass.async_block_till_done()
+        assert hass.states.get(ent).state == "wet"
+        assert entry.data["zones"][0]["target_range"] == "wet"
+        assert entry.runtime_data.scheduler is scheduler      # not reloaded
+        publish.assert_awaited_once()
+        # The engine's next config load sees the new target.
+        assert scheduler._load_cfg().zones["front"].target_range == "wet"
+
+        # An edit elsewhere (the options flow) shows in the select.
+        data = {**entry.data, "zones": [dict(_ZONE, target_range="dry")]}
+        hass.config_entries.async_update_entry(entry, data=data)
+        await hass.async_block_till_done()
+        assert hass.states.get(ent).state == "dry"
+        assert entry.runtime_data.scheduler is scheduler
+        assert publish.await_count == 2
+
+
+async def test_target_change_republishes_the_target_floors(
+        hass, enable_pyscript_and_rachio):
+    """The Deficit sensor measures against the new target at once, not from
+    the next plan."""
+    hass.states.async_set("sensor.d", "60.0")
+    hass.states.async_set("sensor.s", "dry_plus")
+    for q in ("sensor.q1", "sensor.q2"):
+        hass.states.async_set(q, "good")
+    entry = await _setup_zone(hass, quality_sensors=["sensor.q1", "sensor.q2"])
+    await entry.runtime_data.scheduler.async_publish_targets()
+    await hass.async_block_till_done()
+    deficit = "sensor.geodrops_rachio_front_deficit"
+    # Level 1 - Mild (the default) lowers a band's floor by 2 points.
+    assert float(hass.states.get(deficit).state) == 5.0      # moist: 67 - 2
+    await hass.services.async_call(
+        "select", "select_option",
+        {"entity_id": "select.geodrops_rachio_front_moisture_target",
+         "option": "wet"}, blocking=True)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(deficit).state) == 25.0     # wet: 87 - 2
+
+
+async def test_zone_moisture_state_sensor_mirrors_geodrops(
+        hass, enable_pyscript_and_rachio):
+    """Mirrors the zone's GeoDrops moisture-state sensor as an enum, whether
+    GeoDrops reports labels or keys, and goes unavailable with it."""
+    ent = "sensor.geodrops_rachio_front_moisture_state"
+    hass.states.async_set("sensor.s", "Moist+")
+    await _setup_zone(hass)
+    state = hass.states.get(ent)
+    assert state.state == "moist_plus"
+    assert state.attributes["device_class"] == "enum"
+    assert state.attributes["options"] == [
+        "dry", "dry_plus", "moist", "moist_plus", "wet", "wet_plus"]
+    assert state.name == "Front Moisture state"
+
+    hass.states.async_set("sensor.s", "wet")
+    await hass.async_block_till_done()
+    assert hass.states.get(ent).state == "wet"
+    hass.states.async_set("sensor.s", "soggy")         # not a band
+    await hass.async_block_till_done()
+    assert hass.states.get(ent).state == "unknown"
+    hass.states.async_set("sensor.s", "unavailable")
+    await hass.async_block_till_done()
+    assert hass.states.get(ent).state == "unavailable"
+
+
+async def test_drought_level_change_republishes_the_target_floors(
+        hass, enable_pyscript_and_rachio):
+    """A new drought level moves every zone's floor; the Deficit sensor
+    follows at once, not from the next plan."""
+    hass.states.async_set("sensor.d", "60.0")
+    hass.states.async_set("sensor.s", "dry_plus")
+    for q in ("sensor.q1", "sensor.q2"):
+        hass.states.async_set(q, "good")
+    entry = await _setup_zone(hass, quality_sensors=["sensor.q1", "sensor.q2"])
+    await entry.runtime_data.scheduler.async_publish_targets()
+    await hass.async_block_till_done()
+    deficit = "sensor.geodrops_rachio_front_deficit"
+    assert float(hass.states.get(deficit).state) == 5.0      # Mild: 67 - 2
+    await hass.services.async_call(
+        "select", "select_option",
+        {"entity_id": "select.geodrops_rachio_drought_level",
+         "option": "Level 0 - Normal"}, blocking=True)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(deficit).state) == 7.0      # Normal: 67 - 0

@@ -24,6 +24,23 @@ def split_settings(
     options = {k: config[k] for k in SETTINGS_KEYS if k in config}
     return data, options
 
+
+def zone_targets(zones: list[dict[str, Any]]) -> dict[str, Any]:
+    """{zone key: target_range} of a configuration's zones."""
+    return {z["key"]: z["target_range"] for z in zones if "target_range" in z}
+
+
+def with_targets(data: Mapping[str, Any],
+                 zones: list[dict[str, Any]]) -> dict[str, Any]:
+    """`data` with each zone's target_range taken from `zones` by key; a zone
+    `zones` does not list keeps its own."""
+    targets = zone_targets(zones)
+    out = dict(data)
+    out["zones"] = [
+        dict(z, target_range=targets[z["key"]]) if z["key"] in targets else z
+        for z in data.get("zones", [])]
+    return out
+
 # Defaults the wizard does not collect; the scheduler also has code defaults,
 # but emitting them keeps the built config self-describing.
 _DEFAULT_TUNABLES = {

@@ -25,9 +25,15 @@
     "select": {
       "drought_level": {
         "default": "mdi:water-alert-outline"
+      },
+      "moisture_target": {
+        "default": "mdi:target"
       }
     },
     "sensor": {
+      "moisture_state": {
+        "default": "mdi:water-check-outline"
+      },
       "status": {
         "default": "mdi:sprinkler"
       },

@@ -344,6 +344,15 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         """Dry run: report the plan that would execute, without watering."""
         await self._preview()
 
+    async def async_publish_targets(self) -> None:
+        """Republish the per-zone target floors from the config as it is now,
+        e.g. after a zone's moisture target changed. Read-only, like the
+        startup publish, and leaves a run's loaded config installed."""
+        try:
+            await self._publish_targets(self._load_cfg())
+        except Exception as err:
+            _LOGGER.warning("target-floor publish skipped (%s)", err)
+
     async def request_stop(self) -> None:
         """The Stop button: raise the manual-stop flag the watch loop honours."""
         self._manual_stop = True

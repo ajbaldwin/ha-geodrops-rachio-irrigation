@@ -71,9 +71,17 @@ async def async_setup_entry(hass: HomeAssistant,
     # {original id: current id} of bound entities renamed while this entry runs;
     # the engine reads through it until the reload that rebinds them.
     renamed: dict[str, str] = {}
+
+    def load_config() -> dict[str, Any]:
+        # Zones' moisture targets come from the entry as it is now: changing
+        # one (its select, or the options flow) applies without a reload, which
+        # would cancel a waiting or watering run. See _snapshot.
+        return config_writer.build_config(
+            config_writer.with_targets(data, entry.data.get("zones", [])))
+
     scheduler = Scheduler(
         HassPort(hass, owned_entities.resolver(hass, entry, renamed)), store,
-        lambda: config_writer.build_config(data),
+        load_config,
         fetch_zone_data,
         lambda coro, name: entry.async_create_background_task(hass, coro, name))
     coordinator = ZoneStateCoordinator(hass, entry, scheduler)
@@ -83,7 +91,8 @@ async def async_setup_entry(hass: HomeAssistant,
         config_entry_id=entry.entry_id, **device_info(entry))
     entry.runtime_data = GeodropsRachioData(
         data=data, coordinator=coordinator, scheduler=scheduler,
-        hub_device_id=hub.id, renamed=renamed, setup_snapshot=_snapshot(entry))
+        hub_device_id=hub.id, renamed=renamed, setup_snapshot=_snapshot(entry),
+        targets=config_writer.zone_targets(entry.data.get("zones", [])))
     entry.async_on_unload(coordinator.async_stop)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # A stage-1 shutdown job runs BEFORE HA cancels background tasks (the run
@@ -199,8 +208,12 @@ def _purge_retired_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 def _snapshot(entry: ConfigEntry) -> dict[str, Any]:
     # Without the API key: the running scheduler reads it from the entry on each
-    # fetch, so replacing it needs no reload.
+    # fetch, so replacing it needs no reload. Without the zones' moisture
+    # targets for the same reason: it reads them at each config load.
     data = {k: v for k, v in entry.data.items() if k != CONF_API_KEY}
+    if "zones" in data:
+        data["zones"] = [{k: v for k, v in z.items() if k != "target_range"}
+                         for z in data["zones"]]
     return {"data": copy.deepcopy(data),
             "options": copy.deepcopy(dict(entry.options))}
 
@@ -217,9 +230,20 @@ async def async_reload_if_changed(hass: HomeAssistant, entry: ConfigEntry) -> bo
     if (entry.state is ConfigEntryState.LOADED and runtime is not None
             and runtime.setup_snapshot == _snapshot(entry)):
         _LOGGER.debug("configuration unchanged; not reloading")
+        await _apply_targets(entry, runtime)
         return False
     await hass.config_entries.async_reload(entry.entry_id)
     return True
+
+
+async def _apply_targets(entry: ConfigEntry, runtime: GeodropsRachioData) -> None:
+    """A changed moisture target applies without a reload (the engine reads
+    targets at each config load); republish the target floors so the Deficit
+    sensors measure against it now, not from the next plan."""
+    targets = config_writer.zone_targets(entry.data.get("zones", []))
+    if targets != runtime.targets:
+        runtime.targets = targets
+        await runtime.scheduler.async_publish_targets()
 
 
 def _runtime(entry: ConfigEntry) -> GeodropsRachioData | None:

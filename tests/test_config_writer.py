@@ -1,5 +1,5 @@
 from custom_components.geodrops_rachio.config_writer import (
-    build_config, entry_config, split_settings)
+    build_config, entry_config, split_settings, with_targets, zone_targets)
 
 BASE = {
     "bindings": {
@@ -183,3 +183,15 @@ def test_split_settings_reverses_entry_config():
     assert options == {"self_calibration_enabled": False, "advanced_overrides": ""}
     assert "advanced_overrides" not in data and data["zones"] == BASE["zones"]
     assert entry_config(data, options) == BASE
+
+
+def test_with_targets_takes_each_zones_target_from_the_current_zones():
+    current = [dict(BASE["zones"][0], target_range="wet", runtime_minutes=99)]
+    out = with_targets(BASE, current)
+    assert out["zones"][0]["target_range"] == "wet"
+    # Only the target: everything else stays as `data` has it.
+    assert out["zones"][0]["runtime_minutes"] == 45
+    assert BASE["zones"][0]["target_range"] == "moist"     # not mutated
+    # A zone the current zones no longer list keeps its own target.
+    assert with_targets(BASE, [])["zones"] == BASE["zones"]
+    assert zone_targets(current) == {"front": "wet"}

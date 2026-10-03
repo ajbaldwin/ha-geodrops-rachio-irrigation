@@ -218,8 +218,13 @@ Home Assistant restarts is not recorded.
 
 - **Exclude from Watering/Calibration** (`switch`) — when on, the zone is
   skipped from both the nightly plan and calibration probing.
+- **Moisture target** (`select`) — the GeoDrops band (Dry → Wet+) the
+  scheduler keeps the zone at. The same setting as the zone's target moisture
+  level in the options; changing it takes effect from the next plan without
+  restarting the scheduler, and the zone's *Deficit* follows at once.
 - **Status sensors** — soil moisture (mirrors the zone's dominant sensor),
-  planned runtime, last-delivered runtime, last watered, efficacy, and
+  moisture state (mirrors the zone's GeoDrops moisture-state sensor, Dry →
+  Wet+, for comparing against the moisture target), planned runtime, last-delivered runtime, last watered, efficacy, and
   calibration state. Last watered and last-delivered runtime follow the zone's
   most recent watering from any source: nightly, *Run irrigation now*, or a
   Rachio app/schedule run. Last watered is when that zone's own valve last
