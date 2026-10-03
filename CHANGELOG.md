@@ -4,6 +4,28 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.0-beta.5 — Moisture target and Moisture state on each zone
+
+### New
+
+- **Moisture target** on each zone's device (under *Configuration*): pick the
+  GeoDrops band, Dry to Wet+, the scheduler keeps the zone at. It is the same
+  setting as the zone's target moisture level in the integration's options;
+  changing either one changes both. A change takes effect from the next plan
+  and no longer restarts the scheduler, so it never cancels a run that is
+  waiting or watering.
+- **Moisture state** sensor on each zone's device: the zone's GeoDrops
+  moisture state (Dry to Wet+), next to *Soil moisture*, for comparing with
+  the target.
+
+### Changes
+
+- **Deficit updates at once** when a zone's moisture target or the *Drought
+  level* changes, instead of after the next nightly plan.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.0-beta.4 → restart.
+
 ## v1.3.0-beta.4 — Calibration status no longer lags; internal type checking
 
 ### Fixes
