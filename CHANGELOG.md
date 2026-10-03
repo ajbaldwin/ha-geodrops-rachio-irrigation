@@ -4,9 +4,7 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
-## v1.3.0-beta.5 — Calibration status no longer lags; internal type checking
-
-(v1.3.0-beta.4 was never published; its change is included here.)
+## v1.3.0-beta.4 — Calibration status no longer lags; internal type checking
 
 ### Fixes
 
