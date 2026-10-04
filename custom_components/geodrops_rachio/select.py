@@ -6,7 +6,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
-from .brain.config import BAND_ORDER
+from .brain.config import BAND_ORDER, FINISH_ANCHORS
 from .const import DROUGHT_LEVELS, DEFAULT_DROUGHT_LEVEL
 from .coordinator import GeodropsRachioConfigEntry
 from .entity import GeodropsRachioEntity, GeodropsRachioZoneEntity
@@ -37,6 +37,30 @@ class DroughtLevelSelect(GeodropsRachioEntity, RestoreEntity, SelectEntity):
         # Deficit sensors follow now, not from the next plan. After the state
         # write: the engine reads the level from this entity's state.
         await self._entry.runtime_data.scheduler.async_publish_targets()
+
+
+class FinishAnchorSelect(GeodropsRachioEntity, RestoreEntity, SelectEntity):
+    """The sun event the watering window ends at: Auto keeps each drought
+    level's own (sunrise at Levels 0-2, dawn at 3-4); Dawn or Sunrise applies
+    at every level. Read by the engine from this entity's state at each plan,
+    like the drought level, so a change needs no reload."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = FINISH_ANCHORS
+
+    def __init__(self, entry: GeodropsRachioConfigEntry) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, "finish_anchor")
+        self._attr_current_option = "auto"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in FINISH_ANCHORS:
+            self._attr_current_option = last.state
+
+    async def async_select_option(self, option: str) -> None:
+        self._attr_current_option = option
+        self.async_write_ha_state()
 
 
 class ZoneMoistureTargetSelect(GeodropsRachioZoneEntity, SelectEntity):
@@ -84,7 +108,8 @@ class ZoneMoistureTargetSelect(GeodropsRachioZoneEntity, SelectEntity):
 async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     hub_device_id = entry.runtime_data.hub_device_id
-    entities: list[SelectEntity] = [DroughtLevelSelect(entry)]
+    entities: list[SelectEntity] = [
+        DroughtLevelSelect(entry), FinishAnchorSelect(entry)]
     entities.extend(
         ZoneMoistureTargetSelect(entry, z["key"], hub_device_id)
         for z in entry.data.get("zones", []))

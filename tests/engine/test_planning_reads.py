@@ -90,3 +90,135 @@ async def test_unknown_drought_level_defaults_to_critical(freezer, caplog):
     assert level == "Level 3 - Critical"
     assert profile is eng._current_cfg.drought_profiles["Level 3 - Critical"]
     assert "Level 9" in caplog.text
+
+
+def _utc(s):
+    return dt.datetime.fromisoformat(s)
+
+
+async def test_window_end_without_finish_controls_is_the_levels_own(freezer):
+    """No Finish anchor/offset entities (an entry set up before them): Level 1
+    ends 5 min before sunrise, as before."""
+    _world, eng = _eng(freezer)
+    profile = eng._current_cfg.drought_profiles["Level 1 - Mild"]
+    assert eng._window_end(eng._current_cfg, profile) == (
+        "sunrise", 5, _utc("2026-07-02T04:55:00+00:00"))
+
+
+async def test_finish_anchor_replaces_the_levels_anchor(freezer):
+    world, eng = _eng(freezer)
+    world.set("select.geodrops_rachio_finish_anchor", "dawn")
+    profile = eng._current_cfg.drought_profiles["Level 1 - Mild"]
+    assert eng._window_end(eng._current_cfg, profile) == (
+        "dawn", 5, _utc("2026-07-02T04:25:00+00:00"))
+    # Auto keeps the level's own, at Level 3 too.
+    world.set("select.geodrops_rachio_finish_anchor", "auto")
+    profile = eng._current_cfg.drought_profiles["Level 3 - Critical"]
+    assert eng._window_end(eng._current_cfg, profile)[0] == "dawn"
+
+
+async def test_finish_anchor_sunrise_applies_at_every_level(freezer):
+    world, eng = _eng(freezer)
+    world.set("select.geodrops_rachio_finish_anchor", "sunrise")
+    profile = eng._current_cfg.drought_profiles["Level 3 - Critical"]
+    assert eng._window_end(eng._current_cfg, profile)[0] == "sunrise"
+
+
+async def test_finish_offset_shifts_the_end_later_when_positive(freezer):
+    world, eng = _eng(freezer)
+    world.set("number.geodrops_rachio_finish_offset", "30.0")
+    profile = eng._current_cfg.drought_profiles["Level 1 - Mild"]
+    assert eng._window_end(eng._current_cfg, profile) == (
+        "sunrise", -25, _utc("2026-07-02T05:25:00+00:00"))
+    world.set("number.geodrops_rachio_finish_offset", "-30")
+    assert eng._window_end(eng._current_cfg, profile)[2] == _utc(
+        "2026-07-02T04:25:00+00:00")
+
+
+async def test_finish_offset_shifts_a_per_level_override(freezer):
+    """The slider moves the level's configured end, so a per-level
+    end_offset_minutes keeps applying underneath it."""
+    data = entry_data(overrides=(
+        'drought_profiles:\n  "Level 1 - Mild": {end_offset_minutes: -30}\n'))
+    world, eng = _eng(freezer, data)
+    world.set("number.geodrops_rachio_finish_offset", "15")
+    profile = eng._current_cfg.drought_profiles["Level 1 - Mild"]
+    assert eng._window_end(eng._current_cfg, profile)[2] == _utc(
+        "2026-07-02T05:45:00+00:00")
+
+
+async def test_plan_context_reports_the_finish_controls(freezer):
+    world, eng = _eng(freezer)
+    world.set("select.geodrops_rachio_finish_anchor", "dawn")
+    world.set("number.geodrops_rachio_finish_offset", "-10")
+    ctx = await eng._plan_context(eng._current_cfg)
+    assert ctx["end_anchor"] == "dawn"
+    assert ctx["end_offset_minutes"] == 15
+    assert ctx["end"] == _utc("2026-07-02T04:15:00+00:00")
+
+
+async def test_project_window_from_the_forecast(freezer):
+    world, eng = _eng(freezer)
+    world.set("select.geodrops_rachio_finish_anchor", "auto")
+    world.set("number.geodrops_rachio_finish_offset", "10")
+    w = eng.project_window()
+    assert w is not None
+    assert (w["start"], w["end"]) == (
+        _utc("2026-07-01T23:05:00+00:00"), _utc("2026-07-02T05:05:00+00:00"))
+    assert w["anchor"] == "sunrise" and w["anchor_choice"] == "auto"
+    assert (w["shift_minutes"], w["end_offset_minutes"]) == (10, -5)
+    assert (w["cap_hours"], w["cap_source"], w["pressure"]) == (
+        6.0, "forecast", [])
+    assert w["drought_level"] == "Level 1 - Mild"
+
+
+async def test_project_window_shrinks_under_disease_pressure(freezer):
+    world, eng = _eng(freezer)
+    world.set("sensor.forecast_overnight_temp", "75")
+    world.set("sensor.forecast_overnight_humidity", "95")
+    w = eng.project_window()
+    assert w is not None
+    assert w["pressure"] == ["warm", "humid"]
+    assert w["cap_hours"] == 4.0
+
+
+async def test_project_window_falls_back_quietly(freezer, caplog):
+    """No forecast: sized from current conditions; nothing at all: the longest
+    window. Neither logs, since it re-reads on every input change."""
+    world, eng = _eng(freezer)
+    world.set("sensor.forecast_overnight_temp", "unknown")
+    with caplog.at_level(logging.WARNING):
+        assert eng.project_window()["cap_source"] == "instant"
+        world.remove("sensor.tempest_sensor_temperature")
+        w = eng.project_window()
+    assert (w["cap_source"], w["cap_hours"]) == ("default", 6.0)
+    assert caplog.text == ""
+
+
+async def test_project_window_is_none_without_a_level_or_sun(freezer):
+    world, eng = _eng(freezer)
+    world.set("select.geodrops_rachio_drought_level", "unknown")
+    assert eng.project_window() is None
+    world.set("select.geodrops_rachio_drought_level", "Level 1 - Mild")
+    world.remove("sensor.sun_next_rising")
+    world.remove("sensor.sun_next_dawn")
+    assert eng.project_window() is None
+
+
+async def test_project_window_installs_no_config(freezer):
+    """Safe beside a run: it never replaces the run's loaded config."""
+    _world, eng = _eng(freezer)
+    cfg, bindings = eng._current_cfg, eng._current_bindings
+    eng.project_window()
+    assert eng._current_cfg is cfg and eng._current_bindings is bindings
+
+
+async def test_window_inputs_list_what_the_projection_reads(freezer):
+    _world, eng = _eng(freezer)
+    inputs = eng.window_inputs()
+    for e in ("select.geodrops_rachio_drought_level",
+              "select.geodrops_rachio_finish_anchor",
+              "number.geodrops_rachio_finish_offset",
+              "sensor.sun_next_dawn", "sensor.sun_next_rising",
+              "sensor.forecast_overnight_temp"):
+        assert e in inputs

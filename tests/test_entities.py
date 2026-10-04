@@ -77,7 +77,7 @@ async def test_entities_have_translations_and_categories(
     await hass.async_block_till_done()
     reg = er.async_get(hass)
     entities = er.async_entries_for_config_entry(reg, entry.entry_id)
-    assert len(entities) == 29     # 18 on the hub, 11 per zone
+    assert len(entities) == 32     # 21 on the hub, 11 per zone
     for e in entities:
         assert e.translation_key in strings["entity"][e.domain], e.entity_id
         assert e.original_icon is None, e.entity_id
@@ -89,6 +89,9 @@ async def test_entities_have_translations_and_categories(
     assert category["switch.geodrops_rachio_standby"] is None
     assert category["switch.geodrops_rachio_front_exclude"] is EntityCategory.CONFIG
     assert category["select.geodrops_rachio_drought_level"] is EntityCategory.CONFIG
+    assert category["select.geodrops_rachio_finish_anchor"] is EntityCategory.CONFIG
+    assert category["number.geodrops_rachio_finish_offset"] is EntityCategory.CONFIG
+    assert category["sensor.geodrops_rachio_watering_window"] is None
     assert category["sensor.geodrops_rachio_front_deficit"] is None
     assert category["sensor.geodrops_rachio_front_efficacy"] is EntityCategory.DIAGNOSTIC
     assert (category["sensor.geodrops_rachio_observed_overnight_temp"]
@@ -908,3 +911,76 @@ async def test_drought_level_change_republishes_the_target_floors(
          "option": "Level 0 - Normal"}, blocking=True)
     await hass.async_block_till_done()
     assert float(hass.states.get(deficit).state) == 7.0      # Normal: 67 - 0
+
+
+async def test_finish_controls_default_change_and_restore(
+        hass, enable_pyscript_and_rachio):
+    from pytest_homeassistant_custom_component.common import (
+        mock_restore_cache)
+    anchor = "select.geodrops_rachio_finish_anchor"
+    offset = "number.geodrops_rachio_finish_offset"
+    mock_restore_cache(hass, [State(anchor, "not an anchor")])
+    mock_restore_cache_with_extra_data(hass, [(
+        State(offset, "-20"),
+        {"native_value": -20, "native_unit_of_measurement": "min",
+         "native_min_value": -90, "native_max_value": 90, "native_step": 5})])
+    await _setup_observed(hass, ENTRY_DATA)
+    assert hass.states.get(anchor).state == "auto"
+    assert hass.states.get(anchor).attributes["options"] == [
+        "auto", "dawn", "sunrise"]
+    st = hass.states.get(offset)
+    assert float(st.state) == -20
+    assert (st.attributes["min"], st.attributes["max"], st.attributes["step"],
+            st.attributes["mode"]) == (-90, 90, 5, "slider")
+    await hass.services.async_call("select", "select_option",
+                                   {"entity_id": anchor, "option": "sunrise"},
+                                   blocking=True)
+    await hass.services.async_call("number", "set_value",
+                                   {"entity_id": offset, "value": 45},
+                                   blocking=True)
+    assert hass.states.get(anchor).state == "sunrise"
+    assert float(hass.states.get(offset).state) == 45
+
+
+async def test_watering_window_follows_its_inputs(
+        hass, enable_pyscript_and_rachio):
+    """The window shows tonight's times from the drought level, the sun and
+    the Finish controls, and moves the moment a control does."""
+    await hass.config.async_set_time_zone("UTC")
+    hass.states.async_set("sensor.sun_next_dawn", "2026-07-02T04:30:00+00:00")
+    hass.states.async_set("sensor.sun_next_rising", "2026-07-02T05:00:00+00:00")
+    await _setup_observed(hass, {**ENTRY_DATA, "bindings": {
+        "drought_level_select": "select.geodrops_rachio_drought_level"}})
+    window = "sensor.geodrops_rachio_watering_window"
+    st = hass.states.get(window)
+    # Level 1 ends 5 min before sunrise; no weather = the 6 h longest window.
+    assert st.state == "22:55–04:55"
+    assert st.attributes["finish_anchor"] == "sunrise"
+    assert st.attributes["finish_anchor_source"] == "drought level"
+    assert st.attributes["minutes_after_anchor"] == -5
+    assert (st.attributes["window_hours"], st.attributes["sized_from"]) == (
+        6.0, "default")
+    await hass.services.async_call(
+        "select", "select_option",
+        {"entity_id": "select.geodrops_rachio_finish_anchor", "option": "dawn"},
+        blocking=True)
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.geodrops_rachio_finish_offset", "value": 15},
+        blocking=True)
+    await hass.async_block_till_done()
+    st = hass.states.get(window)
+    assert st.state == "22:40–04:40"
+    assert st.attributes["finish_anchor_source"] == "Finish anchor"
+    assert (st.attributes["finish_offset"],
+            st.attributes["minutes_after_anchor"]) == (15, 10)
+    hass.states.async_set("sensor.sun_next_dawn", "2026-07-03T04:31:00+00:00")
+    await hass.async_block_till_done()
+    assert hass.states.get(window).state == "22:41–04:41"
+
+
+async def test_watering_window_is_unknown_without_a_drought_level(
+        hass, enable_pyscript_and_rachio):
+    await _setup_observed(hass, ENTRY_DATA)
+    assert hass.states.get(
+        "sensor.geodrops_rachio_watering_window").state == "unknown"

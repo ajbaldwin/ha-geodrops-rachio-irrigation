@@ -78,6 +78,8 @@
        }
       },
       "drought_level_select": "select.geodrops_rachio_drought_level",
+      "finish_anchor_select": "select.geodrops_rachio_finish_anchor",
+      "finish_offset_number": "number.geodrops_rachio_finish_offset",
       "notify_service": "notify.phone",
       "rachio_api_key_secret": "rachio_api_key",
       "rachio_device_name": "Main House",

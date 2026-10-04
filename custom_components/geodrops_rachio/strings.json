@@ -364,6 +364,11 @@
         "name": "Refresh Rachio runtimes"
       }
     },
+    "number": {
+      "finish_offset": {
+        "name": "Finish offset"
+      }
+    },
     "select": {
       "drought_level": {
         "name": "Drought level"
@@ -377,6 +382,14 @@
           "moist_plus": "Moist+",
           "wet": "Wet",
           "wet_plus": "Wet+"
+        }
+      },
+      "finish_anchor": {
+        "name": "Finish anchor",
+        "state": {
+          "auto": "Auto (by drought level)",
+          "dawn": "Dawn",
+          "sunrise": "Sunrise"
         }
       }
     },
@@ -445,6 +458,9 @@
       },
       "refill_depth": {
         "name": "Refill depth"
+      },
+      "watering_window": {
+        "name": "Watering window"
       }
     },
     "switch": {

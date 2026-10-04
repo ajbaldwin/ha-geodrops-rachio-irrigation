@@ -16,7 +16,7 @@ from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import METRIC_SYSTEM
-from . import units, weather_derive
+from . import owned_entities, units, weather_derive
 from .brain.config import BAND_ORDER, enum_key
 from .coordinator import GeodropsRachioConfigEntry, ZoneStateCoordinator
 from .engine.scheduler import Scheduler
@@ -452,6 +452,61 @@ _RECORDS = [
 ]
 
 
+class WateringWindowSensor(GeodropsRachioEntity, SensorEntity):
+    """Tonight's watering window as the next plan would size it, e.g.
+    "02:10–05:45", recomputed whenever an input changes: the drought level,
+    the Finish anchor and offset, the sun times, the overnight forecast.
+    Attributes say how each end was arrived at."""
+
+    _unrecorded_attributes = frozenset({MATCH_ALL})
+
+    def __init__(self, entry: GeodropsRachioConfigEntry,
+                 scheduler: Scheduler) -> None:
+        super().__init__(entry, ENTITY_ID_FORMAT, "watering_window")
+        self._entry = entry
+        self._scheduler = scheduler
+
+    async def async_added_to_hass(self) -> None:
+        @callback
+        def _update(*_: Any) -> None:
+            w = self._scheduler.project_window()
+            if w is None:
+                self._attr_native_value = None
+                self._attr_extra_state_attributes = {}
+            else:
+                start = dt_util.as_local(w["start"])
+                end = dt_util.as_local(w["end"])
+                choice = w["anchor_choice"]
+                self._attr_native_value = (
+                    f"{start.strftime('%H:%M')}–{end.strftime('%H:%M')}")
+                self._attr_extra_state_attributes = {
+                    "start": start.isoformat(), "end": end.isoformat(),
+                    "finish_anchor": w["anchor"],
+                    "finish_anchor_source": (
+                        "Finish anchor" if choice in ("dawn", "sunrise")
+                        else "drought level"),
+                    # Later-is-positive, like the Finish offset slider.
+                    "minutes_after_anchor": -w["end_offset_minutes"],
+                    "finish_offset": w["shift_minutes"],
+                    "window_hours": w["cap_hours"],
+                    "sized_from": w["cap_source"],
+                    "disease_pressure": w["pressure"],
+                    "drought_level": w["drought_level"],
+                }
+            self.async_write_ha_state()
+
+        resolve = owned_entities.resolver(
+            self.hass, self._entry, self._entry.runtime_data.renamed)
+        inputs = sorted({resolve(e) for e in self._scheduler.window_inputs()})
+        if inputs:
+            self.async_on_remove(async_track_state_change_event(
+                self.hass, inputs, _update))
+        # And on each scheduler publish: the safety net for an input renamed
+        # after this subscribed.
+        self.async_on_remove(self._scheduler.add_listener(_update))
+        _update()
+
+
 class RecordSensor(GeodropsRachioEntity, SensorEntity):
     """One scheduler record: value as state, full record as attributes
     (the same attribute names v0.9.x's pyscript.* entities carried, minus
@@ -491,6 +546,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
     scheduler = entry.runtime_data.scheduler
     entities: list[SensorEntity] = [SchedulerStatusSensor(entry, scheduler)]
     entities += [RecordSensor(entry, scheduler, *r) for r in _RECORDS]
+    entities.append(WateringWindowSensor(entry, scheduler))
     for key, field, device_class, unit, kind in _FIELDS:
         entities.append(ObservedOvernightSensor(
             entry, key, weather.get(field if field != "wind_speed" else "wind"),

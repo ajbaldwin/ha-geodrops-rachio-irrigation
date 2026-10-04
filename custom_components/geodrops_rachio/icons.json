@@ -22,12 +22,20 @@
         "default": "mdi:refresh"
       }
     },
+    "number": {
+      "finish_offset": {
+        "default": "mdi:timer-sync-outline"
+      }
+    },
     "select": {
       "drought_level": {
         "default": "mdi:water-alert-outline"
       },
       "moisture_target": {
         "default": "mdi:target"
+      },
+      "finish_anchor": {
+        "default": "mdi:weather-sunset-up"
       }
     },
     "sensor": {
@@ -57,6 +65,9 @@
       },
       "refill_depth": {
         "default": "mdi:arrow-collapse-down"
+      },
+      "watering_window": {
+        "default": "mdi:clock-time-four-outline"
       }
     },
     "switch": {

@@ -27,6 +27,8 @@ def owned_ids(entry: ConfigEntry) -> dict[str, tuple[str, str]]:
     eid = entry.entry_id
     out = {
         "select.geodrops_rachio_drought_level": ("select", f"{eid}_drought_level"),
+        "select.geodrops_rachio_finish_anchor": ("select", f"{eid}_finish_anchor"),
+        "number.geodrops_rachio_finish_offset": ("number", f"{eid}_finish_offset"),
         "switch.geodrops_rachio_standby": ("switch", f"{eid}_standby"),
         "sensor.geodrops_rachio_status": ("sensor", f"{eid}_status"),
     }

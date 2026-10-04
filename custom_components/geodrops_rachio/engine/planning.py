@@ -284,24 +284,124 @@ class PlanningMixin(IOMixin):
     def _dawn_time(self) -> dt.datetime:
         return dt.datetime.fromisoformat(self._state_get(self._loaded_bindings().sun.dawn))
 
-    def _end_anchor_time(self, anchor: str) -> dt.datetime:
+    def _end_anchor_time(self, anchor: str,
+                         bindings: config.HABindings | None = None) -> dt.datetime:
         """When the watering window must finish, for the given anchor.
 
         `anchor` is a drought profile's `end_anchor` ("dawn" | "sunrise"). Falls back
         to dawn when that anchor's sensor does not exist (state.get raises NameError
         for a nonexistent entity — gotcha #10), because dawn is the earlier of the
         two: a lookup failure must shorten the window, never extend watering past
-        sunrise.
+        sunrise. `bindings` defaults to the loaded config's.
         """
-        sun = self._loaded_bindings().sun
+        sun = (bindings or self._loaded_bindings()).sun
         entity = sun.sunrise if anchor == "sunrise" else sun.dawn
         raw = self.port.state(entity)
         if raw is None:
             _LOGGER.warning(
                 "end-anchor entity %r not found; using dawn", entity
             )
-            return self._dawn_time()
+            return dt.datetime.fromisoformat(self._state_get(sun.dawn))
         return dt.datetime.fromisoformat(raw)
+
+    def _window_end(self, cfg: config.Config, profile: config.DroughtProfile,
+                    ) -> tuple[str, int, dt.datetime]:
+        """(anchor, end offset, end) of tonight's watering window.
+
+        The end anchor is per drought profile: Levels 0-2 finish at sunrise so
+        watering ends just as drying begins; Level 3 finishes at dawn, before any
+        sun, to minimise evaporative loss when water is scarce. The Finish anchor
+        select can replace it at every level, and the Finish offset slider moves
+        the end from where the level would put it. Reads the sun through
+        `cfg.bindings`, so it installs nothing (see project_window)."""
+        b = cfg.bindings
+        anchor = config.finish_anchor(profile, self.port.state(b.finish_anchor_select))
+        end_offset = config.finish_end_offset(
+            profile, cfg.tunables.end_offset_minutes,
+            self.port.state(b.finish_offset_number))
+        end = self._end_anchor_time(anchor, b) - dt.timedelta(minutes=end_offset)
+        return anchor, end_offset, end
+
+    def _quiet_reading(self, temp: str, humidity: str,
+                       wind: str) -> weather.WeatherReading | None:
+        """A window-sizing WeatherReading from three sensors, or None if any is
+        unusable. Logs nothing: the projection re-reads on every input change,
+        and the plan logs the same misconfiguration when it runs."""
+        values: list[float] = []
+        for entity, kind in ((temp, units.TEMPERATURE), (humidity, None),
+                             (wind, units.SPEED)):
+            try:
+                values.append(self._in_scheduler_units(
+                    entity, float(self.port.state(entity) or ""), kind))
+            except (TypeError, ValueError):
+                return None
+        return weather.WeatherReading(
+            temp_f=values[0], rh_pct=values[1], wind_mph=values[2],
+            rain_last_hour_mm=0.0, precip_type="none")
+
+    def window_inputs(self) -> list[str]:
+        """The entities project_window reads, as configured (before any
+        rename); [] while the config does not load."""
+        try:
+            b = self._load_cfg().bindings
+        except Exception:
+            return []
+        d = b.derived.forecast_overnight
+        return [b.drought_level_select, b.finish_anchor_select,
+                b.finish_offset_number, b.sun.dawn, b.sun.sunrise,
+                d["temp"], d["humidity"], d["wind"],
+                b.weather.temperature, b.weather.humidity, b.weather.wind]
+
+    def project_window(self) -> dict[str, Any] | None:
+        """Tonight's watering window as the plan would size it from the inputs
+        now, for the Watering window sensor; None while it cannot be worked out
+        (no drought level or sun times yet).
+
+        Read-only and safe beside a run: it loads its own config and reads
+        through it, never installing it over the run's (see _window_end). The
+        cap is the full disease-window cap; a plan made after the window opens
+        is clamped to the time left, which a projection does not show."""
+        try:
+            cfg = self._load_cfg()
+            level = self.port.state(cfg.bindings.drought_level_select)
+            profile = cfg.drought_profiles.get(level or "")
+            if profile is None:
+                return None
+            anchor, end_offset, end = self._window_end(cfg, profile)
+        except Exception as err:
+            # Missing sun times, a bad overrides YAML: unknown until fixed.
+            _LOGGER.debug("watering window not projected (%s)", err)
+            return None
+        tun = cfg.tunables
+        d = cfg.bindings.derived.forecast_overnight
+        reading = self._quiet_reading(d["temp"], d["humidity"], d["wind"])
+        cap_source = "forecast"
+        if reading is None:
+            w = cfg.bindings.weather
+            reading = self._quiet_reading(w.temperature, w.humidity, w.wind)
+            cap_source = "instant"
+        if reading is None:
+            # Nothing to size it from: the longest window, which is what a
+            # plan with every weather sensor at its default would get.
+            cap = tun.window_base_cap_hours * 60.0
+            cap_source = "default"
+            pressure: list[str] = []
+        else:
+            cap = weather.window_cap_minutes(reading, tun)
+            flags = weather.pressure_breakdown(reading, tun)
+            pressure = [name for name, on in (
+                ("warm", flags["warm"]), ("humid", flags["humid"]),
+                ("still", flags["stagnant"])) if on]
+        return {
+            "start": end - dt.timedelta(minutes=cap), "end": end,
+            "anchor": anchor,
+            "anchor_choice": self.port.state(cfg.bindings.finish_anchor_select),
+            "shift_minutes": config.finish_shift(
+                self.port.state(cfg.bindings.finish_offset_number)),
+            "end_offset_minutes": end_offset,
+            "cap_hours": round(cap / 60.0, 2), "cap_source": cap_source,
+            "pressure": pressure, "drought_level": level,
+        }
 
     def _resolve_profile(self, cfg: config.Config) -> tuple[str, config.DroughtProfile]:
         """(level, profile) for the current drought selection.
@@ -535,11 +635,7 @@ class PlanningMixin(IOMixin):
         else:
             cap_source = "forecast"
             cap = weather.window_cap_minutes(forecast_wx, tun)
-        # The end anchor is per drought profile: Levels 0-2 finish at sunrise so
-        # watering ends just as drying begins; Level 3 finishes at dawn, before any
-        # sun, to minimise evaporative loss when water is scarce.
-        end_offset = config.resolved_end_offset(profile, tun.end_offset_minutes)
-        end = self._end_anchor_time(profile.end_anchor) - dt.timedelta(minutes=end_offset)
+        end_anchor, end_offset, end = self._window_end(cfg, profile)
 
         # Clamp the disease-window cap to the time actually left before the end
         # anchor, so a plan can never be scheduled to start in the past or run past
@@ -574,7 +670,7 @@ class PlanningMixin(IOMixin):
             "runtime_sources": runtime_sources,
             "forecast_wx": forecast_wx, "cap_source": cap_source,
             "horizon_hours": profile.rain_skip_horizon_hours,
-            "end_anchor": profile.end_anchor,
+            "end_anchor": end_anchor,
             "end_offset_minutes": end_offset,
             "doses": doses,
             "dosing_sources": dosing_sources,

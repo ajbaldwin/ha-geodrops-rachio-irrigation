@@ -155,7 +155,7 @@ shown). Units are °F, mph and mm; readings in other units are converted.
 | --- | --- | --- |
 | `cycle_minutes` | 12 | Longest single watering cycle before a soak. |
 | `soak_minutes` | 20 | Soak between cycles of the same zone. |
-| `end_offset_minutes` | 5 | Finish this many minutes before dawn/sunrise (negative: after). |
+| `end_offset_minutes` | 5 | Finish this many minutes before dawn/sunrise (negative: after). The *Finish offset* slider moves the end from here. |
 | `window_base_cap_hours` | 6.0 | Longest watering window. |
 | `window_disease_cap_hours` | 3.0 | Longest window on a warm, humid, still night. |
 | `warm_temp_f` | 68.0 | Overnight mean temperature that counts as warm. |
@@ -189,6 +189,22 @@ zone, with these entities (all prefixed `geodrops_rachio_`):
 - **Drought level** (`select`) — the active drought rating (Level 0 Normal →
   Level 4 Emergency); drives target offsets, runtime scaling and rain-skip
   behavior.
+- **Finish anchor** (`select`, under *Configuration*) — the sun event the
+  watering window ends at. *Auto* (the default) keeps each drought level's
+  own: sunrise at Levels 0–2, dawn at Levels 3–4. *Dawn* or *Sunrise* applies
+  at every level.
+- **Finish offset** (`number`, slider, under *Configuration*) — moves the end
+  of the window from where the drought level puts it, −90 to +90 minutes:
+  positive finishes later, negative earlier, 0 changes nothing. It shifts any
+  per-level `end_offset_minutes` override rather than replacing it.
+  Changes to either control apply from the next plan, without a restart.
+- **Watering window** (`sensor`) — tonight's window as the next plan would
+  size it, e.g. `22:55–04:55`, updated as soon as the drought level, the
+  Finish controls, the sun times or the overnight forecast change. Its
+  attributes say how it was arrived at: the anchor and where it came from,
+  the minutes after it the window ends, the window length, and the disease
+  pressure (warm / humid / still) that shortened it. A plan made after the
+  window has opened is clamped to the time left, which this does not show.
 - **Standby** (`switch`) — pause scheduling.
 - **Run active** (`binary_sensor`) — read-only; on while the scheduler is
   running a watering schedule.
