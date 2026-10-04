@@ -4,6 +4,33 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.0-beta.6 — Choose when the watering window ends
+
+### New
+
+- **Finish anchor** on the *Irrigation Controls* device (under
+  *Configuration*): the sun event the nightly watering window ends at.
+  *Auto (by drought level)*, the default, keeps today's behavior: sunrise at
+  Levels 0–2, dawn at Levels 3–4. *Dawn* or *Sunrise* applies at every level.
+- **Finish offset** slider (under *Configuration*): moves the end of the
+  window, from −90 to +90 minutes. Positive finishes later, negative earlier,
+  and 0 changes nothing. It adds to any per-level `end_offset_minutes` in the
+  advanced overrides rather than replacing it.
+- **Watering window** sensor: tonight's window as the next plan would size
+  it, e.g. `22:55–04:55`. It updates as soon as the drought level, either
+  Finish control, the sun times or the overnight forecast change, and its
+  attributes explain the anchor, the offset, the window length and any
+  disease pressure that shortened it.
+
+### Changes
+
+- Changing either Finish control takes effect from the next plan without
+  restarting the scheduler, so it never cancels a run that is waiting or
+  watering.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.0-beta.5 → restart.
+
 ## v1.3.0-beta.5 — Moisture target and Moisture state on each zone
 
 ### New
