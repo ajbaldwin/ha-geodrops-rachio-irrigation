@@ -372,3 +372,36 @@ def test_state_rank_accepts_geodrops_translation_keys():
         assert config.state_rank(key) == config.state_rank(label) >= 0
     assert config.state_rank("unknown") == -1
     assert config.state_rank(None) == -1
+
+
+def _profile(**kw):
+    return config.DroughtProfile(target_offset=0, trigger_margin=0,
+                                 runtime_scale=1.0, **kw)
+
+
+def test_finish_anchor_auto_keeps_the_profiles():
+    p = _profile(end_anchor="sunrise")
+    assert config.finish_anchor(p, "auto") == "sunrise"
+    assert config.finish_anchor(p, None) == "sunrise"
+    assert config.finish_anchor(p, "unavailable") == "sunrise"
+
+
+def test_finish_anchor_choice_replaces_the_profiles():
+    assert config.finish_anchor(_profile(end_anchor="sunrise"), "dawn") == "dawn"
+    assert config.finish_anchor(_profile(end_anchor="dawn"), "sunrise") == "sunrise"
+
+
+def test_finish_shift_parses_and_clamps():
+    assert config.finish_shift("30.0") == 30
+    assert config.finish_shift("-45") == -45
+    assert config.finish_shift("500") == config.FINISH_SHIFT_MAX
+    assert config.finish_shift("-500") == -config.FINISH_SHIFT_MAX
+    for bad in (None, "", "unknown", "unavailable", "nan"):
+        assert config.finish_shift(bad) == 0
+
+
+def test_finish_end_offset_shifts_the_resolved_offset():
+    # Positive shift = later = a smaller "minutes before" offset.
+    assert config.finish_end_offset(_profile(), 5, "30") == -25
+    assert config.finish_end_offset(_profile(end_offset_minutes=-30), 5, "-10") == -20
+    assert config.finish_end_offset(_profile(), 5, None) == 5

@@ -159,6 +159,44 @@ def resolved_end_offset(profile: DroughtProfile, global_offset: int) -> int:
     return global_offset
 
 
+# The Finish anchor select: "auto" keeps each drought profile's own end_anchor;
+# a sun event replaces it at every level.
+FINISH_ANCHORS = ["auto", "dawn", "sunrise"]
+# The Finish offset slider's range, in minutes either side of the default end.
+FINISH_SHIFT_MAX = 90
+
+
+def finish_anchor(profile: DroughtProfile, choice: str | None) -> str:
+    """The end anchor in effect: the Finish anchor select's sun event, or the
+    profile's own for "auto" and anything unreadable."""
+    if choice in END_ANCHOR_SENSORS:
+        return str(choice)
+    return profile.end_anchor
+
+
+def finish_shift(raw: str | None) -> int:
+    """The Finish offset slider's minutes (POSITIVE = later), clamped to its
+    range; 0 for anything unreadable, so a missing slider changes nothing."""
+    if raw is None:
+        return 0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 0
+    if value != value:  # NaN
+        return 0
+    return int(round(max(-FINISH_SHIFT_MAX, min(FINISH_SHIFT_MAX, value))))
+
+
+def finish_end_offset(profile: DroughtProfile, global_offset: int,
+                      shift_raw: str | None) -> int:
+    """The end offset in effect (POSITIVE = before the anchor): the profile's
+    resolved offset moved by the Finish offset slider. The slider SHIFTS the
+    default end rather than replacing it, so 0 keeps every level as configured;
+    it counts later-is-positive, the reverse of end_offset_minutes."""
+    return resolved_end_offset(profile, global_offset) - finish_shift(shift_raw)
+
+
 @dataclass(frozen=True)
 class DroughtProfile:
     target_offset: int
@@ -256,6 +294,11 @@ class HABindings:
     rachio_api_key_secret: str = "rachio_api_key"
     drought_level_select: str = "input_select.irrigation_drought_level"
     standby_boolean: str = "input_boolean.irrigation_standby"
+    # The integration's own window controls. Not wizard bindings (entries set
+    # up before them have none stored), so the defaults are their entity ids;
+    # a missing entity reads as Auto / no shift.
+    finish_anchor_select: str = "select.geodrops_rachio_finish_anchor"
+    finish_offset_number: str = "number.geodrops_rachio_finish_offset"
     standby_switch: str = "switch.sprinkler_standby"
     rachio_device_name: str = "PLACEHOLDER"
     weather: WeatherEntities = WeatherEntities()
@@ -310,6 +353,10 @@ def parse_bindings(raw: Mapping[str, Any] | None) -> HABindings:
         rachio_api_key_secret=ha.get("rachio_api_key_secret", HABindings().rachio_api_key_secret),
         drought_level_select=ha.get("drought_level_select", HABindings().drought_level_select),
         standby_boolean=ha.get("standby_boolean", HABindings().standby_boolean),
+        finish_anchor_select=ha.get(
+            "finish_anchor_select", HABindings().finish_anchor_select),
+        finish_offset_number=ha.get(
+            "finish_offset_number", HABindings().finish_offset_number),
         standby_switch=ha.get("standby_switch", HABindings().standby_switch),
         rachio_device_name=ha.get("rachio_device_name", HABindings().rachio_device_name),
         weather=weather, sun=sun, derived=derived,
