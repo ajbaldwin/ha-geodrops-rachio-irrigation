@@ -4,6 +4,94 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.0 — Moisture targets and watering window on the dashboard; safer renames; diagnostics and repairs
+
+Everything since v1.2.0, including all six 1.3.0 betas.
+
+### New
+
+- **Moisture target** on each zone's device (under *Configuration*): pick the
+  GeoDrops band, Dry to Wet+, the scheduler keeps the zone at. It is the same
+  setting as the zone's target moisture level in the integration's options;
+  changing either one changes both, and a change takes effect from the next
+  plan without cancelling a run that is waiting or watering.
+- **Moisture state** sensor on each zone's device: the zone's GeoDrops
+  moisture state (Dry to Wet+), next to *Soil moisture*, for comparing with
+  the target. *Deficit* now updates at once when the target or the *Drought
+  level* changes.
+- **Finish anchor** and **Finish offset** on the *Irrigation Controls* device
+  (under *Configuration*): choose the sun event the nightly watering window
+  ends at (*Auto (by drought level)*, the default, keeps the old behavior:
+  sunrise at Levels 0–2, dawn at Levels 3–4) and move the end by −90 to +90
+  minutes. The offset adds to any per-level `end_offset_minutes` in the
+  advanced overrides. Both take effect from the next plan.
+- **Watering window** sensor: tonight's window as the next plan would size it,
+  e.g. `22:55–04:55`, with attributes explaining the anchor, the offset, the
+  window length and any disease pressure that shortened it.
+- **Pick your rain gauge's daily total** under Configure → Weather Station
+  (*Rain Today Sensor*). Calibration used to read the Tempest's *Precipitation
+  today* sensor with no way to change it.
+- **Download diagnostics** (⋮ → Download diagnostics) for bug reports; the
+  Rachio API key is removed.
+- **Replace the Rachio API key at any time** with ⋮ → Reconfigure.
+- **Home Assistant warns when an entity picked in setup is deleted** (Settings
+  → Repairs), listing which ones. A zone whose valve switch or moisture sensor
+  was deleted would otherwise silently stop being watered.
+
+### Changes
+
+- **Your Rachio API key moves into the integration's settings.** On update it
+  is copied once from the `secrets.yaml` entry you named in setup; after that
+  this integration no longer reads `secrets.yaml`. New setups enter the key
+  directly, and it is checked with Rachio. If Rachio rejects the key, Home
+  Assistant asks for a new one; watering continues on each zone's stored
+  runtimes meanwhile.
+- **Weather readings are converted to the scheduler's units** (°F, mph, mm)
+  from the unit each sensor and the weather entity report, so metric installs
+  and metric weather stations no longer misjudge the disease window, rain
+  checks and forecast calibration.
+- **The overnight weather sensors are temperature, humidity and wind-speed
+  sensors**, shown in your home's units. Forecast overnight sensors go
+  unavailable when the forecast cannot be read, and a zone's *Soil moisture*
+  and *Deficit* go unavailable while its moisture sensor is.
+- **The Irrigation Controls entities' names now start with the device's
+  name** (*Stop irrigation* shows as *Irrigation Controls Stop irrigation*).
+  Entity IDs are unchanged, and names you set yourself are kept.
+- **Upkeep and diagnostic entities are categorized**, so new dashboards keep
+  them out of the way. Every entity has an icon, and names, icons, setup and
+  Configure screens can be translated; every field has a description.
+- **A Rachio outage is logged once** rather than on every fetch, and its end
+  is logged too. Log messages no longer include Rachio account or device IDs.
+- **The README covers** configuration options, how and when data updates,
+  examples, known limitations, troubleshooting and removal.
+- **Requires a Home Assistant restart** after updating.
+
+### Fixes
+
+- **Renaming an entity could stop Standby or a zone's Exclude from working.**
+  Changing the entity ID of *Standby*, a zone's *Exclude from
+  Watering/Calibration* switch, or an entity picked in setup left the
+  scheduler looking for the old ID, so the zone was watered anyway. Renames
+  are now followed, including several at once. The exception is the hourly
+  precipitation-forecast sensors, found by name prefix: if you rename those,
+  update the prefixes under Configure → Weather Station.
+- **A renamed zone entity could go unavailable** on Home Assistant 2026.9
+  until the next restart.
+- ***Refresh Rachio runtimes* did nothing at night.** It now works while a run
+  waits for its pre-dawn window, and while valves are watering it says in the
+  Logbook that it was skipped.
+- **The *Calibration state* sensor lagged a night behind**, still showing the
+  progress from when the run started after a probe was scored. It now moves
+  as soon as the probe is scored.
+- **Installs set up before v1.1.0** no longer get a false "entities are
+  missing" repair naming the retired *Dew formed* and *Run active* switches.
+
+**Rollback:** HACS → Redownload → v1.2.0 → restart. v1.2.0 reads the Rachio
+API key from `secrets.yaml` again, so keep that line until you're staying on
+this version. *Active Watering Calibration* and *Advanced overrides* go back
+to what they were when you first updated past v1.2.0; if you changed them
+since, set them again under Configure → Advanced.
+
 ## v1.3.0-beta.6 — Choose when the watering window ends
 
 ### New
