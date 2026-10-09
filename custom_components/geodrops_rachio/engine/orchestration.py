@@ -214,6 +214,8 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 )
                 await self._publish_last_run(stamp, trigger, result=standby_result,
                                              skipped="standby")
+                await self._publish_standby_plan(
+                    stamp, "System in Standby — nothing waters tonight.", trigger)
                 self._set_status("standby")
                 await self._activity("Standby — nothing watered tonight")
                 await self._report(standby_result, tun, event_time=event_time)
@@ -222,6 +224,8 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
             ctx = await self._plan_context(cfg)
             if resume is not None:
                 self._apply_resume(ctx, resume, cfg, tun)
+            # The Plan sensor shows what this run is about to do.
+            await self._publish_plan(ctx, stamp, trigger)
             the_plan, start = ctx["the_plan"], ctx["start"]
             uncompleted, priority = ctx["uncompleted"], ctx["priority"]
 
@@ -595,7 +599,16 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                    start=ctx["end"] - dt.timedelta(minutes=the_plan.span_minutes),
                    recovery_candidates=[])
 
-    async def _preview(self) -> None:
+    def _run_owns_plan(self) -> bool:
+        """True while a run (nightly, run-now, startup heal) is planning, waiting
+        or watering: the Plan sensor then shows that run's plan, which an
+        automatic refresh must not replace. Counts a run task that was started
+        but has not set its flags yet."""
+        task = getattr(self, "run_task", None)
+        return (self._run_in_progress or self._watering_active
+                or (task is not None and not task.done()))
+
+    async def _preview(self, announce: bool = True) -> None:
         """Report the plan that WOULD run — no valves opened, no calendar written.
 
         Three surfaces (title 'Irrigation preview' on the notification carries the
@@ -603,7 +616,13 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
           - notify + Logbook: short human summary (Logbook truncates long text);
           - sensor.geodrops_rachio_plan (Developer Tools -> States): the FULL,
             untruncated breakdown incl. the dynamic-window characteristics.
+
+        `announce=False` is the Plan sensor's automatic refresh: it updates the
+        sensor only (no notification, no Logbook), saves nothing to the
+        calibration store, and stands aside while a run owns the plan.
         """
+        if not announce and self._run_owns_plan():
+            return
         # Only refuse while valves are actually watering — NOT during the pre-dawn
         # wait. A Planned/waiting night is exactly when "what would run tonight?"
         # is worth asking; blocking it there (the old _run_in_progress guard) left
@@ -625,29 +644,60 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
         self._current_cfg = cfg
         self._current_bindings = cfg.bindings
         try:
-            await self._preview_body(cfg, stamp)
+            await self._preview_body(cfg, stamp, announce)
         finally:
-            self._current_cfg = _saved_cfg
-            self._current_bindings = _saved_bindings
+            # A run that started meanwhile installed its own config: keep it.
+            if self._current_cfg is cfg:
+                self._current_cfg = _saved_cfg
+                self._current_bindings = _saved_bindings
 
-    async def _preview_body(self, cfg: config.Config, stamp: str) -> None:
+    async def _publish_standby_plan(self, stamp: str, msg: str, source: str) -> None:
+        # Persisted so planned-runtime consumers survive a restart (see PERSISTED).
+        # 0, not "standby": the Plan sensor counts zones, so its state must
+        # stay numeric. The status sensor and `standby` attribute say why.
+        await self._publish_record(
+            "preview", 0,
+            {"updated": stamp, "standby": True, "message": msg, "source": source},
+        )
+
+    async def _preview_body(self, cfg: config.Config, stamp: str,
+                            announce: bool = True) -> None:
         """The preview computation itself, split out so _preview() can wrap it in a
         save/restore of the run-scoped globals (_current_cfg/_current_bindings) this
         body reads through _is_standby / _plan_context / _notify."""
+        source = "preview" if announce else "auto"
         if self._is_standby():
             msg = "System in Standby — a run would water nothing."
-            await self._notify(msg, "Irrigation Preview")
-            await self._activity("Preview: " + msg)
-            # Persisted so planned-runtime consumers survive a restart (see PERSISTED).
-            # 0, not "standby": the Plan sensor counts zones, so its state must
-            # stay numeric. The status sensor and `standby` attribute say why.
-            await self._publish_record(
-                "preview", 0,
-                {"updated": stamp, "standby": True, "message": msg},
-            )
+            if announce:
+                await self._notify(msg, "Irrigation Preview")
+                await self._activity("Preview: " + msg)
+            elif self._run_owns_plan():
+                return
+            await self._publish_standby_plan(stamp, msg, source)
             return
 
-        ctx = await self._plan_context(cfg)
+        ctx = await self._plan_context(cfg, dry=not announce)
+        msg, activity, attrs = self._plan_summary(ctx, stamp)
+        if announce:
+            await self._notify(msg, "Irrigation Preview")
+            await self._activity(activity)
+        elif self._run_owns_plan():
+            return  # a run started while this planned; its plan wins
+        await self._publish_record("preview", len(ctx["the_plan"].watered),
+                                   {**attrs, "source": source})
+
+    async def _publish_plan(self, ctx: dict[str, Any], stamp: str,
+                            source: str) -> None:
+        """Show a run's own plan on the Plan sensor (silently: the run reports
+        itself)."""
+        _msg, _activity, attrs = self._plan_summary(ctx, stamp)
+        await self._publish_record("preview", len(ctx["the_plan"].watered),
+                                   {**attrs, "source": source})
+
+    def _plan_summary(self, ctx: dict[str, Any], stamp: str,
+                      ) -> tuple[str, str, dict[str, Any]]:
+        """(notification text, Logbook line, Plan sensor attributes) for the
+        plan in `ctx`."""
         the_plan = ctx["the_plan"]
         wx = ctx["wx"]
         pb, pb_instant = self._pressure_pair(ctx)
@@ -710,8 +760,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 f"({int(skip_detail['probability_pct'])}%, {skip_detail['amount_mm']}mm"
                 f" / {skip_detail['horizon_hours']}h)"
             )
-        await self._notify(msg, "Irrigation Preview")
-        await self._activity(
+        activity = (
             f"Preview: would water {len(the_plan.watered)} zone(s), {water_minutes} min "
             f"water over a {span} min span, in window {earliest_str}-{end_str} "
             f"({cap_hours}h, pressure {pb['count']}/3)"
@@ -730,42 +779,38 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
 
         # Full, untruncated breakdown — Developer Tools -> States. Persisted (see
         # PERSISTED) so planned-runtime consumers keep a value across a restart.
-        await self._publish_record(
-            "preview",
-            len(the_plan.watered),
-            {
-                "updated": stamp,
-                "drought_level": ctx["level"],
-                "window_cap_hours": cap_hours,
-                "window_cap_source": ctx["cap_source"],
-                "end_anchor": ctx["end_anchor"],
-                "pressure_forecast": pb,
-                "pressure_instant": pb_instant,
-                "pressure_count": pb["count"],
-                "pressure_active": active,
-                "earliest_start": earliest_str,
-                "start": start_str,
-                "end": end_str,
-                "span_minutes": span,          # wall-clock incl. idle soaks
-                "water_minutes": water_minutes,  # actually delivered
-                # Per planned zone: "live" (Rachio API) or "static" (config.yaml).
-                "runtime_sources": runtime_sources,
-                "runtimes_all_live": len(static_zones) == 0,
-                "weather": {
-                    "temp_f": wx.temp_f, "rh_pct": wx.rh_pct, "wind_mph": wx.wind_mph,
-                    "precip_type": wx.precip_type,
-                    "rain_last_hour_mm": wx.rain_last_hour_mm,
-                },
-                "planned_minutes": {z: int(m) for z, m in planned},
-                "priority": ctx["priority"],
-                "skipped": ctx["uncompleted"],
-                "message": msg,
-                "forecast_available": fwx is not None,
-                "forecast_weather": forecast_weather,
-                "rain_skip": would_skip,
-                "rain_skip_detail": skip_detail,
+        return msg, activity, {
+            "updated": stamp,
+            "drought_level": ctx["level"],
+            "window_cap_hours": cap_hours,
+            "window_cap_source": ctx["cap_source"],
+            "end_anchor": ctx["end_anchor"],
+            "pressure_forecast": pb,
+            "pressure_instant": pb_instant,
+            "pressure_count": pb["count"],
+            "pressure_active": active,
+            "earliest_start": earliest_str,
+            "start": start_str,
+            "end": end_str,
+            "span_minutes": span,          # wall-clock incl. idle soaks
+            "water_minutes": water_minutes,  # actually delivered
+            # Per planned zone: "live" (Rachio API) or "static" (config.yaml).
+            "runtime_sources": runtime_sources,
+            "runtimes_all_live": len(static_zones) == 0,
+            "weather": {
+                "temp_f": wx.temp_f, "rh_pct": wx.rh_pct, "wind_mph": wx.wind_mph,
+                "precip_type": wx.precip_type,
+                "rain_last_hour_mm": wx.rain_last_hour_mm,
             },
-        )
+            "planned_minutes": {z: int(m) for z, m in planned},
+            "priority": ctx["priority"],
+            "skipped": ctx["uncompleted"],
+            "message": msg,
+            "forecast_available": fwx is not None,
+            "forecast_weather": forecast_weather,
+            "rain_skip": would_skip,
+            "rain_skip_detail": skip_detail,
+        }
 
     async def _log_zone_outcomes(self, cfg: config.Config, watered: Iterable[str],
                                  delivered: Mapping[str, float],

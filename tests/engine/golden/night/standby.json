@@ -71,6 +71,15 @@
     "zone_end_iso": {}
    }
   ],
+  "preview": [
+   0,
+   {
+    "message": "System in Standby — nothing waters tonight.",
+    "source": "nightly",
+    "standby": true,
+    "updated": "2026-07-01T23:00:00"
+   }
+  ],
   "status": [
    "standby",
    {
@@ -124,7 +133,15 @@
    },
    "value": 0
   },
-  "record.preview": null,
+  "record.preview": {
+   "attributes": {
+    "message": "System in Standby — nothing waters tonight.",
+    "source": "nightly",
+    "standby": true,
+    "updated": "2026-07-01T23:00:00"
+   },
+   "value": 0
+  },
   "record.targets": {
    "attributes": {
     "friendly_name": "Irrigation Target Floors",

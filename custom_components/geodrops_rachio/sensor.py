@@ -8,10 +8,11 @@ from homeassistant.const import (
     MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, EntityCategory,
     UnitOfLength, UnitOfSpeed, UnitOfTemperature)
 from homeassistant.core import (
-    Event, EventStateChangedData, HomeAssistant, State, callback)
+    CALLBACK_TYPE, Event, EventStateChangedData, HassJob, HomeAssistant, State,
+    callback)
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
-    async_track_state_change_event, async_track_time_interval)
+    async_call_later, async_track_state_change_event, async_track_time_interval)
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
@@ -21,6 +22,7 @@ from .brain.config import BAND_ORDER, enum_key
 from .coordinator import GeodropsRachioConfigEntry, ZoneStateCoordinator
 from .engine.scheduler import Scheduler
 from .entity import GeodropsRachioEntity, GeodropsRachioZoneEntity
+from .util import slug
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +31,11 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 _FORECAST_INTERVAL = dt.timedelta(hours=1)
+# While the forecast reads empty or fails (typically the weather integration
+# still starting after a restart), retry this often, this many times, before
+# falling back to the hourly refresh.
+_FORECAST_RETRY_DELAY_S = 60
+_FORECAST_RETRIES = 15
 # How often the observed means recompute with nothing changing: a steady reading
 # is still accruing time, and the 06:00 read should see the window's tail.
 _OBSERVED_RECOMPUTE_INTERVAL = dt.timedelta(minutes=5)
@@ -204,16 +211,56 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
         self._field = field
         self._source = source
         self._kind = kind
+        self._retries_left = 0
+        self._cancel_retry: CALLBACK_TYPE | None = None
 
     async def async_added_to_hass(self) -> None:
         if self._source:
             self.async_on_remove(async_track_time_interval(
                 self.hass, self._refresh, _FORECAST_INTERVAL))
+            # A weather entity coming up after this one (it often loads later
+            # at startup) has a forecast to read now, not at the next hour.
+            self.async_on_remove(async_track_state_change_event(
+                self.hass, [self._source], self._on_source_change))
+            self.async_on_remove(self._stop_retry)
             await self._refresh(None)
 
-    async def _refresh(self, _now: dt.datetime | None) -> None:
+    @callback
+    def _stop_retry(self) -> None:
+        if self._cancel_retry is not None:
+            self._cancel_retry()
+            self._cancel_retry = None
+
+    @callback
+    def _on_source_change(self, event: Event[EventStateChangedData]) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        down = (None, STATE_UNAVAILABLE, STATE_UNKNOWN)
+        if ((old.state if old else None) in down
+                and (new.state if new else None) not in down):
+            self.hass.async_create_task(self._refresh(None))
+
+    async def _retry(self, _now: dt.datetime) -> None:
+        self._cancel_retry = None
+        await self._refresh(None, retry=True)
+
+    def _schedule_retry(self, retry: bool) -> None:
+        """Try again in a minute after an empty or failed read, up to
+        _FORECAST_RETRIES times in a row; a scheduled read (hourly, or the
+        weather entity coming up) starts a fresh run of retries."""
+        if not retry:
+            self._retries_left = _FORECAST_RETRIES
+        if self._retries_left <= 0 or self._cancel_retry is not None:
+            return
+        self._retries_left -= 1
+        self._cancel_retry = async_call_later(
+            self.hass, _FORECAST_RETRY_DELAY_S,
+            HassJob(self._retry, cancel_on_shutdown=True))
+
+    async def _refresh(self, _now: dt.datetime | None, retry: bool = False) -> None:
         if not self._source:
             return  # only scheduled for a bound weather entity
+        if not retry:
+            self._stop_retry()
         try:
             resp = await self.hass.services.async_call(
                 "weather", "get_forecasts",
@@ -235,6 +282,7 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
                           exc_info=True)
             self._attr_available = False
             self.async_write_ha_state()
+            self._schedule_retry(retry)
             return
         if not self._attr_available:
             _LOGGER.info("The hourly forecast of %s can be read again",
@@ -242,6 +290,9 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
         self._attr_available = True
         self._attr_native_value = value
         self.async_write_ha_state()
+        if value is None:
+            # No hours of tonight in the forecast yet.
+            self._schedule_retry(retry)
 
     def _forecast_unit(self) -> str | None:
         """The unit the weather entity reports this field in: its own
@@ -382,23 +433,29 @@ class ZoneDeficitSensor(GeodropsRachioZoneEntity, SensorEntity):
     current) — 0 at/above the target. Reads unknown until both a floor (from
     the scheduler's targets state) and a numeric moisture reading exist. No
     device_class: it's a delta, not an absolute moisture, so HA must not unit-
-    convert it."""
+    convert it. Shown for an excluded zone too, with `excluded: true`: nothing
+    waters it, but how dry it is still counts."""
 
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 1
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str,
                  hub_device_id: str, coordinator: ZoneStateCoordinator,
-                 source: str | None) -> None:
+                 source: str | None, exclude: str) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, key, hub_device_id, "deficit")
         self._key, self._coord, self._source = key, coordinator, source
+        self._entry = entry
+        self._exclude = exclude
 
     async def async_added_to_hass(self) -> None:
+        # The exclude switch is this integration's own; follow a rename of it.
+        self._exclude = owned_entities.resolver(
+            self.hass, self._entry, self._entry.runtime_data.renamed)(self._exclude)
         self._coord.add_listener(self._update)
         self.async_on_remove(lambda: self._coord.remove_listener(self._update))
-        if self._source:
-            self.async_on_remove(async_track_state_change_event(
-                self.hass, [self._source], self._update))
+        watched = [e for e in (self._source, self._exclude) if e]
+        self.async_on_remove(async_track_state_change_event(
+            self.hass, watched, self._update))
         self._update()
 
     @callback
@@ -417,6 +474,9 @@ class ZoneDeficitSensor(GeodropsRachioZoneEntity, SensorEntity):
             self._attr_native_value = None
         else:
             self._attr_native_value = round(max(0.0, floor - moisture), 1)
+        excluded = self.hass.states.get(self._exclude) if self._exclude else None
+        self._attr_extra_state_attributes = {
+            "excluded": excluded is not None and excluded.state == "on"}
         if self.hass:
             self.async_write_ha_state()
 
@@ -448,7 +508,6 @@ class SchedulerStatusSensor(GeodropsRachioEntity, SensorEntity):
 _RECORDS = [
     ("last_nightly", "last_nightly"),
     ("last_run", "last_run"),
-    ("preview", "plan"),
 ]
 
 
@@ -539,6 +598,31 @@ class RecordSensor(GeodropsRachioEntity, SensorEntity):
         _update()
 
 
+class PlanSensor(RecordSensor):
+    """Tonight's plan: what a run would water, kept current without pressing
+    Preview. The scheduler refreshes it hourly and after a restart, a run
+    shows its own plan here, and changing a setting that moves the plan (the
+    drought level, the Finish controls, standby, a zone's exclude switch)
+    refreshes it at once. The `source` attribute says which made it."""
+
+    def __init__(self, entry: GeodropsRachioConfigEntry, scheduler: Scheduler,
+                 record: str, suffix: str) -> None:
+        super().__init__(entry, scheduler, record, suffix)
+        self._entry = entry
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        resolve = owned_entities.resolver(
+            self.hass, self._entry, self._entry.runtime_data.renamed)
+        inputs = sorted({resolve(e) for e in self._scheduler.plan_inputs()})
+        if inputs:
+            @callback
+            def _changed(_event: Event[EventStateChangedData]) -> None:
+                self._scheduler.request_plan_refresh()
+            self.async_on_remove(async_track_state_change_event(
+                self.hass, inputs, _changed))
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     weather = entry.data.get("bindings", {}).get("weather", {})
@@ -546,6 +630,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
     scheduler = entry.runtime_data.scheduler
     entities: list[SensorEntity] = [SchedulerStatusSensor(entry, scheduler)]
     entities += [RecordSensor(entry, scheduler, *r) for r in _RECORDS]
+    entities.append(PlanSensor(entry, scheduler, "preview", "plan"))
     entities.append(WateringWindowSensor(entry, scheduler))
     for key, field, device_class, unit, kind in _FIELDS:
         entities.append(ObservedOvernightSensor(
@@ -562,7 +647,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
         entities.append(ZoneMoistureStateSensor(
             entry, z["key"], hub_id, z.get("state_sensor")))
         entities.append(ZoneDeficitSensor(
-            entry, z["key"], hub_id, coordinator, z.get("dominant_sensor")))
+            entry, z["key"], hub_id, coordinator, z.get("dominant_sensor"),
+            z.get("exclude_boolean")
+            or f"switch.geodrops_rachio_{slug(z['key'])}_exclude"))
         for suffix, ckey, dc, zone_unit, precision in _ZONE_FIELDS:
             entities.append(ZoneCoordinatorSensor(
                 entry, z["key"], hub_id, coordinator, suffix, ckey, dc, zone_unit,

@@ -239,11 +239,13 @@ async def async_reload_if_changed(hass: HomeAssistant, entry: ConfigEntry) -> bo
 async def _apply_targets(entry: ConfigEntry, runtime: GeodropsRachioData) -> None:
     """A changed moisture target applies without a reload (the engine reads
     targets at each config load); republish the target floors so the Deficit
-    sensors measure against it now, not from the next plan."""
+    sensors measure against it now, and the Plan sensor plans with it, not
+    from the next plan."""
     targets = config_writer.zone_targets(entry.data.get("zones", []))
     if targets != runtime.targets:
         runtime.targets = targets
         await runtime.scheduler.async_publish_targets()
+        runtime.scheduler.request_plan_refresh()
 
 
 def _runtime(entry: ConfigEntry) -> GeodropsRachioData | None:

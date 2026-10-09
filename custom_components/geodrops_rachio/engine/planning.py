@@ -426,7 +426,12 @@ class PlanningMixin(IOMixin):
         return level, profile
 
     def _compute_target_floors(self, cfg: config.Config) -> dict[str, float]:
-        """{zone_key: effective target floor} for online, non-excluded zones.
+        """{zone_key: effective target floor} for every zone.
+
+        The floor comes from the zone's target band and the drought level only,
+        so it is published for excluded zones too (their Deficit still shows how
+        dry they are) and for zones whose probe is offline, which at startup is
+        often just GeoDrops loading late.
 
         READ-ONLY, unlike _plan_context: it evaluates targets but never touches the
         efficacy store (no exclusion stamping / recalibrate-on-return) and never
@@ -434,15 +439,8 @@ class PlanningMixin(IOMixin):
         to hydrate the target-floor state without perturbing calibration.
         """
         _level, profile = self._resolve_profile(cfg)
-        floors: dict[str, float] = {}
-        for key, zone in cfg.zones.items():
-            if self._zone_excluded(zone):
-                continue
-            reading = sensors.read_zone(zone, self._read_zone_signals(zone))
-            if not reading.online:
-                continue
-            floors[key] = round(drought.effective_target(zone, cfg.bands, profile).floor, 1)
-        return floors
+        return {key: round(drought.effective_target(zone, cfg.bands, profile).floor, 1)
+                for key, zone in cfg.zones.items()}
 
     async def _publish_targets(self, cfg: config.Config) -> None:
         """Publish per-zone target floors to the `targets` record (persisted), so a
@@ -456,9 +454,15 @@ class PlanningMixin(IOMixin):
             "target_floors": floors,
         })
 
-    async def _plan_context(self, cfg: config.Config) -> dict[str, Any]:
+    async def _plan_context(self, cfg: config.Config,
+                            dry: bool = False) -> dict[str, Any]:
         """Evaluate zones and build the full plan — no execution. Shared by the
-        real run and the preview so both see identical decisions."""
+        real run and the preview so both see identical decisions.
+
+        `dry` (the Plan sensor's automatic refresh) plans exactly the same but
+        saves nothing — exclusion stamps and recalibrate-on-return stay for a
+        real plan to make — and keeps its warnings to debug, since it runs
+        hourly."""
         tun = cfg.tunables
         level, profile = self._resolve_profile(cfg)
         rng = random.Random()
@@ -500,7 +504,7 @@ class PlanningMixin(IOMixin):
             targets[key] = tgt
             dominant_by_zone[key] = reading.dominant
             evals.append(evaluate.evaluate_zone(reading, tgt))
-        if store_dirty:
+        if store_dirty and not dry:
             await self._write_efficacy_store(efficacy_store)
 
         priority = [e.key for e in evaluate.sort_by_priority(evals, rng)]
@@ -627,7 +631,8 @@ class PlanningMixin(IOMixin):
         forecast_wx = self._read_forecast_weather()
         if forecast_wx is None:
             cap_source = "instant"
-            _LOGGER.warning(
+            _LOGGER.log(
+                logging.DEBUG if dry else logging.WARNING,
                 "overnight forecast unavailable; sizing the window from current "
                 "conditions"
             )
