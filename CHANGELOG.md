@@ -4,6 +4,36 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.1 — Deficit on excluded zones; Plan keeps itself current
+
+### Fixes
+
+- **Deficit shows on excluded zones.** A zone with *Exclude from
+  Watering/Calibration* on read an unknown *Deficit*. It now shows how far the
+  zone is below its target, with an `excluded: true` attribute (it follows the
+  switch), since nothing waters it but how dry it is still counts.
+- **Deficit after a restart.** A zone whose moisture probe was still loading
+  when Home Assistant started read an unknown *Deficit* until the 23:00 plan.
+  It now reads as soon as the probe does.
+- **Plan no longer shows an old preview.** *Plan* (and each zone's *Planned
+  runtime*) only changed when *Preview irrigation plan* was pressed, so it
+  could show a plan from days ago. It now refreshes itself hourly, after a
+  restart, and a few seconds after you change the drought level, a Finish
+  control, *Standby*, a zone's *Exclude* switch or its moisture target; from
+  23:00 it shows the night's own plan. These refreshes send no notification;
+  the button still does. A new `source` attribute says what made the plan:
+  `auto`, `preview`, or the run (`nightly`, `run_now`, ...).
+- **Forecast overnight sensors after a restart.** They read unknown for up to
+  an hour when the weather integration started after them. They now read as
+  soon as the weather entity is up, and retry every minute for 15 minutes
+  while its forecast has none of tonight's hours.
+
+### Changes
+
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.0 → restart.
+
 ## v1.3.0 — Moisture targets and watering window on the dashboard; safer renames; diagnostics and repairs
 
 Everything since v1.2.0, including all six 1.3.0 betas.
