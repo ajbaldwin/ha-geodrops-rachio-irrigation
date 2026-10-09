@@ -214,11 +214,14 @@ zone, with these entities (all prefixed `geodrops_rachio_`):
   attribute, not the state, for automations), `sensor.geodrops_rachio_last_nightly`
   (last nightly run's record), `sensor.geodrops_rachio_last_run` (last run of
   any kind, including *Run irrigation now*), and `sensor.geodrops_rachio_plan`
-  (the most recent *Preview irrigation plan* output). The state of the last
-  three is a zone count (zones watered, or zones the preview would water), and
-  each carries the run's full detail as attributes. A `trigger` attribute says
-  which kind of run it was: `nightly`, `run_now`, a startup recovery, or
-  `rachio` for watering started from the Rachio app or a Rachio schedule.
+  (tonight's plan: what a run would water). The state of the last three is a
+  zone count (zones watered, or zones the plan would water), and each carries
+  the run's full detail as attributes. A `trigger` attribute says which kind of
+  run it was: `nightly`, `run_now`, a startup recovery, or `rachio` for
+  watering started from the Rachio app or a Rachio schedule. *Plan* keeps
+  itself current (see *How it updates*); its `source` attribute says what made
+  it: `auto`, `preview` (the button), or the run that is using it (`nightly`,
+  `run_now`, ...).
 
 **Rachio app and schedule runs** are recorded, not managed. When a zone switch
 turns on while the scheduler is not watering, the run is published to *Last run*
@@ -233,7 +236,8 @@ Home Assistant restarts is not recorded.
 **Per-zone (one device each)**
 
 - **Exclude from Watering/Calibration** (`switch`) — when on, the zone is
-  skipped from both the nightly plan and calibration probing.
+  skipped from both the nightly plan and calibration probing. Its *Deficit*
+  still shows, with an `excluded: true` attribute.
 - **Moisture target** (`select`) — the GeoDrops band (Dry → Wet+) the
   scheduler keeps the zone at. The same setting as the zone's target moisture
   level in the options; changing it takes effect from the next plan without
@@ -268,7 +272,13 @@ Home Assistant restarts is not recorded.
   sensors are watched throughout.
 - **Rachio runtimes and refill depths** — fetched from the Rachio cloud when a
   plan needs them and kept for 6 hours; *Refresh Rachio runtimes* fetches now.
-- **Forecast overnight sensors** — hourly, from the forecast entity.
+- **Plan** — hourly, after a restart, and a few seconds after you change the
+  drought level, a Finish control, *Standby*, a zone's *Exclude* switch or its
+  moisture target. A run shows its own plan there from 23:00 until it ends.
+  These refreshes are silent: only *Preview irrigation plan* notifies.
+- **Forecast overnight sensors** — hourly, from the forecast entity, and as
+  soon as that entity comes up after a restart. While the forecast has none of
+  tonight's hours (or cannot be read), they retry every minute for 15 minutes.
 - **Observed overnight sensors** — on every weather-station change, and every
   5 minutes.
 - **06:00** — the forecast calibration compares last night's forecast with

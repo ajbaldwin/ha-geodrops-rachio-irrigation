@@ -471,6 +471,72 @@
     }
    }
   ],
+  "preview": [
+   2,
+   {
+    "drought_level": "Level 1 - Mild",
+    "earliest_start": "23:00",
+    "end": "04:55",
+    "end_anchor": "sunrise",
+    "forecast_available": true,
+    "forecast_weather": {
+     "overnight_rh_pct": 80.0,
+     "overnight_temp_f": 60.0,
+     "overnight_wind_mph": 3.0
+    },
+    "message": "Would water 2:\n- Back: 36 min\n- Front: 36 min\nRuns 03:27–04:55 — 88 min span (72 min water + soaks)\nWindow: 23:00–04:55 (5.92h, pressure 0/3: none), ends 5 min before sunrise\nDrought: Level 1 - Mild\nNOTE: static fallback runtimes (Rachio pull failed) for: back, front",
+    "planned_minutes": {
+     "back": 36,
+     "front": 36
+    },
+    "pressure_active": [],
+    "pressure_count": 0,
+    "pressure_forecast": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "pressure_instant": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "priority": [
+     "back",
+     "front"
+    ],
+    "rain_skip": false,
+    "rain_skip_detail": {
+     "amount_mm": 0.0,
+     "horizon_hours": 18,
+     "mean_effective_depth_mm": 7.5,
+     "probability_pct": 10.0,
+     "threshold_mm": 3.75
+    },
+    "runtime_sources": {
+     "back": "static",
+     "front": "static"
+    },
+    "runtimes_all_live": false,
+    "skipped": {},
+    "source": "nightly",
+    "span_minutes": 88,
+    "start": "03:27",
+    "updated": "2026-07-01T23:00:00",
+    "water_minutes": 72,
+    "weather": {
+     "precip_type": "none",
+     "rain_last_hour_mm": 0.0,
+     "rh_pct": 70.0,
+     "temp_f": 60.0,
+     "wind_mph": 5.0
+    },
+    "window_cap_hours": 5.92,
+    "window_cap_source": "forecast"
+   }
+  ],
   "status": [
    "idle",
    {
@@ -696,7 +762,72 @@
    },
    "value": 2
   },
-  "record.preview": null,
+  "record.preview": {
+   "attributes": {
+    "drought_level": "Level 1 - Mild",
+    "earliest_start": "23:00",
+    "end": "04:55",
+    "end_anchor": "sunrise",
+    "forecast_available": true,
+    "forecast_weather": {
+     "overnight_rh_pct": 80.0,
+     "overnight_temp_f": 60.0,
+     "overnight_wind_mph": 3.0
+    },
+    "message": "Would water 2:\n- Back: 36 min\n- Front: 36 min\nRuns 03:27–04:55 — 88 min span (72 min water + soaks)\nWindow: 23:00–04:55 (5.92h, pressure 0/3: none), ends 5 min before sunrise\nDrought: Level 1 - Mild\nNOTE: static fallback runtimes (Rachio pull failed) for: back, front",
+    "planned_minutes": {
+     "back": 36,
+     "front": 36
+    },
+    "pressure_active": [],
+    "pressure_count": 0,
+    "pressure_forecast": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "pressure_instant": {
+     "count": 0,
+     "humid": false,
+     "stagnant": false,
+     "warm": false
+    },
+    "priority": [
+     "back",
+     "front"
+    ],
+    "rain_skip": false,
+    "rain_skip_detail": {
+     "amount_mm": 0.0,
+     "horizon_hours": 18,
+     "mean_effective_depth_mm": 7.5,
+     "probability_pct": 10.0,
+     "threshold_mm": 3.75
+    },
+    "runtime_sources": {
+     "back": "static",
+     "front": "static"
+    },
+    "runtimes_all_live": false,
+    "skipped": {},
+    "source": "nightly",
+    "span_minutes": 88,
+    "start": "03:27",
+    "updated": "2026-07-01T23:00:00",
+    "water_minutes": 72,
+    "weather": {
+     "precip_type": "none",
+     "rain_last_hour_mm": 0.0,
+     "rh_pct": 70.0,
+     "temp_f": 60.0,
+     "wind_mph": 5.0
+    },
+    "window_cap_hours": 5.92,
+    "window_cap_source": "forecast"
+   },
+   "value": 2
+  },
   "record.targets": {
    "attributes": {
     "friendly_name": "Irrigation Target Floors",

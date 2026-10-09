@@ -12,8 +12,9 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import (async_track_state_change_event,
+from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant
+from homeassistant.helpers.event import (async_call_later,
+                                         async_track_state_change_event,
                                          async_track_time_change)
 from homeassistant.helpers.start import async_at_started
 
@@ -31,6 +32,9 @@ from .store import RUN_ACTIVE, RUN_PROGRESS, EngineStore
 _LOGGER = logging.getLogger(__name__)
 
 SAFETY_STOP_TIMEOUT_S = 10
+# A burst of setting changes (say, several zones excluded in a row) refreshes
+# the Plan sensor once.
+PLAN_REFRESH_DELAY_S = 5
 
 type CreateTask = Callable[[Coroutine[Any, Any, None], str], asyncio.Task[None]]
 
@@ -94,6 +98,10 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         self._native_switches: dict[str, str] = {}
         self._native_session: dict[str, Any] | None = None
         self._native_close_task: asyncio.Task[None] | None = None
+        # Set while started (async_start .. async_shutdown): the plan refresh
+        # timer needs it, and nothing may be scheduled outside that span.
+        self._hass: HomeAssistant | None = None
+        self._cancel_plan_refresh: CALLBACK_TYPE | None = None
 
     # --- the one run task (replaces task.unique("geodrops_rachio_run")) -------
     async def _cancel_run(self) -> None:
@@ -344,6 +352,53 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         """Dry run: report the plan that would execute, without watering."""
         await self._preview()
 
+    async def async_refresh_plan(self) -> None:
+        """Bring the Plan sensor up to date with what would water tonight,
+        silently (see _preview's announce=False). Never raises: a failure only
+        leaves the previous plan showing until the next refresh."""
+        try:
+            await self._preview(announce=False)
+        except Exception as err:
+            _LOGGER.debug("plan refresh skipped (%s)", err, exc_info=True)
+
+    def request_plan_refresh(self) -> None:
+        """Refresh the Plan sensor shortly, folding a burst of requests into
+        one refresh. Ignored unless started: unloading removes the entities
+        whose state changes ask for one after the scheduler has stopped."""
+        if self._hass is None:
+            return
+        if self._cancel_plan_refresh is not None:
+            self._cancel_plan_refresh()
+        self._cancel_plan_refresh = async_call_later(
+            self._hass, PLAN_REFRESH_DELAY_S,
+            HassJob(self._fire_plan_refresh, cancel_on_shutdown=True))
+
+    async def _fire_plan_refresh(self, _now: dt.datetime) -> None:
+        # Run by HA as the timer's own job, so it is tracked like any timer
+        # callback; it is short, and refreshes nothing once stopped.
+        self._cancel_plan_refresh = None
+        if self._hass is not None:
+            await self.async_refresh_plan()
+
+    async def _on_plan_time(self, _now: dt.datetime) -> None:
+        # Hourly: moisture, weather and the sun move the plan all day.
+        self.request_plan_refresh()
+
+    def plan_inputs(self) -> list[str]:
+        """The settings whose change moves tonight's plan at once, as
+        configured (before any rename): the drought level, the Finish
+        controls, both standby switches and each zone's exclude switch. []
+        while the config does not load."""
+        try:
+            cfg = self._load_cfg()
+        except Exception:
+            return []
+        b = cfg.bindings
+        ents = [b.drought_level_select, b.finish_anchor_select,
+                b.finish_offset_number, b.standby_switch, b.standby_boolean]
+        ents += [z.exclude_boolean for z in cfg.zones.values()]
+        return [e for e in ents if e]
+
     async def async_publish_targets(self) -> None:
         """Republish the per-zone target floors from the config as it is now,
         e.g. after a zone's moisture target changed. Read-only, like the
@@ -441,6 +496,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
 
     # --- Home Assistant wiring ----------------------------------------------
     def async_start(self, hass: HomeAssistant) -> None:
+        self._hass = hass
         self._unsubs += [
             async_track_time_change(hass, self.irrigation_nightly,
                                     hour=23, minute=0, second=0),
@@ -448,6 +504,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
                                     hour=6, minute=0, second=0),
             async_track_time_change(hass, self._on_settle_time,
                                     minute=[0, 30], second=0),
+            async_track_time_change(hass, self._on_plan_time,
+                                    minute=5, second=0),
             async_at_started(hass, self._on_ha_started),
         ]
         self._init_native_tracking()
@@ -469,7 +527,12 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
 
     async def _on_ha_started(self, _hass: HomeAssistant) -> None:
         self.startup_task = self._spawn(
-            self._on_startup(), "geodrops_rachio_startup")
+            self._startup_then_plan(), "geodrops_rachio_startup")
+
+    async def _startup_then_plan(self) -> None:
+        await self._on_startup()
+        # After the safety check, so a run it starts or resumes owns the plan.
+        self.request_plan_refresh()
 
     async def async_shutdown(self) -> None:
         """Unsubscribe every trigger, cancel startup, timed jobs + run, and — the one behaviour
@@ -486,6 +549,10 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        self._hass = None
+        if self._cancel_plan_refresh is not None:
+            self._cancel_plan_refresh()
+            self._cancel_plan_refresh = None
         startup, self.startup_task = self.startup_task, None
         await _cancel_and_wait(startup)
         for job in list(self._jobs):

@@ -984,3 +984,210 @@ async def test_watering_window_is_unknown_without_a_drought_level(
     await _setup_observed(hass, ENTRY_DATA)
     assert hass.states.get(
         "sensor.geodrops_rachio_watering_window").state == "unknown"
+
+
+async def test_deficit_of_an_excluded_zone_is_shown_and_flagged(
+        hass, enable_pyscript_and_rachio):
+    """An excluded zone still gets a Deficit (nothing waters it, but how dry
+    it is still counts); the `excluded` attribute follows its switch."""
+    hass.states.async_set("sensor.d", "60.0")
+    entry = await _setup_zone(hass)
+    exclude = "switch.geodrops_rachio_front_exclude"
+    await hass.services.async_call("switch", "turn_on", {"entity_id": exclude},
+                                   blocking=True)
+    await entry.runtime_data.scheduler.async_publish_targets()
+    await hass.async_block_till_done()
+    deficit = hass.states.get("sensor.geodrops_rachio_front_deficit")
+    assert float(deficit.state) == 5.0               # moist: 67 - 2 - 60
+    assert deficit.attributes["excluded"] is True
+    await hass.services.async_call("switch", "turn_off", {"entity_id": exclude},
+                                   blocking=True)
+    await hass.async_block_till_done()
+    deficit = hass.states.get("sensor.geodrops_rachio_front_deficit")
+    assert deficit.attributes["excluded"] is False
+    assert float(deficit.state) == 5.0
+
+
+async def test_deficit_has_a_target_while_the_probe_is_offline(
+        hass, enable_pyscript_and_rachio):
+    """The floor does not depend on the probe, so a restart while GeoDrops is
+    still loading no longer leaves Deficit unknown until the nightly plan."""
+    hass.states.async_set("sensor.d", "unavailable")
+    entry = await _setup_zone(hass)
+    await entry.runtime_data.scheduler.async_publish_targets()
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.geodrops_rachio_front_deficit").state == "unavailable"
+    hass.states.async_set("sensor.d", "60.0")
+    await hass.async_block_till_done()
+    assert float(hass.states.get("sensor.geodrops_rachio_front_deficit").state) == 5.0
+
+
+def _plan_refreshes(entry):
+    return patch.object(entry.runtime_data.scheduler, "async_refresh_plan",
+                        AsyncMock())
+
+
+async def _settle(hass, seconds):
+    from datetime import timedelta
+    from homeassistant.util import dt as dt_util
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=seconds))
+    await hass.async_block_till_done()
+
+
+async def test_plan_refreshes_once_after_settings_change(
+        hass, enable_pyscript_and_rachio):
+    """Changing a setting that moves tonight's plan refreshes the Plan sensor;
+    a burst of changes refreshes it once."""
+    entry = await _setup_zone(hass)
+    await _settle(hass, 10)               # the refresh after startup
+    with _plan_refreshes(entry) as refresh:
+        await hass.services.async_call(
+            "select", "select_option",
+            {"entity_id": "select.geodrops_rachio_drought_level",
+             "option": "Level 3 - Critical"}, blocking=True)
+        await hass.services.async_call(
+            "switch", "turn_on",
+            {"entity_id": "switch.geodrops_rachio_front_exclude"}, blocking=True)
+        await hass.services.async_call(
+            "number", "set_value",
+            {"entity_id": "number.geodrops_rachio_finish_offset", "value": 15},
+            blocking=True)
+        await hass.async_block_till_done()
+        refresh.assert_not_awaited()
+        await _settle(hass, 10)
+        refresh.assert_awaited_once()
+
+
+async def test_plan_refreshes_when_a_moisture_target_changes(
+        hass, enable_pyscript_and_rachio):
+    entry = await _setup_zone(hass)
+    await _settle(hass, 10)
+    with _plan_refreshes(entry) as refresh:
+        await hass.services.async_call(
+            "select", "select_option",
+            {"entity_id": "select.geodrops_rachio_front_moisture_target",
+             "option": "wet"}, blocking=True)
+        await _settle(hass, 10)
+        refresh.assert_awaited_once()
+
+
+async def test_plan_refreshes_hourly_and_after_startup(
+        hass, enable_pyscript_and_rachio, freezer):
+    freezer.move_to("2026-07-01 12:00:00+00:00")
+    with patch("custom_components.geodrops_rachio.engine.scheduler.Scheduler"
+               ".async_refresh_plan", AsyncMock()) as refresh:
+        await _setup_zone(hass)
+        await _settle(hass, 10)
+        assert refresh.await_count == 1           # after startup
+        freezer.move_to("2026-07-01 13:05:00+00:00")
+        await _settle(hass, 0)
+        await _settle(hass, 10)
+        assert refresh.await_count == 2           # hourly, at :05
+
+
+async def test_plan_refresh_shows_tonights_plan(hass, enable_pyscript_and_rachio):
+    """End to end: the refreshed Plan sensor counts tonight's zones and says
+    it was made automatically, with no notification sent."""
+    from datetime import timedelta
+    from homeassistant.util import dt as dt_util
+    hass.states.async_set("sensor.d", "40.0")
+    hass.states.async_set("sensor.s", "dry")
+    tomorrow = dt_util.now() + timedelta(hours=20)
+    hass.states.async_set("sensor.sun_next_dawn", tomorrow.isoformat())
+    hass.states.async_set("sensor.sun_next_rising",
+                          (tomorrow + timedelta(minutes=30)).isoformat())
+    entry = await _setup_zone(hass)
+    with patch.object(entry.runtime_data.scheduler, "_notify", AsyncMock()) as notify:
+        await entry.runtime_data.scheduler.async_refresh_plan()
+        await hass.async_block_till_done()
+    plan = hass.states.get("sensor.geodrops_rachio_plan")
+    assert plan.attributes["source"] == "auto"
+    assert plan.state == str(len(plan.attributes["planned_minutes"]))
+    notify.assert_not_awaited()
+
+
+async def test_plan_refresh_failure_keeps_the_last_plan(
+        hass, enable_pyscript_and_rachio):
+    entry = await _setup_zone(hass)
+    scheduler = entry.runtime_data.scheduler
+    with patch.object(scheduler, "_load_cfg", side_effect=ValueError("bad")):
+        await scheduler.async_refresh_plan()      # logged at debug, not raised
+
+
+async def test_plan_refresh_is_ignored_once_unloaded(
+        hass, enable_pyscript_and_rachio):
+    entry = await _setup_zone(hass)
+    scheduler = entry.runtime_data.scheduler
+    scheduler.request_plan_refresh()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert scheduler._cancel_plan_refresh is None
+    scheduler.request_plan_refresh()
+    assert scheduler._cancel_plan_refresh is None
+
+
+_TONIGHT = {"datetime": "2026-06-15T22:00:00+00:00", "temperature": 70.0,
+            "humidity": 90, "wind_speed": 3.0}
+
+
+async def test_forecast_sensor_retries_until_tonight_is_in_the_forecast(
+        hass, enable_pyscript_and_rachio, freezer):
+    """At startup the weather integration may answer with no hours yet: the
+    sensor retries every minute instead of reading unknown for an hour."""
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-06-15 21:00:00")
+    hass.states.async_set("weather.home", "cloudy", {"temperature_unit": "°F"})
+    forecast: list = []
+    await _setup_forecast(hass, forecast)
+    temp_id = "sensor.geodrops_rachio_forecast_overnight_temp"
+    assert hass.states.get(temp_id).state == "unknown"
+    forecast.append(_TONIGHT)
+    freezer.tick(61)
+    await _settle(hass, 0)
+    assert _native(hass, temp_id) == 70.0
+
+
+async def test_forecast_retries_stop_after_a_while(
+        hass, enable_pyscript_and_rachio, freezer):
+    from homeassistant.core import SupportsResponse
+    from custom_components.geodrops_rachio import sensor as sensor_mod
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-06-15 21:00:00")
+    calls = []
+
+    async def get_forecasts(call):
+        calls.append(call.data["entity_id"])
+        return {"weather.home": {"forecast": []}}
+
+    hass.services.async_register("weather", "get_forecasts", get_forecasts,
+                                 supports_response=SupportsResponse.ONLY)
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        **ENTRY_DATA, "bindings": {"forecast_entity": "weather.home"}})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    per_sensor = len(calls)               # one read per forecast sensor
+    for _ in range(sensor_mod._FORECAST_RETRIES + 5):
+        freezer.tick(61)
+        await _settle(hass, 0)
+    assert len(calls) == per_sensor * (1 + sensor_mod._FORECAST_RETRIES)
+
+
+async def test_forecast_sensor_refreshes_when_the_weather_entity_comes_up(
+        hass, enable_pyscript_and_rachio, freezer):
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-06-15 21:00:00")
+    hass.states.async_set("weather.home", "unavailable")
+    forecast: list = []
+    await _setup_forecast(hass, forecast)
+    temp_id = "sensor.geodrops_rachio_forecast_overnight_temp"
+    assert hass.states.get(temp_id).state == "unknown"
+    forecast.append(_TONIGHT)
+    hass.states.async_set("weather.home", "cloudy", {"temperature_unit": "°F"})
+    await hass.async_block_till_done()
+    assert _native(hass, temp_id) == 70.0
+    # An ordinary weather change (cloudy -> rainy) is not a reason to re-read.
+    forecast[0] = dict(_TONIGHT, temperature=50.0)
+    hass.states.async_set("weather.home", "rainy", {"temperature_unit": "°F"})
+    await hass.async_block_till_done()
+    assert _native(hass, temp_id) == 70.0

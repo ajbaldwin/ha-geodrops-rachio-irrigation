@@ -91,9 +91,14 @@ def _assert_branch(name, eng, logs):
         assert value == 2 and sorted(attrs["watered"]) == ["back", "front"]
         assert "window_start_dropped" not in attrs
         assert "recovery_added" not in attrs
-        assert nightly is not None and preview is None
+        assert nightly is not None
+        # The Plan sensor shows the night's own plan.
+        assert preview is not None and preview[0] == 2
+        assert preview[1]["source"] == "nightly"
     elif name == "standby":
         assert attrs["skipped"] == "standby" and value == 0
+        assert preview is not None and preview[0] == 0
+        assert preview[1]["standby"] is True
     elif name == "rain_skip_at_plan":
         assert attrs["skipped"] == "rain-forecast" and value == 0
     elif name == "rain_skip_at_window_start":
@@ -127,6 +132,7 @@ def _assert_branch(name, eng, logs):
     elif name == "preview_during_wait":
         assert preview is not None and preview[0] == 2
         assert preview[1]["updated"] == "2026-07-02T01:00:00"
+        assert preview[1]["source"] == "preview"
         assert value == 2 and attrs["aborted_reason"] is None
     else:  # pragma: no cover - every scenario must be pinned
         raise AssertionError(f"no branch evidence for {name}")
@@ -202,3 +208,77 @@ async def test_run_now_waters_through_a_rain_forecast(freezer, caplog):
     rec = eng.records["last_run"]
     assert "skipped" not in rec["attributes"] and rec["value"] == 2
     assert "watering anyway (manual run)" in caplog.text
+
+
+async def test_automatic_plan_refresh_is_silent_and_saves_nothing(freezer):
+    """The Plan sensor's own refresh plans like Preview but sends no
+    notification or Logbook entry and leaves the calibration store alone
+    (an excluded zone is not stamped until a real plan sees it)."""
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    w.set("switch.geodrops_rachio_back_exclude", "on")
+    eng = native_engine(w, data, *ALL_MIXINS)
+    calls_before = len(w.calls)
+    await eng._preview(announce=False)
+    value, attrs = _record(eng, "preview")
+    assert value == 1 and attrs["source"] == "auto"
+    assert attrs["skipped"] == {"back": "excluded"}
+    assert w.calls[calls_before:] == []
+    assert eng.store.read(EFFICACY) is None
+
+    await eng._preview()                  # the button still stamps it
+    assert "excluded_since" in eng.store.read(EFFICACY)["back"]
+    assert _record(eng, "preview")[1]["source"] == "preview"
+
+
+async def test_automatic_plan_refresh_in_standby_is_silent(freezer):
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    w.set("switch.geodrops_rachio_standby", "on")
+    eng = native_engine(w, data, *ALL_MIXINS)
+    calls_before = len(w.calls)
+    await eng._preview(announce=False)
+    value, attrs = _record(eng, "preview")
+    assert value == 0 and attrs["standby"] is True and attrs["source"] == "auto"
+    assert w.calls[calls_before:] == []
+
+
+@pytest.mark.parametrize("busy", ["_run_in_progress", "_watering_active"])
+async def test_automatic_plan_refresh_leaves_a_runs_plan_alone(freezer, busy):
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    eng = native_engine(w, data, *ALL_MIXINS)
+    setattr(eng, busy, True)
+    await eng._preview(announce=False)
+    assert "preview" not in eng.records
+    assert w.calls == []
+
+
+async def test_automatic_plan_refresh_yields_to_a_run_starting_meanwhile(freezer):
+    """A run that starts while the refresh plans owns the plan, and keeps the
+    config it installed."""
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    eng = native_engine(w, data, *ALL_MIXINS)
+    run_cfg = eng._load_cfg()
+    real = eng._plan_context
+
+    async def plan_then_start_run(cfg, dry=False):
+        ctx = await real(cfg, dry=dry)
+        eng._run_in_progress = True
+        eng._current_cfg = run_cfg
+        return ctx
+
+    eng._plan_context = plan_then_start_run
+    await eng._preview(announce=False)
+    assert "preview" not in eng.records
+    assert eng._current_cfg is run_cfg
+
+
+async def test_run_now_shows_its_plan(freezer):
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    eng = native_engine(w, data, *ALL_MIXINS)
+    await eng._plan_and_run(False, "run_now")
+    value, attrs = _record(eng, "preview")
+    assert value == 2 and attrs["source"] == "run_now"

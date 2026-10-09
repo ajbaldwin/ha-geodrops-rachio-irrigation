@@ -435,7 +435,8 @@
  "targets": {
   "friendly_name": "Irrigation Target Floors",
   "target_floors": {
-   "back": 65
+   "back": 65,
+   "front": 65
   },
   "updated": "2026-07-01T23:00:00"
  }
