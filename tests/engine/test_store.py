@@ -1,9 +1,11 @@
 import json
 import logging
 
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import async_mock_service
 
+from custom_components.geodrops_rachio.const import DOMAIN
 from custom_components.geodrops_rachio.engine import store as es
 
 
@@ -66,6 +68,7 @@ async def test_open_store_imports_legacy_and_retires_pyscript(hass, tmp_path):
     assert not (ps / "modules" / "geodrops_rachio_lib").exists()
     assert (ps / "geodrops_rachio_state" / "irrigation_efficacy.json").exists()
     assert len(reloads) == 1
+    assert ir.async_get(hass).async_get_issue(DOMAIN, "legacy_script_loaded") is None
     stored = await Store(hass, es.STORAGE_VERSION, "geodrops_rachio.entry1").async_load()
     assert stored["docs"]["efficacy"] == {"front": {"efficacy": 0.4}}
 
@@ -120,6 +123,11 @@ async def test_open_store_survives_failing_pyscript_reload(hass, tmp_path, caplo
     assert any("pyscript.reload failed" in m and "exploded" in m for m in msgs)
     assert any("pyscript reloaded: False" in m for m in msgs)
     assert not [r for r in caplog.records if r.levelname == "ERROR"]
+    # The old script may still be loaded: a restart is the fix.
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, "legacy_script_loaded")
+    assert issue is not None and issue.severity is ir.IssueSeverity.ERROR
+    assert not issue.is_persistent
+    assert "exploded" in issue.translation_placeholders["error"]
 
 
 async def test_open_store_fresh_install_logs_the_new_store(hass, tmp_path, caplog):

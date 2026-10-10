@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.geodrops_rachio.const import DOMAIN
@@ -423,6 +424,14 @@ async def test_failed_platform_unload_is_logged(hass, enable_pyscript_and_rachio
         assert not await hass.config_entries.async_unload(entry.entry_id)
     assert any(r.levelname == "WARNING" and "did not unload" in r.getMessage()
                for r in caplog.records)
+    # Nothing waters until a restart, which also clears the issue.
+    issue_id = f"unload_failed_{entry.entry_id}"
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert issue is not None and issue.severity is ir.IssueSeverity.ERROR
+    assert not issue.is_persistent
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
 
 
 async def test_removing_entry_deletes_its_store(hass, hass_storage, enable_pyscript_and_rachio):

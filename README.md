@@ -361,6 +361,17 @@ Keep a newly seeded zone out of the plan and calibration:
 - **"Entities used by … are missing"** in Settings → Repairs: an entity picked
   in setup was deleted. Pick a replacement under Configure; the notice clears
   on its own.
+- **Other notices in Settings → Repairs**, each of which clears on its own once fixed:
+  - *Entities … have been unavailable for a day*: the integration providing
+    them is down. Fix it, or pick replacements under Configure.
+  - *… cannot control the Rachio controller*: the Rachio integration is not
+    loaded, so safety stops fail. Fix or re-add it.
+  - *… names a Rachio controller that is not on the account*: the controller
+    was renamed in the Rachio app. Pick it again under Configure → Core Setup.
+  - *The notification service … does not exist*: pick another under
+    Configure → Core Setup.
+  - *… stopped and could not restart* or *The old … pyscript may still be
+    running*: restart Home Assistant.
 - **Home Assistant asks for the Rachio API key**: Rachio rejected it. Enter a
   current key (Rachio web app → Account Settings → Get API Key).
 - **Setup is retrying with "The advanced overrides are not valid"**: fix the
