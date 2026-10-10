@@ -4,6 +4,31 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.2 — Repairs for problems that were only logged
+
+### Changes
+
+- **New notices in Settings → Repairs.** Problems that used to show only in
+  the log now each raise a notice that clears once fixed:
+  - **Rachio integration not loaded** (not installed, removed, or retrying
+    setup): the scheduler cannot stop, pause or resume the controller, so a
+    safety stop would fail.
+  - **Rachio controller not on the account**: the controller was renamed in
+    the Rachio app. Rachio ignores an unknown name without an error, so a
+    safety stop would leave the valves running. Pick it again under
+    Configure → Core Setup.
+  - **Notification service does not exist**: recaps were silently lost. Pick
+    another under Configure → Core Setup.
+  - **Entities unavailable for a day**: a valve switch or sensor whose
+    integration is down. Like a deleted one, it stops the zone from watering.
+  - **Could not restart** after a failed unload, and **old pyscript may still
+    be running** after the v0.9 cutover: restart Home Assistant.
+- **Starts after the Rachio integration** at boot, so the startup safety
+  check finds Rachio's valve switches already loaded.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.1-beta.1 → restart.
+
 ## v1.3.1-beta.1 — Deficit on excluded zones; Plan keeps itself current
 
 ### Fixes
