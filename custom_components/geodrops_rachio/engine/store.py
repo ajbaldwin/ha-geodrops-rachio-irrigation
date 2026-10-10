@@ -21,6 +21,7 @@ from typing import Any, Awaitable, Callable
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
+from .. import issues
 from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -129,6 +130,7 @@ async def async_open_store(hass: HomeAssistant, entry_id: str) -> EngineStore:
             _LOGGER.warning(
                 "pyscript.reload failed after removing the legacy script (%s); restart "
                 "Home Assistant to be sure it is unloaded", err)
+            issues.async_legacy_script_loaded(hass, str(err))
     if data is None or removed:
         docs = await hass.async_add_executor_job(
             read_legacy_state, pyscript_dir / LEGACY_STATE_DIRNAME)

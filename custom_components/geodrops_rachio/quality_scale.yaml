@@ -146,8 +146,11 @@ rules:
   repair-issues:
     status: done
     comment: >-
-      An issue lists entities picked in setup that no longer exist. Reauth
-      covers a rejected API key.
+      Issues report what the scheduler depends on and only logs: bound
+      entities missing or unavailable for a day, the Rachio integration not
+      loaded, a controller name the account does not have, a missing notify
+      service, a failed unload, and a legacy pyscript that may still be
+      loaded. Reauth covers a rejected API key.
   stale-devices:
     status: done
     comment: Devices of removed zones are purged on setup.

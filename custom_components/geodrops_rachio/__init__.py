@@ -102,7 +102,7 @@ async def async_setup_entry(hass: HomeAssistant,
     entry.async_on_unload(
         hass.async_add_shutdown_job(HassJob(scheduler.async_shutdown)))
     entry.async_on_unload(entry.add_update_listener(_reload_on_options))
-    entry.async_on_unload(issues.async_track_missing(hass, entry))
+    entry.async_on_unload(issues.async_track(hass, entry))
     # Re-raised by the next setup if still true; a disabled or deleted entry
     # must not leave it behind.
     entry.async_on_unload(lambda: issues.async_clear(hass, entry))
@@ -126,12 +126,15 @@ async def _async_check_api_key(hass: HomeAssistant, entry: ConfigEntry,
     try:
         if not key:
             raise rachio_client.RachioAuthError("no Rachio API key is set")
-        await rachio_client.async_fetch_account(session, key)
+        _account, devices = await rachio_client.async_fetch_account(session, key)
     except rachio_client.RachioAuthError:
         entry.async_start_reauth(hass)
     except rachio_client.RachioConnectionError as err:
         _LOGGER.info("Rachio is not reachable (%s); zones keep their stored "
                      "runtimes until it is", err)
+    else:
+        issues.async_check_rachio_device(
+            hass, entry, [d.get("name") or "" for d in devices])
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -320,9 +323,11 @@ async def async_unload_entry(hass: HomeAssistant,
         _LOGGER.warning(
             "platforms did not unload; the scheduler is already stopped, so no nightly "
             "run will fire until Home Assistant restarts")
+        issues.async_unload_failed(hass, entry)
     return ok
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # The calibration history and run records live only in this entry's Store.
     await async_remove_store(hass, entry.entry_id)
+    issues.async_clear_unload_failed(hass, entry)

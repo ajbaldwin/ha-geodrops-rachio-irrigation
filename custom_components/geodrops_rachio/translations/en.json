@@ -481,6 +481,30 @@
     "missing_entities": {
       "title": "Entities used by {title} are missing",
       "description": "These entities, picked when {title} was set up, no longer exist: {entities}.\n\nThe scheduler reads a missing entity as off or as no reading, so a zone whose valve switch or moisture sensor is missing will not be watered.\n\nIf you renamed one, it is followed automatically; this means it was deleted or its integration was removed. Go to **Settings → Devices & services → GeoDrops + Rachio Irrigation → Configure** and pick a replacement, or restore the entity. This notice clears once nothing is missing."
+    },
+    "unavailable_entities": {
+      "title": "Entities used by {title} have been unavailable for a day",
+      "description": "These entities, picked when {title} was set up, have been unavailable for at least 24 hours: {entities}.\n\nThe scheduler reads an unavailable entity as off or as no reading, so a zone whose valve switch or moisture sensor is unavailable will not be watered.\n\nThe entities still exist; the integration or device that provides them is not responding. Check it under **Settings → Devices & services**, or pick a replacement under **Settings → Devices & services → GeoDrops + Rachio Irrigation → Configure**. This notice clears as soon as each of them reports again."
+    },
+    "rachio_not_loaded": {
+      "title": "{title} cannot control the Rachio controller",
+      "description": "The Rachio integration is not loaded, so {title} cannot stop, pause or resume the controller. A run's safety stop (after a restart, a reset or the Stop button) will fail, and soak pauses will not take effect.\n\nGo to **Settings → Devices & services → Rachio** and fix or re-add it. If it is retrying setup (for example while Rachio's cloud is down), this notice clears by itself once it loads."
+    },
+    "rachio_device_unknown": {
+      "title": "{title} names a Rachio controller that is not on the account",
+      "description": "{title} stops, pauses and resumes the controller named {device}, but the Rachio account has no controller by that name. Its controllers: {controllers}.\n\nRachio ignores a name it does not know, without an error, so a safety stop would leave the valves running.\n\nThis usually means the controller was renamed in the Rachio app. Go to **Settings → Devices & services → GeoDrops + Rachio Irrigation → Configure** → Core Setup and pick the controller again. This notice is re-checked each time the integration starts."
+    },
+    "notify_missing": {
+      "title": "The notification service for {title} does not exist",
+      "description": "{title} sends each night's recap to {service}, which does not exist, so recaps are not delivered. Run records and the calendar entry are still written.\n\nA notify service usually disappears when its integration is removed or the mobile app is reinstalled under a new name. Go to **Settings → Devices & services → GeoDrops + Rachio Irrigation → Configure** → Core Setup and pick another. This notice clears as soon as the service exists."
+    },
+    "unload_failed": {
+      "title": "{title} stopped and could not restart",
+      "description": "{title} could not finish unloading, so its scheduler is stopped: no nightly run will start until Home Assistant restarts.\n\nRestart Home Assistant. This notice clears with the restart."
+    },
+    "legacy_script_loaded": {
+      "title": "The old GeoDrops + Rachio pyscript may still be running",
+      "description": "The integration removed the pyscript version of the scheduler (v0.9) from `/config/pyscript`, but reloading pyscript failed ({error}). The old script may still be loaded and could water a second time tonight.\n\nRestart Home Assistant. This notice clears with the restart."
     }
   }
 }
