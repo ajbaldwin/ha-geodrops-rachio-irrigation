@@ -4,6 +4,31 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.3 — Calibration uses when GeoDrops took the reading
+
+### Fixes
+
+- **Calibration counts a reading by when it was taken.** It used to count one
+  by when it reached Home Assistant. A Droplet uploads readings in batches up
+  to about 3 hours apart, so a reading taken before watering ended could
+  arrive after it and count as a post-watering sample. GeoDrops' twice-daily
+  reprocessing, which changes values without taking a new reading, counted too.
+  Calibration now reads each probe's *Last Reading* sensor, so neither counts.
+  Moisture sensors from other integrations keep the old behavior.
+- **Retention was measured too early.** The "retained" reading could show
+  the soil at the end of watering, which made zones look like they held more
+  water than they do.
+
+### Changes
+
+- **Retained reading taken 6 hours after watering** (was 4), and an
+  observation now waits for that reading before it is scored. Expect learned
+  retention to drop over the next several calibration nights, and zones to
+  run somewhat longer as a result.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.1-beta.2 → restart.
+
 ## v1.3.1-beta.2 — Repairs for problems that were only logged
 
 ### Changes
