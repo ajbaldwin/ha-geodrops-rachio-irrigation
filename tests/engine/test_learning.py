@@ -36,6 +36,22 @@ async def _poll(w, eng, polls):
         await eng._settle_and_learn()
 
 
+# Polls to 23:30: past finalize (11:30) plus settle_max_wait_hours (12 h), when
+# an obs that never saw a retained reading finalizes on its peak alone.
+PEAK_ONLY = 38
+
+
+def _geodrops(w, zone):
+    """Give the zone's dominant sensor a GeoDrops "Last Reading" sibling."""
+    w.reading_links[f"sensor.{zone}_dominant"] = f"sensor.{zone}_last_reading"
+
+
+def _reading(w, zone, value, taken):
+    """A GeoDrops reading TAKEN at `taken` arriving in HA now."""
+    w.set(f"sensor.{zone}_dominant", value)
+    w.set(f"sensor.{zone}_last_reading", taken)
+
+
 def _logbook(w):
     return [d["message"] for dom, svc, d in w.calls if (dom, svc) == ("logbook", "log")]
 
@@ -50,9 +66,9 @@ def _logs(caplog):
 async def test_accept_with_a_retained_reading_learns_retention(freezer):
     w, eng = _engine(freezer, pending=[_obs("front")])
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))  # peak
-    # From run_end + settle_hours (08:30) on, readings count as "retained".
-    w.at("2026-07-02 09:00:00", lambda: w.set("sensor.front_dominant", "64.0"))
-    await _poll(w, eng, 14)                # to 11:30, past finalize (10:30)
+    # From run_end + settle_hours (10:30) on, readings count as "retained".
+    w.at("2026-07-02 11:00:00", lambda: w.set("sensor.front_dominant", "64.0"))
+    await _poll(w, eng, 15)                # to 12:00, past finalize (11:30)
     front = eng.store.read(EFFICACY)["front"]
     assert front["n_obs"] == 1 and front["last_reject_reason"] is None
     assert front["retention"] == pytest.approx(0.5)   # (64-60)/(68-60)
@@ -63,9 +79,58 @@ async def test_accept_with_a_retained_reading_learns_retention(freezer):
 async def test_accept_without_a_retained_reading_keeps_retention_unset(freezer):
     w, eng = _engine(freezer, pending=[_obs("front")])
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY - 1)
+    assert eng.store.read(PENDING_OBS) == [{**_obs("front"), "peak": 68.0,
+        "last_seen_updated": "2026-07-02T05:00:00+00:00"}]   # still waiting
+    await _poll(w, eng, 1)
     front = eng.store.read(EFFICACY)["front"]
     assert front["n_obs"] == 1 and front["retention"] is None
+
+
+# --- GeoDrops reading time ------------------------------------------------
+
+async def test_geodrops_samples_are_gated_on_when_the_reading_was_taken(freezer):
+    """A batched upload delivers a reading taken BEFORE run_end after it, and
+    the reprocess rewrites the value with no new reading: neither is a
+    post-watering sample. Retained keys off the reading time, not arrival."""
+    w, eng = _engine(freezer, pending=[_obs("front")])
+    _geodrops(w, "front")
+    _reading(w, "front", "59.0", "2026-07-02T04:00:00+00:00")
+    # 05:00: a pre-run reading uploaded late — ignored
+    w.at("2026-07-02 05:00:00", lambda: _reading(
+        w, "front", "61.0", "2026-07-02T04:20:00+00:00"))
+    # 07:00: post-run readings land in one batch; the latest shows the peak
+    w.at("2026-07-02 07:00:00", lambda: _reading(
+        w, "front", "68.0", "2026-07-02T05:00:00+00:00"))
+    # 11:00: reading taken at 09:30 (before the 10:30 settle floor): peak-only
+    w.at("2026-07-02 11:00:00", lambda: _reading(
+        w, "front", "66.0", "2026-07-02T09:30:00+00:00"))
+    # 12:00: the reprocess rewrites the value; the reading time doesn't move
+    w.at("2026-07-02 12:00:00", lambda: w.set("sensor.front_dominant", "90.0"))
+    await _poll(w, eng, 16)                # to 12:30, past finalize (11:30)
+    [rec] = eng.store.read(PENDING_OBS)
+    assert rec["peak"] == 68.0 and rec["retained"] is None
+    assert rec["last_seen_updated"] == "2026-07-02T09:30:00+00:00"
+    # 14:00: a reading taken at 11:00 arrives — retained, and the obs finalizes
+    w.at("2026-07-02 14:00:00", lambda: _reading(
+        w, "front", "64.0", "2026-07-02T11:00:00+00:00"))
+    await _poll(w, eng, 4)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["n_obs"] == 1
+    assert front["last_rise"] == pytest.approx(8.0)
+    assert front["retention"] == pytest.approx(0.5)   # (64-60)/(68-60)
+    assert eng.store.read(PENDING_OBS) == []
+
+
+@pytest.mark.parametrize("stamp", ["unavailable", "unknown", "2026-07-02T05:00:00"])
+async def test_an_unusable_last_reading_is_not_fresh(freezer, stamp):
+    """With a Last Reading sensor present, an unusable stamp (unavailable,
+    unknown, or naive) never falls back to the HA last_updated."""
+    w, eng = _engine(freezer, pending=[_obs("front")])
+    _geodrops(w, "front")
+    w.at("2026-07-02 05:00:00", lambda: _reading(w, "front", "68.0", stamp))
+    await _poll(w, eng, 4)
+    assert eng.store.read(PENDING_OBS) == [_obs("front")]
 
 
 async def test_obs_for_an_unconfigured_zone_or_bad_timestamp_is_dropped(freezer):
@@ -97,7 +162,7 @@ async def test_unparseable_last_seen_stamp_counts_as_never_seen(freezer):
     obs = {**_obs("front"), "last_seen_updated": "garbage"}
     w, eng = _engine(freezer, pending=[obs])
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY)
     front = eng.store.read(EFFICACY)["front"]
     assert front["n_obs"] == 1 and front["last_rise"] == pytest.approx(8.0)
 
@@ -122,7 +187,7 @@ async def test_obs_finalizing_together_fetch_runtimes_once(freezer):
         fetches.append(1)
         return await real()
     eng.get_runtimes = counting
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY)
     eff = eng.store.read(EFFICACY)
     assert eff["front"]["n_obs"] == 1 and eff["back"]["n_obs"] == 1
     assert len(fetches) == 1
@@ -151,7 +216,7 @@ async def test_an_obs_appended_during_the_settle_poll_is_kept(freezer):
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
     late = _obs("back", run_end="2026-07-02T10:30:00+00:00")
     tasks = _during_runtime_fetch(eng, lambda: eng._append_pending_obs([late]))
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY)
     await asyncio.gather(*tasks)
     assert tasks and eng.store.read(PENDING_OBS) == [late]
 
@@ -163,7 +228,7 @@ async def test_an_obs_dropped_during_the_settle_poll_stays_dropped(freezer):
         _obs("front"), _obs("back", run_end="2026-07-02T10:00:00+00:00")])
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
     tasks = _during_runtime_fetch(eng, lambda: eng._drop_pending_obs(["back"]))
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY)
     await asyncio.gather(*tasks)
     assert tasks and eng.store.read(PENDING_OBS) == []
 
@@ -173,7 +238,7 @@ async def test_obs_without_a_pre_reading_or_minutes_is_dropped_unlearned(
         freezer, field, value):
     w, eng = _engine(freezer, pending=[{**_obs("front"), field: value}])
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY)
     assert eng.store.read(PENDING_OBS) == []
     assert eng.store.read(EFFICACY) == {"front": {"state": "calibrating"}}
 
@@ -184,7 +249,7 @@ async def test_accept_trims_recent_and_counts_a_miss(freezer):
         "state": "calibrating", "efficacy": 0.1, "recent": [0.1, 0.2, 0.3],
         "miss_streak": 0}})
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY)
     front = eng.store.read(EFFICACY)["front"]
     # (68-60)/20 = 0.4 per minute: appended, oldest dropped (convergence_samples=3).
     assert front["recent"] == pytest.approx([0.2, 0.3, 0.4])
@@ -198,7 +263,7 @@ async def test_a_corrupt_zone_record_skips_that_obs(freezer, caplog):
     w, eng = _engine(freezer, pending=[_obs("front")])
     await eng.store.write(EFFICACY, {"front": "corrupt"})
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY)
     assert eng.store.read(PENDING_OBS) == []
     assert eng.store.read(EFFICACY) == {"front": "corrupt"}
     assert any(r.getMessage().startswith("settle-and-learn skipped a record (")
@@ -342,6 +407,6 @@ async def test_all_training_depths_reject_the_sample_in_either_format(freezer):
     w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
     for q in ("sensor.front_q1", "sensor.front_q2", "sensor.front_q3"):
         w.at("2026-07-02 10:00:00", lambda q=q: w.set(q, "training"))
-    await _poll(w, eng, 14)
+    await _poll(w, eng, PEAK_ONLY)
     front = eng.store.read(EFFICACY)["front"]
     assert front["last_reject_reason"] == "training" and front["efficacy"] is None

@@ -238,7 +238,8 @@ def should_probe(state: str, dominant_now: float, pinned: bool, t: Tunables) -> 
 
 
 def settle_decision(now: dt.datetime, run_end: dt.datetime, retain_hours: float,
-                    max_wait_hours: float, has_sample: bool) -> str:
+                    max_wait_hours: float, has_sample: bool,
+                    has_retained: bool = False) -> str:
     """Decide how to handle one pending calibration obs at this poll.
 
     Accumulate model: the poll folds each genuine reading into the obs (peak +
@@ -246,49 +247,56 @@ def settle_decision(now: dt.datetime, run_end: dt.datetime, retain_hours: float,
 
     Returns:
       "accumulate" - before finalize (now < run_end + retain_hours), OR past it
-                     with no genuine sample yet but still within the grace
+                     without a retained sample yet but still within the grace
                      window. Keep the obs pending and keep collecting.
-      "finalize"   - now >= run_end + retain_hours AND at least one genuine
-                     sample was captured (has_sample). Compute + accept.
+      "finalize"   - now >= run_end + retain_hours AND a retained sample was
+                     captured (has_retained); or past finalize + max_wait_hours
+                     with only a peak sample (has_sample), so efficacy still
+                     learns and retention is left unchanged. Compute + accept.
       "expired"    - past finalize + max_wait_hours with no sample ever. Drop
                      the obs (never reject, never touch the model).
 
-    A captured sample always finalizes once ripe, even past the grace window.
+    The retained sample is gated on when its reading was TAKEN, and a GeoDrops
+    reading reaches HA hours after that, so finalize waits through the grace
+    window for one rather than settling for peak-only at the first ripe poll.
+    A captured sample always finalizes, at the latest once the grace window ends.
     """
     finalize_at = run_end + dt.timedelta(hours=retain_hours)
     if now < finalize_at:
         return "accumulate"
-    if has_sample:
+    if has_retained:
         return "finalize"
-    if now >= finalize_at + dt.timedelta(hours=max_wait_hours):
-        return "expired"
-    return "accumulate"
+    if now < finalize_at + dt.timedelta(hours=max_wait_hours):
+        return "accumulate"
+    return "finalize" if has_sample else "expired"
 
 
 def accumulate_sample(
         peak: float | None, retained: float | None, last_seen: dt.datetime | None,
-        value: float | None, last_updated: dt.datetime | None, now: dt.datetime,
+        value: float | None, read_at: dt.datetime | None,
         run_end: dt.datetime, settle_hours: float,
 ) -> tuple[float | None, float | None, dt.datetime | None, bool]:
     """Fold one candidate sensor reading into an obs accumulator.
 
-    Counts only a genuinely new report (last_updated strictly newer than
-    last_seen — a stale MQTT republish carries the same last_updated) made at
-    or after run_end (an earlier report predates the watering's end). peak is
-    the running max from run_end on; retained is the latest reading at/after
-    run_end + settle_hours. Returns (peak, retained, last_seen, changed).
+    `read_at` is when the reading was TAKEN (GeoDrops' Last Reading), not when
+    HA received it. Counts only a genuinely new reading (read_at strictly newer
+    than last_seen — a stale republish, or GeoDrops' reprocess rewriting the
+    value, carries the same read_at) taken at or after run_end (an earlier
+    reading predates the watering's end, however late it was uploaded). peak is
+    the running max from run_end on; retained is the latest reading taken at or
+    after run_end + settle_hours. Returns (peak, retained, last_seen, changed).
     """
-    if value is None or last_updated is None:
+    if value is None or read_at is None:
         return peak, retained, last_seen, False
-    if last_seen is not None and last_updated <= last_seen:
+    if last_seen is not None and read_at <= last_seen:
         return peak, retained, last_seen, False
-    if last_updated < run_end:
+    if read_at < run_end:
         return peak, retained, last_seen, False
     new_peak = value if peak is None else max(peak, value)
     new_ret = retained
-    if now >= run_end + dt.timedelta(hours=settle_hours):
+    if read_at >= run_end + dt.timedelta(hours=settle_hours):
         new_ret = value
-    return new_peak, new_ret, last_updated, True
+    return new_peak, new_ret, read_at, True
 
 
 def retention_factor(pre: float, peak: float, retained: float | None,

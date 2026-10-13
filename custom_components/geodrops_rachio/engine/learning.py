@@ -170,7 +170,7 @@ class LearningMixin(PlanningMixin):
                 signals = self._read_zone_signals(zone_cfg)
                 reading = sensors.read_zone(zone_cfg, signals)
                 value = reading.dominant if reading.online else None
-                last_updated = self._sensor_last_updated(zone_cfg.dominant_sensor)
+                read_at = self._sensor_reading_time(zone_cfg.dominant_sensor)
                 try:
                     last_seen = (dt.datetime.fromisoformat(rec["last_seen_updated"])
                                  if rec.get("last_seen_updated") else None)
@@ -178,14 +178,14 @@ class LearningMixin(PlanningMixin):
                     last_seen = None
                 peak, retained, last_seen, _ch = calibration.accumulate_sample(
                     rec.get("peak"), rec.get("retained"), last_seen,
-                    value, last_updated, now, run_end, tun.settle_hours)
+                    value, read_at, run_end, tun.settle_hours)
                 rec["peak"] = peak
                 rec["retained"] = retained
                 rec["last_seen_updated"] = last_seen.isoformat() if last_seen else None
                 # --- decide ---
                 decision = calibration.settle_decision(
                     now, run_end, tun.retain_hours, tun.settle_max_wait_hours,
-                    peak is not None)
+                    peak is not None, retained is not None)
             except Exception as err:
                 # A single zone's missing/renamed sensor (or any other accumulate
                 # failure) must not abort the whole poll and must not drop the

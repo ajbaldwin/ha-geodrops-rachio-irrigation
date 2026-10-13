@@ -83,9 +83,17 @@ def test_settle_decision_accumulates_before_finalize():
     assert calibration.settle_decision(_t(3), _t(0), 6.0, 12.0, True) == "accumulate"
     assert calibration.settle_decision(_t(3), _t(0), 6.0, 12.0, False) == "accumulate"
 
-def test_settle_decision_finalizes_when_ripe_with_sample():
-    assert calibration.settle_decision(_t(6), _t(0), 6.0, 12.0, True) == "finalize"   # boundary
-    assert calibration.settle_decision(_t(9), _t(0), 6.0, 12.0, True) == "finalize"
+def test_settle_decision_finalizes_when_ripe_with_retained():
+    assert calibration.settle_decision(_t(6), _t(0), 6.0, 12.0, True, True) == "finalize"   # boundary
+    assert calibration.settle_decision(_t(9), _t(0), 6.0, 12.0, True, True) == "finalize"
+
+def test_settle_decision_waits_for_retained_then_finalizes_peak_only():
+    # ripe with a peak but no retained reading yet: a reading taken after the
+    # settle floor may still be uploading, so keep collecting through the grace
+    assert calibration.settle_decision(_t(6), _t(0), 6.0, 12.0, True) == "accumulate"
+    assert calibration.settle_decision(_t(17), _t(0), 6.0, 12.0, True) == "accumulate"
+    # grace over: finalize on the peak alone (retention left unchanged)
+    assert calibration.settle_decision(_t(18), _t(0), 6.0, 12.0, True) == "finalize"   # boundary
 
 def test_settle_decision_waits_past_finalize_without_sample_then_expires():
     # past finalize (_t6) but within grace (+12h -> _t18): still accumulate, hoping for a sample
@@ -96,37 +104,47 @@ def test_settle_decision_waits_past_finalize_without_sample_then_expires():
 
 def test_settle_decision_sample_finalizes_even_past_grace():
     assert calibration.settle_decision(_t(20), _t(0), 6.0, 12.0, True) == "finalize"
+    assert calibration.settle_decision(_t(20), _t(0), 6.0, 12.0, True, True) == "finalize"
 
-# --- accumulate_sample ---
+# --- accumulate_sample (gated on when the reading was TAKEN) ---
 def test_accumulate_first_sample_sets_peak_not_retained_before_settle():
-    # now=_t(1) < run_end+settle(4) -> retained stays None, peak set
+    # read at _t(1) < run_end+settle(4) -> retained stays None, peak set
     peak, ret, seen, ch = calibration.accumulate_sample(
-        None, None, None, 85.0, _t(1), _t(1), _t(0), 4.0)
+        None, None, None, 85.0, _t(1), _t(0), 4.0)
     assert (peak, ret, ch) == (85.0, None, True) and seen == _t(1)
 
 def test_accumulate_running_max_and_retained_after_settle():
-    # second sample lower value but after settle -> peak holds, retained updates
+    # second sample lower value, read after settle -> peak holds, retained updates
     peak, ret, seen, ch = calibration.accumulate_sample(
-        85.0, None, _t(1), 82.0, _t(5), _t(5), _t(0), 4.0)
+        85.0, None, _t(1), 82.0, _t(5), _t(0), 4.0)
     assert (peak, ret, ch) == (85.0, 82.0, True) and seen == _t(5)
     # a higher later sample raises peak and updates retained
     peak, ret, seen, ch = calibration.accumulate_sample(
-        85.0, 82.0, _t(5), 88.0, _t(6), _t(6), _t(0), 4.0)
+        85.0, 82.0, _t(5), 88.0, _t(6), _t(0), 4.0)
     assert (peak, ret, seen, ch) == (88.0, 88.0, _t(6), True)
 
-def test_accumulate_ignores_stale_republish_and_missing():
-    # last_updated not newer than last_seen -> no change (stale MQTT republish)
-    assert calibration.accumulate_sample(85.0, 82.0, _t(5), 99.0, _t(5), _t(6), _t(0), 4.0) == (85.0, 82.0, _t(5), False)
-    # None value/last_updated -> no change
-    assert calibration.accumulate_sample(85.0, 82.0, _t(5), None, _t(6), _t(6), _t(0), 4.0) == (85.0, 82.0, _t(5), False)
-
-def test_accumulate_ignores_reading_reported_before_run_end():
-    # first poll after the run: the sensor's latest report predates run_end
-    # (last_seen is still None) -> not a sample, peak stays unset
-    assert calibration.accumulate_sample(None, None, None, 70.0, _t(-1), _t(1), _t(0), 4.0) == (None, None, None, False)
-    # a report exactly at run_end counts ("from run_end on")
+def test_accumulate_retained_keys_off_reading_time_not_arrival():
+    # a reading TAKEN before the settle floor is peak-only, however late it
+    # arrives (batched upload + pipeline lag): it shows soil near run_end
     peak, ret, seen, ch = calibration.accumulate_sample(
-        None, None, None, 85.0, _t(0), _t(1), _t(0), 4.0)
+        85.0, None, _t(1), 84.0, _t(3), _t(0), 4.0)
+    assert (peak, ret, seen, ch) == (85.0, None, _t(3), True)
+
+def test_accumulate_ignores_stale_republish_rewrite_and_missing():
+    # read_at not newer than last_seen -> no change (stale republish, or the
+    # GeoDrops reprocess rewriting the value with no new reading)
+    assert calibration.accumulate_sample(85.0, 82.0, _t(5), 99.0, _t(5), _t(0), 4.0) == (85.0, 82.0, _t(5), False)
+    # None value/read_at -> no change
+    assert calibration.accumulate_sample(85.0, 82.0, _t(5), None, _t(6), _t(0), 4.0) == (85.0, 82.0, _t(5), False)
+    assert calibration.accumulate_sample(85.0, 82.0, _t(5), 90.0, None, _t(0), 4.0) == (85.0, 82.0, _t(5), False)
+
+def test_accumulate_ignores_reading_taken_before_run_end():
+    # the latest reading was taken before run_end (even if it reached HA after
+    # it, in a batched upload) -> not a sample, peak stays unset
+    assert calibration.accumulate_sample(None, None, None, 70.0, _t(-1), _t(0), 4.0) == (None, None, None, False)
+    # a reading taken exactly at run_end counts ("from run_end on")
+    peak, ret, seen, ch = calibration.accumulate_sample(
+        None, None, None, 85.0, _t(0), _t(0), 4.0)
     assert (peak, ret, seen, ch) == (85.0, None, _t(0), True)
 
 # --- retention_factor ---

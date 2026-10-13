@@ -87,8 +87,10 @@ class Tunables:
     probe_shrink: float = 1.5
     # Minimum points rise to be measurable in soil moisture signal.
     measurable_rise_pts: float = 3.0
-    # Hours to allow soil settling before evaluating response to watering.
-    settle_hours: float = 4.0
+    # Hours to allow soil settling before evaluating response to watering: the
+    # retained sample is the latest reading TAKEN at or after run_end +
+    # settle_hours (GeoDrops' reading time, not when HA received it).
+    settle_hours: float = 6.0
     # How long past measure_at (run_end + settle_hours) the settle poll will keep
     # waiting for a genuine post-settle sensor report before giving up on an
     # observation. On timeout the obs is DROPPED (inconclusive) — never rejected —
@@ -98,8 +100,9 @@ class Tunables:
     # When a calibration observation is finalized (retained reading captured,
     # obs accepted). Must exceed settle_hours: peak accumulates from run_end, but
     # the retained reading is only taken from settle_hours on, and finalize waits
-    # until the soil has settled (retain_hours).
-    retain_hours: float = 6.0
+    # until the soil has settled (retain_hours). Finalize also waits, up to
+    # settle_max_wait_hours more, for a retained reading to arrive.
+    retain_hours: float = 7.0
     # Lower clamp for the retention factor r (retained_rise / peak_rise). Keeps a
     # fully-drained night from zeroing the dosing span.
     retention_floor: float = 0.1
