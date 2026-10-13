@@ -267,19 +267,39 @@ class PlanningMixin(IOMixin):
             qualities=tuple([self._state_get(q) for q in zone.quality_sensors]),
         )
 
-    def _sensor_last_updated(self, entity: str) -> dt.datetime | None:
-        """The HA `last_updated` (tz-aware UTC datetime) of a state entity, or None.
+    def _sensor_reading_time(self, entity: str) -> dt.datetime | None:
+        """When the reading `entity` currently shows was TAKEN (tz-aware), or None.
 
-        pyscript exposes it as a virtual attribute via state.get("<entity>.last_updated").
-        We use last_updated (bumps only when the value changes) — NOT last_reported
-        (bumps on every MQTT republish, which would defeat the freshness gate). Any
-        failure (missing entity -> NameError, or unexpected type) yields None, which
-        settle_decision treats as "not fresh".
+        For a GeoDrops sensor this is the probe's "Last Reading" timestamp, not
+        the HA `last_updated`: a Droplet uploads in batches up to ~3 h apart and
+        the cloud pipeline lags up to an hour behind, so a reading taken before a
+        run's end can land in HA after it; and GeoDrops' twice-daily reprocess
+        rewrites values with no new reading. `last_updated` counts both as fresh
+        post-watering samples; the reading time counts neither. Its sensor
+        unavailable or unparseable yields None ("not fresh"), never a fallback.
+
+        A non-GeoDrops sensor (no Last Reading sibling) falls back to
+        `last_updated` (bumps only when the value changes — NOT last_reported,
+        which bumps on every MQTT republish). Any failure there (missing entity
+        -> NameError, or unexpected type) yields None.
         """
         try:
-            return self._last_updated_get(entity)
+            reading_entity = self.port.reading_time_entity(entity)
         except Exception:
+            reading_entity = None
+        if reading_entity is None:
+            try:
+                return self._last_updated_get(entity)
+            except Exception:
+                return None
+        raw = self.port.state(reading_entity)
+        try:
+            taken = dt.datetime.fromisoformat(raw) if raw else None
+        except ValueError:
             return None
+        if taken is None or taken.tzinfo is None:
+            return None
+        return taken
 
     def _dawn_time(self) -> dt.datetime:
         return dt.datetime.fromisoformat(self._state_get(self._loaded_bindings().sun.dawn))

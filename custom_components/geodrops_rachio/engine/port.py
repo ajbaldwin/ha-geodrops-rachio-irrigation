@@ -12,7 +12,13 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+
+# The ha-geodrops-hacs integration's domain, and the unique_id suffix of the
+# per-probe "Last Reading" timestamp sensor it creates (`<serial>_last_reading`).
+GEODROPS_DOMAIN = "geodrops"
+LAST_READING_SUFFIX = "_last_reading"
 
 
 class HAPort(Protocol):
@@ -21,6 +27,8 @@ class HAPort(Protocol):
     def attrs(self, entity_id: str) -> dict[str, Any]: ...
 
     def last_updated(self, entity_id: str) -> dt.datetime | None: ...
+
+    def reading_time_entity(self, entity_id: str) -> str | None: ...
 
     async def call(self, domain: str, service: str, data: dict[str, Any], *,
                    blocking: bool = False) -> None: ...
@@ -54,6 +62,21 @@ class HassPort:
     def last_updated(self, entity_id: str) -> dt.datetime | None:
         st = self.hass.states.get(self._resolve(entity_id))
         return st.last_updated if st is not None else None
+
+    def reading_time_entity(self, entity_id: str) -> str | None:
+        """The GeoDrops "Last Reading" sensor on the same probe as `entity_id`,
+        or None when `entity_id` is not a GeoDrops entity (or has no such
+        sibling): another integration's sensor, a template, or a missing one."""
+        reg = er.async_get(self.hass)
+        entry = reg.async_get(self._resolve(entity_id))
+        if entry is None or entry.platform != GEODROPS_DOMAIN or not entry.device_id:
+            return None
+        for sibling in er.async_entries_for_device(
+                reg, entry.device_id, include_disabled_entities=True):
+            if (sibling.platform == GEODROPS_DOMAIN
+                    and sibling.unique_id.endswith(LAST_READING_SUFFIX)):
+                return sibling.entity_id
+        return None
 
     async def call(self, domain: str, service: str, data: dict[str, Any], *,
                    blocking: bool = False) -> None:

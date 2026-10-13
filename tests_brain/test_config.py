@@ -350,7 +350,8 @@ def test_zone_exclude_boolean_default_and_override():
 def test_retain_and_retention_floor_defaults():
     from brain.config import Tunables
     t = Tunables()
-    assert t.retain_hours == 6.0
+    assert t.settle_hours == 6.0     # clears GeoDrops' ~5 h upload + pipeline lag
+    assert t.retain_hours == 7.0
     assert t.retention_floor == 0.1
     assert t.retain_hours > t.settle_hours   # finalize must be after the retained floor
 

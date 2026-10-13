@@ -68,9 +68,20 @@ async def test_unusable_forecast_reads_as_none(freezer, caplog):
     assert "unusable" in caplog.text
 
 
-async def test_last_updated_of_a_missing_entity_is_none(freezer):
+async def test_reading_time_of_a_missing_entity_is_none(freezer):
     _world, eng = _eng(freezer)
-    assert eng._sensor_last_updated("sensor.nope") is None
+    assert eng._sensor_reading_time("sensor.nope") is None
+
+
+async def test_reading_time_prefers_the_geodrops_last_reading(freezer):
+    world, eng = _eng(freezer)
+    world.set("sensor.x", "50")
+    assert eng._sensor_reading_time("sensor.x") == world.last_updated("sensor.x")
+    world.reading_links["sensor.x"] = "sensor.x_last_reading"
+    world.set("sensor.x_last_reading", "2026-07-01T22:15:00+00:00")
+    assert eng._sensor_reading_time("sensor.x").isoformat() == "2026-07-01T22:15:00+00:00"
+    world.remove("sensor.x_last_reading")
+    assert eng._sensor_reading_time("sensor.x") is None
 
 
 async def test_missing_sunrise_anchor_falls_back_to_dawn(freezer, caplog):

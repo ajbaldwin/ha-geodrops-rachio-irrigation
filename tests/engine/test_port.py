@@ -32,3 +32,30 @@ async def test_hass_port_resolves_entity_ids(hass):
                     blocking=True)
     assert calls == [{"entity_id": "switch.new"},
                      {"entity_id": ["switch.new", "switch.x"]}]
+
+
+async def test_hass_port_finds_the_geodrops_last_reading_sibling(hass):
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(domain="geodrops")
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={("geodrops", "SN1")})
+    reg = er.async_get(hass)
+    moisture = reg.async_get_or_create(
+        "sensor", "geodrops", "SN1_moisture", device_id=device.id,
+        config_entry=entry)
+    reg.async_get_or_create("sensor", "geodrops", "SN1_battery", device_id=device.id,
+                            config_entry=entry)
+    last = reg.async_get_or_create(
+        "sensor", "geodrops", "SN1_last_reading", device_id=device.id,
+        config_entry=entry)
+    other = reg.async_get_or_create("sensor", "template", "front_mirror")
+
+    port = HassPort(hass, lambda e: {"sensor.old": moisture.entity_id}.get(e, e))
+    assert port.reading_time_entity(moisture.entity_id) == last.entity_id
+    assert port.reading_time_entity("sensor.old") == last.entity_id   # resolved
+    assert port.reading_time_entity(other.entity_id) is None          # not GeoDrops
+    assert port.reading_time_entity("sensor.nope") is None            # unregistered
