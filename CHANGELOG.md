@@ -4,6 +4,31 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.4 — Dollar spot counts as disease pressure
+
+### Changes
+
+- **Dollar spot risk now shortens the watering window in spring and fall.**
+  The window used to count warm nights (above 68 °F) as disease pressure,
+  which covers brown patch but misses dollar spot and red thread, the
+  diseases active from April to early November. The scheduler now also
+  estimates dollar spot risk with the Smith-Kerns model (the one behind
+  Purdue's Turfgrass Disease Prediction Tool) from the last 5 days of
+  temperature and humidity. A risk of 20% or more counts as warm. Summer
+  windows are unchanged.
+- **The Watering window sensor shows it.** A `dollar spot` pressure entry
+  and `dollar_spot_pct`, `dollar_spot_t5` (°C), `dollar_spot_rh5` and
+  `dollar_spot_days` attributes; the plan recap names `dollar spot NN%`.
+- **Uses the recorder's long-term statistics** for the bound temperature and
+  humidity sensors, so it works right away with no warm-up. If they have no
+  statistics (no `state_class`, or the recorder is off), the window behaves
+  exactly as before.
+- **New tunables** `dollar_spot_enabled` (default on) and
+  `dollar_spot_threshold_pct` (default 20).
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.1-beta.3 → restart.
+
 ## v1.3.1-beta.3 — Calibration uses when GeoDrops took the reading
 
 ### Fixes
