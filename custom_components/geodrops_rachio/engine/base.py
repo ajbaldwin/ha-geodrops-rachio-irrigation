@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable
 from homeassistant.exceptions import ServiceNotFound
 
 from ..brain import config
+from ..brain.dollar_spot import DiseaseRisk
 from .port import HAPort
 from .store import PERSISTED_RECORDS, EngineStore, record_key
 
@@ -28,16 +29,26 @@ RECORD_HISTORY_MAX = 500
 # (runtimes_minutes, refill_depths_mm, refill_spans_pts), each keyed by Rachio
 # zone id: one live pull (rachio_client.async_fetch_zone_data).
 type ZoneData = tuple[dict[str, float], dict[str, float], dict[str, float]]
+# (temperature entity, humidity entity, first day, end day exclusive) ->
+# [(local day, mean C, mean %RH)] — disease_stats.async_daily_means.
+type FetchDailyMeans = Callable[
+    [str, str, dt.date, dt.date],
+    Awaitable[list[tuple[dt.date, float | None, float | None]]]]
 
 
 class EngineBase:
     def __init__(self, port: HAPort, store: EngineStore,
                  load_raw_config: Callable[[], dict[str, Any]],
-                 fetch_zone_data: Callable[[], Awaitable[ZoneData]]) -> None:
+                 fetch_zone_data: Callable[[], Awaitable[ZoneData]],
+                 *, fetch_daily_means: FetchDailyMeans | None = None) -> None:
         self.port = port
         self.store = store
         self._load_raw_config = load_raw_config
         self._fetch_zone_data_fn = fetch_zone_data
+        self._fetch_daily_means_fn = fetch_daily_means
+        # The latest dollar spot assessment (DiseaseRiskMixin refreshes it);
+        # None = not active, and every output is as before dollar spot.
+        self.disease_risk: DiseaseRisk | None = None
         self._manual_stop = False
         self.api_calls = 0     # Rachio-affecting service calls (start/stop) — the real budget
         self.state_polls = 0   # local HA state reads (free); tracked separately

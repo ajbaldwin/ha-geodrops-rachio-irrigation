@@ -262,6 +262,7 @@
     }
    }
   },
+  "dollar_spot_pct": null,
   "dominant_by_zone": {
    "front": 60.0
   },

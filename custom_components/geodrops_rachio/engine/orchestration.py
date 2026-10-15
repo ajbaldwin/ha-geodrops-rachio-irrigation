@@ -704,7 +704,10 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
         would_skip, skip_detail = self._rain_skip_check(ctx)
         cap_hours = round(ctx["cap_minutes"] / 60.0, 2)
         active = [name for name, on in
-                  (("warm", pb["warm"]), ("humid", pb["humid"]), ("stagnant", pb["stagnant"]))
+                  (("warm", pb["warm"]),
+                   (f"dollar spot {pb.get('dollar_spot_pct', 0):.0f}%",
+                    pb.get("dollar_spot", False)),
+                   ("humid", pb["humid"]), ("stagnant", pb["stagnant"]))
                   if on]
         active_str = ", ".join(active) if active else "none"
         start_str = ctx["start"].astimezone().strftime("%H:%M")
