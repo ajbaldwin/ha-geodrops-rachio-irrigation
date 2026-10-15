@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from .config import Tunables
 
@@ -22,28 +22,46 @@ class PressureBreakdown(TypedDict):
     humid: bool
     stagnant: bool
     count: int
+    # Present only when a dollar spot probability was supplied, so a breakdown
+    # made without one is exactly what it was before dollar spot existed.
+    dollar_spot: NotRequired[bool]
+    dollar_spot_pct: NotRequired[float]
 
 
-def pressure_breakdown(w: WeatherReading, t: Tunables) -> PressureBreakdown:
+def pressure_breakdown(w: WeatherReading, t: Tunables,
+                       dollar_spot_pct: float | None = None) -> PressureBreakdown:
     """Which disease-pressure signals are active, for diagnostics/reporting.
 
-    Returns {"warm", "humid", "stagnant": bool, "count": int}.
+    Returns {"warm", "humid", "stagnant": bool, "count": int}. With a dollar
+    spot probability it also carries "dollar_spot" and "dollar_spot_pct", and
+    the temperature signal counts when EITHER the night is warm (brown patch,
+    Purdue's night >= 68 F rule) OR dollar spot is at/above its threshold (the
+    spring and fall diseases the 68 F rule misses). Still 0..3, so summer caps
+    are unchanged: dollar spot adds nothing on a night that is already warm.
     """
     warm = w.temp_f > t.warm_temp_f
     humid = w.rh_pct > t.humid_rh_pct
     stagnant = w.wind_mph < t.stagnant_wind_mph
-    return {
+    out: PressureBreakdown = {
         "warm": warm, "humid": humid, "stagnant": stagnant,
         "count": int(warm) + int(humid) + int(stagnant),
     }
+    if dollar_spot_pct is not None:
+        dollar_spot = dollar_spot_pct >= t.dollar_spot_threshold_pct
+        out["dollar_spot"] = dollar_spot
+        out["dollar_spot_pct"] = round(dollar_spot_pct, 1)
+        out["count"] = int(warm or dollar_spot) + int(humid) + int(stagnant)
+    return out
 
 
-def pressure_signals(w: WeatherReading, t: Tunables) -> int:
-    return pressure_breakdown(w, t)["count"]
+def pressure_signals(w: WeatherReading, t: Tunables,
+                     dollar_spot_pct: float | None = None) -> int:
+    return pressure_breakdown(w, t, dollar_spot_pct)["count"]
 
 
-def window_cap_minutes(w: WeatherReading, t: Tunables) -> float:
-    signals = pressure_signals(w, t)
+def window_cap_minutes(w: WeatherReading, t: Tunables,
+                       dollar_spot_pct: float | None = None) -> float:
+    signals = pressure_signals(w, t, dollar_spot_pct)
     base = t.window_base_cap_hours
     disease = t.window_disease_cap_hours
     hours = base - (base - disease) * (signals / 3.0)

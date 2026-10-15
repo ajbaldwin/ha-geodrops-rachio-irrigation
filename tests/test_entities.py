@@ -5,6 +5,7 @@ from homeassistant.core import State
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry, async_fire_time_changed, mock_restore_cache_with_extra_data)
 
+from custom_components.geodrops_rachio.brain.dollar_spot import DiseaseRisk
 from custom_components.geodrops_rachio.const import DOMAIN
 
 ENTRY_DATA = {"bindings": {}, "zones": [], "self_calibration_enabled": False,
@@ -977,6 +978,37 @@ async def test_watering_window_follows_its_inputs(
     hass.states.async_set("sensor.sun_next_dawn", "2026-07-03T04:31:00+00:00")
     await hass.async_block_till_done()
     assert hass.states.get(window).state == "22:41–04:41"
+
+
+async def test_watering_window_shows_dollar_spot(
+        hass, enable_pyscript_and_rachio):
+    """A dollar spot assessment shows on the window: a "dollar spot" pressure
+    entry and the Smith-Kerns inputs behind it; none leaves them None."""
+    await hass.config.async_set_time_zone("UTC")
+    hass.states.async_set("sensor.sun_next_dawn", "2026-07-02T04:30:00+00:00")
+    hass.states.async_set("sensor.sun_next_rising", "2026-07-02T05:00:00+00:00")
+    # A fall night with no forecast: sized from these (humid only).
+    hass.states.async_set("sensor.tempest_sensor_temperature", "55")
+    hass.states.async_set("sensor.tempest_sensor_humidity", "95")
+    hass.states.async_set("sensor.tempest_sensor_wind_speed_average", "10")
+    await _setup_observed(hass, {**ENTRY_DATA, "bindings": {
+        "drought_level_select": "select.geodrops_rachio_drought_level"}})
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    window = "sensor.geodrops_rachio_watering_window"
+    attrs = hass.states.get(window).attributes
+    assert attrs["disease_pressure"] == ["humid"]
+    assert [attrs[k] for k in ("dollar_spot_pct", "dollar_spot_t5",
+                               "dollar_spot_rh5", "dollar_spot_days")] == [None] * 4
+    scheduler = entry.runtime_data.scheduler
+    scheduler.disease_risk = DiseaseRisk(
+        pct=34.0, t5_c=15.5, rh5=88.0, days=5, as_of="2026-07-01")
+    scheduler._notify_listeners()
+    await hass.async_block_till_done()
+    attrs = hass.states.get(window).attributes
+    assert attrs["disease_pressure"] == ["dollar spot", "humid"]
+    assert (attrs["dollar_spot_pct"], attrs["dollar_spot_t5"],
+            attrs["dollar_spot_rh5"], attrs["dollar_spot_days"]) == (
+        34.0, 15.5, 88.0, 5)
 
 
 async def test_watering_window_is_unknown_without_a_drought_level(

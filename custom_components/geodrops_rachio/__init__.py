@@ -15,7 +15,8 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 
-from . import config_writer, entity_renames, issues, owned_entities, rachio_client
+from . import (config_writer, disease_stats, entity_renames, issues, owned_entities,
+               rachio_client)
 from .const import DOMAIN, PLATFORMS
 from .coordinator import (
     GeodropsRachioConfigEntry, GeodropsRachioData, ZoneStateCoordinator)
@@ -79,11 +80,17 @@ async def async_setup_entry(hass: HomeAssistant,
         return config_writer.build_config(
             config_writer.with_targets(data, entry.data.get("zones", [])))
 
+    resolve = owned_entities.resolver(hass, entry, renamed)
     scheduler = Scheduler(
-        HassPort(hass, owned_entities.resolver(hass, entry, renamed)), store,
+        HassPort(hass, resolve), store,
         load_config,
         fetch_zone_data,
-        lambda coro, name: entry.async_create_background_task(hass, coro, name))
+        lambda coro, name: entry.async_create_background_task(hass, coro, name),
+        # Dollar spot inputs: the bound sensors' recorder statistics, read
+        # through the same rename resolution as every other engine read.
+        fetch_daily_means=lambda temp_id, rh_id, first, end: (
+            disease_stats.async_daily_means(
+                hass, resolve(temp_id), resolve(rh_id), first, end)))
     coordinator = ZoneStateCoordinator(hass, entry, scheduler)
     coordinator.async_start()
     # Registered up front so zone devices can link to it by its registry id.

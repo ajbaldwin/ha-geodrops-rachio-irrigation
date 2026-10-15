@@ -45,6 +45,11 @@ class Tunables:
     # would fire nearly every night and carry no information.
     humid_rh_pct: float = 90.0
     stagnant_wind_mph: float = 2.0
+    # Smith-Kerns dollar spot (brain/dollar_spot.py) counts toward the
+    # temperature pressure signal at or above this probability. 20 % is the
+    # UW-Madison / Purdue action threshold (golf turf); tune for lawns.
+    dollar_spot_enabled: bool = True
+    dollar_spot_threshold_pct: float = 20.0
     # Rain-gauge accumulation threshold. Doubles as the spray-zone
     # corroboration: while a spray-flagged zone runs, precip_type "rain" is
     # believed only if the gauge clears this (or it is hail), because the Tempest

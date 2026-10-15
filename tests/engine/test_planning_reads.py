@@ -5,6 +5,7 @@ import datetime as dt
 import logging
 from types import SimpleNamespace
 
+from custom_components.geodrops_rachio.brain.dollar_spot import DiseaseRisk
 from custom_components.geodrops_rachio.engine.io import IOMixin
 from custom_components.geodrops_rachio.engine.planning import PlanningMixin
 from tests.engine.scenario import T_PLAN, entry_data, native_engine, populate
@@ -233,3 +234,48 @@ async def test_window_inputs_list_what_the_projection_reads(freezer):
               "sensor.sun_next_dawn", "sensor.sun_next_rising",
               "sensor.forecast_overnight_temp"):
         assert e in inputs
+
+
+RISK = DiseaseRisk(pct=34.0, t5_c=15.5, rh5=88.0, days=5, as_of="2026-07-01")
+
+
+def _fall_night(world):
+    world.set("sensor.forecast_overnight_temp", "55")
+    world.set("sensor.forecast_overnight_humidity", "95")
+
+
+async def test_dollar_spot_shrinks_a_fall_window(freezer):
+    world, eng = _eng(freezer)
+    _fall_night(world)
+    assert eng.project_window()["cap_hours"] == 5.0
+    eng.disease_risk = RISK
+    w = eng.project_window()
+    assert w["pressure"] == ["dollar spot", "humid"]
+    assert w["cap_hours"] == 4.0
+    assert w["dollar_spot"] == {"pct": 34.0, "t5_c": 15.5, "rh5": 88.0, "days": 5}
+
+
+async def test_dollar_spot_disabled_by_tunable(freezer):
+    world, eng = _eng(freezer, entry_data(overrides="dollar_spot_enabled: false"))
+    _fall_night(world)
+    eng.disease_risk = RISK
+    w = eng.project_window()
+    assert w["cap_hours"] == 5.0 and w["dollar_spot"] is None
+
+
+async def test_no_dollar_spot_risk_projects_as_before(freezer):
+    world, eng = _eng(freezer)
+    _fall_night(world)
+    w = eng.project_window()
+    assert w["pressure"] == ["humid"] and w["dollar_spot"] is None
+
+
+async def test_plan_cap_and_projection_agree_with_dollar_spot(freezer):
+    world, eng = _eng(freezer)
+    _fall_night(world)
+    eng.disease_risk = RISK
+    ctx = await eng._plan_context(eng._current_cfg)
+    assert ctx["dollar_spot_pct"] == 34.0
+    assert round(ctx["cap_minutes"] / 60.0, 2) == eng.project_window()["cap_hours"]
+    pb, pb_instant = eng._pressure_pair(ctx)
+    assert pb["dollar_spot"] is True and "dollar_spot" not in pb_instant

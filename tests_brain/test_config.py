@@ -91,6 +91,12 @@ def test_disease_thresholds_retuned_for_overnight_means(example_config_path):
     assert cfg.tunables.stagnant_wind_mph == 2
 
 
+def test_dollar_spot_defaults():
+    t = config.Tunables()
+    assert t.dollar_spot_enabled is True
+    assert t.dollar_spot_threshold_pct == 20.0
+
+
 def test_drought_profiles_carry_rain_skip_horizon(example_config_path):
     cfg = config.load_config(example_config_path)
     assert cfg.drought_profiles["Level 0 - Normal"].rain_skip_horizon_hours == 12

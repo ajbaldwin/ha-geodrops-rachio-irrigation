@@ -161,6 +161,8 @@ shown). Units are °F, mph and mm; readings in other units are converted.
 | `warm_temp_f` | 68.0 | Overnight mean temperature that counts as warm. |
 | `humid_rh_pct` | 90.0 | Overnight mean humidity that counts as humid. |
 | `stagnant_wind_mph` | 2.0 | Overnight mean wind that counts as still. |
+| `dollar_spot_enabled` | true | Count dollar spot risk (Smith-Kerns, from the last 5 days of temperature and humidity) as disease pressure. |
+| `dollar_spot_threshold_pct` | 20.0 | Dollar spot probability that counts as pressure. |
 | `rain_last_hour_mm` | 0.2 | Rain gauge reading that confirms rain. |
 | `rain_sustain_seconds` | 150 | How long rain must persist before a running zone stops. |
 | `rain_skip_probability_pct` | 70.0 | Forecast chance of rain that can skip a zone… |

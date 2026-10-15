@@ -393,6 +393,8 @@ class PlanningMixin(IOMixin):
             _LOGGER.debug("watering window not projected (%s)", err)
             return None
         tun = cfg.tunables
+        ds_pct = self._dollar_spot_pct(tun)
+        risk = self.disease_risk
         d = cfg.bindings.derived.forecast_overnight
         reading = self._quiet_reading(d["temp"], d["humidity"], d["wind"])
         cap_source = "forecast"
@@ -407,11 +409,12 @@ class PlanningMixin(IOMixin):
             cap_source = "default"
             pressure: list[str] = []
         else:
-            cap = weather.window_cap_minutes(reading, tun)
-            flags = weather.pressure_breakdown(reading, tun)
+            cap = weather.window_cap_minutes(reading, tun, ds_pct)
+            flags = weather.pressure_breakdown(reading, tun, ds_pct)
             pressure = [name for name, on in (
-                ("warm", flags["warm"]), ("humid", flags["humid"]),
-                ("still", flags["stagnant"])) if on]
+                ("warm", flags["warm"]),
+                ("dollar spot", flags.get("dollar_spot", False)),
+                ("humid", flags["humid"]), ("still", flags["stagnant"])) if on]
         return {
             "start": end - dt.timedelta(minutes=cap), "end": end,
             "anchor": anchor,
@@ -421,7 +424,21 @@ class PlanningMixin(IOMixin):
             "end_offset_minutes": end_offset,
             "cap_hours": round(cap / 60.0, 2), "cap_source": cap_source,
             "pressure": pressure, "drought_level": level,
+            # The Smith-Kerns inputs behind a "dollar spot" pressure entry; None
+            # while the signal is off (disabled, or no assessment).
+            "dollar_spot": None if ds_pct is None or risk is None else {
+                "pct": round(ds_pct, 1), "t5_c": round(risk.t5_c, 1),
+                "rh5": round(risk.rh5, 1), "days": risk.days},
         }
+
+    def _dollar_spot_pct(self, tun: config.Tunables) -> float | None:
+        """Tonight's dollar spot probability for the pressure count, or None
+        (disabled, no assessment, or outside the model's range): None leaves
+        every breakdown and cap exactly as before dollar spot existed."""
+        risk = self.disease_risk
+        if not tun.dollar_spot_enabled or risk is None:
+            return None
+        return risk.pct
 
     def _resolve_profile(self, cfg: config.Config) -> tuple[str, config.DroughtProfile]:
         """(level, profile) for the current drought selection.
@@ -649,6 +666,9 @@ class PlanningMixin(IOMixin):
         # during a run stays instantaneous (see _is_rain).
         wx = self._read_weather(tun)
         forecast_wx = self._read_forecast_weather()
+        # Kept in the ctx so the recap and records show the value the cap used,
+        # even if the hourly refresh changes it during the pre-dawn wait.
+        ds_pct = self._dollar_spot_pct(tun)
         if forecast_wx is None:
             cap_source = "instant"
             _LOGGER.log(
@@ -656,10 +676,10 @@ class PlanningMixin(IOMixin):
                 "overnight forecast unavailable; sizing the window from current "
                 "conditions"
             )
-            cap = weather.window_cap_minutes(wx, tun)
+            cap = weather.window_cap_minutes(wx, tun, ds_pct)
         else:
             cap_source = "forecast"
-            cap = weather.window_cap_minutes(forecast_wx, tun)
+            cap = weather.window_cap_minutes(forecast_wx, tun, ds_pct)
         end_anchor, end_offset, end = self._window_end(cfg, profile)
 
         # Clamp the disease-window cap to the time actually left before the end
@@ -694,6 +714,7 @@ class PlanningMixin(IOMixin):
             "wx": wx, "cap_minutes": cap, "earliest_start": earliest_start,
             "runtime_sources": runtime_sources,
             "forecast_wx": forecast_wx, "cap_source": cap_source,
+            "dollar_spot_pct": ds_pct,
             "horizon_hours": profile.rain_skip_horizon_hours,
             "end_anchor": end_anchor,
             "end_offset_minutes": end_offset,
@@ -710,7 +731,7 @@ class PlanningMixin(IOMixin):
 
     def _pressure_pair(self, ctx: Mapping[str, Any],
                        ) -> tuple[weather.PressureBreakdown, weather.PressureBreakdown]:
-        """(forecast-based, instantaneous) disease-pressure breakdowns.
+        """(cap-sizing, instantaneous) disease-pressure breakdowns.
 
         Report BOTH models: the forecast one drives the cap, the instantaneous one
         is the old behaviour. Side by side they are the calibration instrument for
@@ -718,10 +739,17 @@ class PlanningMixin(IOMixin):
         them too, not just the preview. Comparing them required firing a preview by
         hand at 23:00 every night, which nobody was going to do.
         """
-        pb_instant = weather.pressure_breakdown(ctx["wx"], ctx["tun"])
+        tun = ctx["tun"]
+        pb_instant = weather.pressure_breakdown(ctx["wx"], tun)
+        # The first breakdown is the one that sized the cap, so it carries the
+        # dollar spot value the cap used; the instantaneous one stays the
+        # historical baseline the side-by-side comparison is for.
+        ds_pct = ctx.get("dollar_spot_pct")
         if ctx["forecast_wx"] is None:
-            return pb_instant, pb_instant
-        return weather.pressure_breakdown(ctx["forecast_wx"], ctx["tun"]), pb_instant
+            if ds_pct is None:
+                return pb_instant, pb_instant
+            return weather.pressure_breakdown(ctx["wx"], tun, ds_pct), pb_instant
+        return weather.pressure_breakdown(ctx["forecast_wx"], tun, ds_pct), pb_instant
 
     def _rain_skip_check(self, ctx: Mapping[str, Any]) -> tuple[bool, dict[str, Any]]:
         """(should_skip, detail) for the plan in `ctx`.

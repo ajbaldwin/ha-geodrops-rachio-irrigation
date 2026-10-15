@@ -231,3 +231,28 @@ def test_every_signal_can_disagree_at_once():
 def test_a_missing_signal_is_treated_as_absent_rather_than_crashing():
     a = weather.pressure_agreement({"count": 0}, bd(True, False, False))
     assert a["signals"]["warm"] == "forecast-low"
+
+
+def test_dollar_spot_counts_when_not_warm():
+    w = wx(temp=55, rh=95, wind=10)  # fall night: humid only
+    b = weather.pressure_breakdown(w, T, dollar_spot_pct=34.0)
+    assert b["dollar_spot"] is True and b["dollar_spot_pct"] == 34.0
+    assert b["count"] == 2
+    assert weather.window_cap_minutes(w, T, dollar_spot_pct=34.0) == 4 * 60
+
+
+def test_dollar_spot_adds_nothing_when_already_warm():
+    w = wx(temp=75, rh=95, wind=1)
+    assert weather.pressure_breakdown(w, T, dollar_spot_pct=80.0)["count"] == 3
+
+
+def test_dollar_spot_below_threshold_does_not_count():
+    b = weather.pressure_breakdown(wx(temp=55, rh=95), T, dollar_spot_pct=19.9)
+    assert b["dollar_spot"] is False and b["count"] == 1
+
+
+def test_no_dollar_spot_value_keeps_the_old_breakdown_exactly():
+    w = wx(temp=55, rh=95)
+    assert weather.pressure_breakdown(w, T, None) == weather.pressure_breakdown(w, T)
+    assert "dollar_spot" not in weather.pressure_breakdown(w, T)
+    assert weather.window_cap_minutes(w, T, None) == weather.window_cap_minutes(w, T)
