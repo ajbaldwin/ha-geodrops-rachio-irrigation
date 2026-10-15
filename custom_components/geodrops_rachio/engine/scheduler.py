@@ -19,7 +19,8 @@ from homeassistant.helpers.event import (async_call_later,
 from homeassistant.helpers.start import async_at_started
 
 from ..brain import recovery
-from .base import EngineBase, ZoneData
+from .base import EngineBase, FetchDailyMeans, ZoneData
+from .disease_risk import DiseaseRiskMixin
 from .io import IOMixin
 from .learning import LearningMixin
 from .native import NativeRunMixin
@@ -75,12 +76,14 @@ def _log_task_failure(task: asyncio.Task[None]) -> None:
 
 
 class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin,
-                RunnerMixin, IOMixin, EngineBase):
+                DiseaseRiskMixin, RunnerMixin, IOMixin, EngineBase):
     def __init__(self, port: HAPort, store: EngineStore,
                  load_raw_config: Callable[[], dict[str, Any]],
                  fetch_zone_data: Callable[[], Awaitable[ZoneData]],
-                 create_task: CreateTask) -> None:
-        super().__init__(port, store, load_raw_config, fetch_zone_data)
+                 create_task: CreateTask, *,
+                 fetch_daily_means: FetchDailyMeans | None = None) -> None:
+        super().__init__(port, store, load_raw_config, fetch_zone_data,
+                         fetch_daily_means=fetch_daily_means)
         self._create_task = create_task
         self.run_task: asyncio.Task[None] | None = None
         self.startup_task: asyncio.Task[None] | None = None
@@ -381,7 +384,11 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             await self.async_refresh_plan()
 
     async def _on_plan_time(self, _now: dt.datetime) -> None:
-        # Hourly: moisture, weather and the sun move the plan all day.
+        # Hourly: moisture, weather and the sun move the plan all day. The
+        # dollar spot inputs are daily means, so hourly is plenty; the plan
+        # refresh is debounced, so the new value is normally in place for it.
+        self._spawn_job(self.async_refresh_disease_risk(),
+                        "geodrops_rachio_disease_risk")
         self.request_plan_refresh()
 
     def plan_inputs(self) -> list[str]:
@@ -531,6 +538,9 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
 
     async def _startup_then_plan(self) -> None:
         await self._on_startup()
+        # After the safety check, which nothing may delay; a run it starts or
+        # resumes plans without dollar spot, which is the fail-open path.
+        await self.async_refresh_disease_risk()
         # After the safety check, so a run it starts or resumes owns the plan.
         self.request_plan_refresh()
 
