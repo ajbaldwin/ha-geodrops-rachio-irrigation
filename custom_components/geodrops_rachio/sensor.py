@@ -550,6 +550,12 @@ class WateringWindowSensor(GeodropsRachioEntity, SensorEntity):
                     "window_hours": w["cap_hours"],
                     "sized_from": w["cap_source"],
                     "disease_pressure": w["pressure"],
+                    # The Smith-Kerns dollar spot inputs behind a "dollar spot"
+                    # pressure entry (None when the signal is off).
+                    "dollar_spot_pct": (w["dollar_spot"] or {}).get("pct"),
+                    "dollar_spot_t5": (w["dollar_spot"] or {}).get("t5_c"),
+                    "dollar_spot_rh5": (w["dollar_spot"] or {}).get("rh5"),
+                    "dollar_spot_days": (w["dollar_spot"] or {}).get("days"),
                     "drought_level": w["drought_level"],
                 }
             self.async_write_ha_state()
