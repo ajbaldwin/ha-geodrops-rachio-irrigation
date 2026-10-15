@@ -83,10 +83,11 @@ def prune_observed(samples: list[tuple[dt.datetime, float]],
     return before[-1:] + [s for s in samples if s[0] >= start]
 
 
-def overnight_forecast_mean(periods: list[dict[str, Any]], field: str,
-                            now: dt.datetime) -> float | None:
-    start, end = overnight_window(now)
-    vals: list[float] = []
+def _in_span(periods: list[dict[str, Any]], field: str, start: dt.datetime,
+             end: dt.datetime) -> list[tuple[dt.datetime, float]]:
+    """(time, value) of each forecast period from `start` (inclusive) to `end`
+    that carries `field`. A naive period time is taken in the span's zone."""
+    out: list[tuple[dt.datetime, float]] = []
     for p in periods:
         ts = p.get("datetime")
         if ts is None or p.get(field) is None:
@@ -97,5 +98,34 @@ def overnight_forecast_mean(periods: list[dict[str, Any]], field: str,
         elif t.tzinfo is not None and start.tzinfo is None:
             t = t.replace(tzinfo=None)
         if start <= t < end:
-            vals.append(float(p[field]))
-    return overnight_mean(vals)
+            out.append((t, float(p[field])))
+    return out
+
+
+def overnight_forecast_mean(periods: list[dict[str, Any]], field: str,
+                            now: dt.datetime) -> float | None:
+    start, end = overnight_window(now)
+    return overnight_mean([v for _t, v in _in_span(periods, field, start, end)])
+
+
+# The frost shift searches the morning up to noon: the latest finish it allows
+# (sunrise + its cap) falls well before that.
+MORNING_END_HOUR = 12
+
+
+def morning_span(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
+    """00:00→12:00 of the coming morning: today's until noon, tomorrow's
+    after."""
+    day = now.date() if now.hour < MORNING_END_HOUR else (
+        now.date() + dt.timedelta(days=1))
+    return (dt.datetime.combine(day, dt.time(0, 0), tzinfo=now.tzinfo),
+            dt.datetime.combine(day, dt.time(MORNING_END_HOUR, 0),
+                                tzinfo=now.tzinfo))
+
+
+def morning_hourly(periods: list[dict[str, Any]],
+                   now: dt.datetime) -> list[tuple[dt.datetime, float]]:
+    """The forecast temperature of each hour in morning_span(now), oldest
+    first, in the forecast's own unit."""
+    start, end = morning_span(now)
+    return sorted(_in_span(periods, "temperature", start, end))

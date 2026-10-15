@@ -4,6 +4,9 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
+
+from .config import Tunables
 
 # Never zero: HA's Local Calendar enforces a minimum event duration of one
 # second, so a point-in-time entry is rejected outright.
@@ -38,6 +41,41 @@ class RunResult:
     # early in a long run finished well before end_iso; per-zone Last watered
     # reads this. Empty when nothing watered.
     zone_end_iso: dict[str, str] = field(default_factory=dict)
+    # One line on what frost did to the night ("" when nothing), e.g. the
+    # finish moving later or a skip; see frost_note / frost_live_note.
+    note: str = ""
+
+
+def _hhmm(iso: str | None) -> str:
+    """"08:00" for an ISO instant, in local time; "" when there is none."""
+    if not iso:
+        return ""
+    return dt.datetime.fromisoformat(iso).astimezone().strftime("%H:%M")
+
+
+def frost_note(frost: Mapping[str, Any] | None, tun: Tunables) -> str:
+    """The recap line for a plan's frost record: the finish moved later, or
+    the night skipped; "" when frost changed nothing."""
+    if not frost:
+        return ""
+    clear = _hhmm(frost.get("clear_at"))
+    below = f"below {tun.frost_temp_f:g}°F"
+    if frost.get("skip"):
+        if clear:
+            return (f"Frost: forecast {below} until {clear}, past the latest "
+                    f"finish (sunrise + {tun.frost_max_delay_minutes} min)")
+        return f"Frost: forecast {below}"
+    shift = frost.get("shift_minutes") or 0
+    if shift <= 0:
+        return ""
+    until = f" until {clear}" if clear else ""
+    return f"Frost: finish moved {shift} min later (forecast {below}{until})"
+
+
+def frost_live_note(temp_f: float, tun: Tunables) -> str:
+    """The recap line for a night the live frost check skipped."""
+    return (f"Frost: {temp_f:.1f}°F at window start "
+            f"(below {tun.frost_skip_temp_f:g}°F)")
 
 
 def display_name(zone_key: str) -> str:
@@ -74,6 +112,8 @@ def format_notification(r: RunResult) -> str:
     window = _window_line(r)
     if window:
         lines.append(window)
+    if r.note:
+        lines.append(r.note)
     if r.uncompleted:
         parts = [f"{display_name(z)} ({reason})" for z, reason in r.uncompleted.items()]
         lines.append(f"Not completed: {', '.join(parts)}")
@@ -136,6 +176,8 @@ def format_calendar(r: RunResult, tun_cycle: int, tun_soak: int) -> tuple[str, s
         # Actual watering times — only meaningful when something ran. With
         # nothing watered these collapse to a zero-length "window".
         lines.append(f"Watered: {r.start}–{r.end}")
+    if r.note:
+        lines.append(r.note)
     lines.append(f"Cycle/soak: {tun_cycle}/{tun_soak} min")
     for z in r.watered:
         lines.append(f"- {display_name(z)}: {int(r.per_zone_minutes.get(z, 0))} min")

@@ -19,6 +19,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import METRIC_SYSTEM
 from . import owned_entities, units, weather_derive
 from .brain.config import BAND_ORDER, enum_key
+from .brain.frost import parse_hourly
 from .coordinator import GeodropsRachioConfigEntry, ZoneStateCoordinator
 from .engine.scheduler import Scheduler
 from .entity import GeodropsRachioEntity, GeodropsRachioZoneEntity
@@ -201,11 +202,12 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_suggested_display_precision = 1
+    _KEY_PREFIX = "forecast_overnight_"
 
     def __init__(self, entry: GeodropsRachioConfigEntry, key: str, field: str,
                  source: str | None, device_class: SensorDeviceClass,
                  unit: str, kind: str | None) -> None:
-        super().__init__(entry, ENTITY_ID_FORMAT, f"forecast_overnight_{key}")
+        super().__init__(entry, ENTITY_ID_FORMAT, f"{self._KEY_PREFIX}{key}")
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._field = field
@@ -268,10 +270,7 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
                 blocking=True, return_response=True)
             forecasts = cast(dict[str, Any], resp or {})
             periods = forecasts.get(self._source, {}).get("forecast", [])
-            value = weather_derive.overnight_forecast_mean(
-                periods, self._field, dt_util.now())
-            if value is not None:
-                value = units.to_scheduler(value, self._forecast_unit(), self._kind)
+            value = self._value_from(periods)
         except Exception as err:
             # Once per outage; the hourly retries log at debug.
             if self._attr_available:
@@ -294,6 +293,15 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
             # No hours of tonight in the forecast yet.
             self._schedule_retry(retry)
 
+    def _value_from(self, periods: list[dict[str, Any]]) -> float | None:
+        """This sensor's value from the hourly forecast periods, in its
+        native unit; None when they hold no hours it covers."""
+        value = weather_derive.overnight_forecast_mean(
+            periods, self._field, dt_util.now())
+        if value is None:
+            return None
+        return units.to_scheduler(value, self._forecast_unit(), self._kind)
+
     def _forecast_unit(self) -> str | None:
         """The unit the weather entity reports this field in: its own
         `<field>_unit` attribute, else what a weather entity defaults to in
@@ -312,6 +320,56 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
         if self.hass.config.units is METRIC_SYSTEM:
             return UnitOfSpeed.KILOMETERS_PER_HOUR
         return self.hass.config.units.wind_speed_unit
+
+
+class ForecastMorningSensor(ForecastOvernightSensor, RestoreEntity):
+    """The coming morning's hourly forecast temperature, for the frost shift:
+    the coldest hour from 00:00 to noon as its state, every hour in the
+    `hourly` attribute ([[ISO hour start, °F], ...], always °F: the scheduler
+    reads it, not people).
+
+    A forecast only covers hours from now on, so hours already past are kept
+    from earlier reads, and the hours survive a restart: a run re-planned
+    mid-morning still sees the cold it is waiting out."""
+
+    _KEY_PREFIX = "forecast_morning_"
+    _unrecorded_attributes = frozenset({"hourly"})
+
+    def __init__(self, entry: GeodropsRachioConfigEntry,
+                 source: str | None) -> None:
+        super().__init__(entry, "temperature", "temperature", source,
+                         SensorDeviceClass.TEMPERATURE,
+                         UnitOfTemperature.FAHRENHEIT, units.TEMPERATURE)
+        self._hourly: dict[dt.datetime, float] = {}
+
+    @property
+    def available(self) -> bool:
+        # The hours already held stay readable while a refresh fails.
+        return bool(self._hourly) or super().available
+
+    async def async_added_to_hass(self) -> None:
+        last = await self.async_get_last_state()
+        if last is not None:
+            self._hourly = dict(parse_hourly(last.attributes.get("hourly")))
+            self._attr_native_value = self._publish_hourly()
+        await super().async_added_to_hass()
+
+    def _value_from(self, periods: list[dict[str, Any]]) -> float | None:
+        unit = self._forecast_unit()
+        fresh = {t: units.to_scheduler(v, unit, self._kind)
+                 for t, v in weather_derive.morning_hourly(periods, dt_util.now())}
+        self._hourly = {**self._hourly, **fresh}
+        return self._publish_hourly()
+
+    def _publish_hourly(self) -> float | None:
+        """Keep only this morning's hours, show them, and return the coldest
+        (None for none)."""
+        start, end = weather_derive.morning_span(dt_util.now())
+        self._hourly = {t: v for t, v in sorted(self._hourly.items())
+                        if start <= t < end}
+        self._attr_extra_state_attributes = {"hourly": [
+            [t.isoformat(), round(v, 1)] for t, v in self._hourly.items()]}
+        return min(self._hourly.values()) if self._hourly else None
 
 
 class ZoneCoordinatorSensor(GeodropsRachioZoneEntity, SensorEntity):
@@ -514,8 +572,9 @@ _RECORDS = [
 class WateringWindowSensor(GeodropsRachioEntity, SensorEntity):
     """Tonight's watering window as the next plan would size it, e.g.
     "02:10–05:45", recomputed whenever an input changes: the drought level,
-    the Finish anchor and offset, the sun times, the overnight forecast.
-    Attributes say how each end was arrived at."""
+    the Finish anchor and offset or Automatic watering time, the sun times,
+    the overnight and morning forecasts. Attributes say how each end was
+    arrived at."""
 
     _unrecorded_attributes = frozenset({MATCH_ALL})
 
@@ -536,17 +595,29 @@ class WateringWindowSensor(GeodropsRachioEntity, SensorEntity):
                 start = dt_util.as_local(w["start"])
                 end = dt_util.as_local(w["end"])
                 choice = w["anchor_choice"]
+                auto = w["timing_mode"] == "auto"
+                frost = w["frost"] or {}
+                clear_at = frost.get("clear_at")
                 self._attr_native_value = (
                     f"{start.strftime('%H:%M')}–{end.strftime('%H:%M')}")
                 self._attr_extra_state_attributes = {
                     "start": start.isoformat(), "end": end.isoformat(),
+                    "timing_mode": w["timing_mode"],
                     "finish_anchor": w["anchor"],
                     "finish_anchor_source": (
-                        "Finish anchor" if choice in ("dawn", "sunrise")
-                        else "drought level"),
-                    # Later-is-positive, like the Finish offset slider.
+                        "drought level" if auto or choice not in ("dawn", "sunrise")
+                        else "Finish anchor"),
+                    # Later-is-positive, like the Finish offset slider; the
+                    # level's own, before any frost shift.
                     "minutes_after_anchor": -w["end_offset_minutes"],
-                    "finish_offset": w["shift_minutes"],
+                    # Ignored with automatic watering time.
+                    "finish_offset": 0 if auto else w["shift_minutes"],
+                    # How much later frost moves the finish, from when the
+                    # forecast clears; a skip means it does not clear in time.
+                    "frost_shift_minutes": frost.get("shift_minutes", 0),
+                    "frost_clear_at": (dt_util.as_local(clear_at).isoformat()
+                                       if clear_at is not None else None),
+                    "frost_skip": bool(frost.get("skip")),
                     "window_hours": w["cap_hours"],
                     "sized_from": w["cap_source"],
                     "disease_pressure": w["pressure"],
@@ -644,6 +715,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
             device_class, unit, kind))
         entities.append(ForecastOvernightSensor(
             entry, key, field, forecast_entity, device_class, unit, kind))
+    entities.append(ForecastMorningSensor(entry, forecast_entity))
 
     coordinator = entry.runtime_data.coordinator
     hub_id = entry.runtime_data.hub_device_id

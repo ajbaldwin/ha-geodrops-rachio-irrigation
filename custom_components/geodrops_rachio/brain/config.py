@@ -50,6 +50,14 @@ class Tunables:
     # UW-Madison / Purdue action threshold (golf turf); tune for lawns.
     dollar_spot_enabled: bool = True
     dollar_spot_threshold_pct: float = 20.0
+    # Frost. With Automatic watering time on, a forecast hour below
+    # frost_temp_f that the run would overlap slides the finish later, until
+    # the forecast clears, but never past sunrise + frost_max_delay_minutes
+    # (brain/frost.py). In both modes, a live temperature below
+    # frost_skip_temp_f when the window opens skips the night.
+    frost_temp_f: float = 38.0
+    frost_max_delay_minutes: int = 90
+    frost_skip_temp_f: float = 34.0
     # Rain-gauge accumulation threshold. Doubles as the spray-zone
     # corroboration: while a spray-flagged zone runs, precip_type "rain" is
     # believed only if the gauge clears this (or it is hail), because the Tempest
@@ -205,6 +213,12 @@ def finish_end_offset(profile: DroughtProfile, global_offset: int,
     return resolved_end_offset(profile, global_offset) - finish_shift(shift_raw)
 
 
+def auto_timing(raw: str | None) -> bool:
+    """The Automatic watering time switch's state: on only when it reads "on",
+    so a missing switch keeps the Finish controls in charge."""
+    return raw == "on"
+
+
 @dataclass(frozen=True)
 class DroughtProfile:
     target_offset: int
@@ -293,6 +307,10 @@ class DerivedSensors:
         default_factory=lambda: dict(_OBSERVED_DEFAULT))
     precipitation_chance_prefix: str = "sensor.precipitation_chance_"
     precipitation_amount_prefix: str = "sensor.precipitation_amount_"
+    # The coming morning's hourly forecast temperatures (an `hourly` attribute),
+    # for the frost shift. The integration's own sensor, like the Finish
+    # controls: entries set up before it have none stored.
+    forecast_morning_temp: str = "sensor.geodrops_rachio_forecast_morning_temperature"
 
 
 @dataclass(frozen=True)
@@ -307,6 +325,7 @@ class HABindings:
     # a missing entity reads as Auto / no shift.
     finish_anchor_select: str = "select.geodrops_rachio_finish_anchor"
     finish_offset_number: str = "number.geodrops_rachio_finish_offset"
+    auto_timing_switch: str = "switch.geodrops_rachio_auto_timing"
     standby_switch: str = "switch.sprinkler_standby"
     rachio_device_name: str = "PLACEHOLDER"
     weather: WeatherEntities = WeatherEntities()
@@ -354,6 +373,8 @@ def parse_bindings(raw: Mapping[str, Any] | None) -> HABindings:
             "precipitation_chance_prefix", DerivedSensors().precipitation_chance_prefix),
         precipitation_amount_prefix=d.get(
             "precipitation_amount_prefix", DerivedSensors().precipitation_amount_prefix),
+        forecast_morning_temp=d.get(
+            "forecast_morning_temp", DerivedSensors().forecast_morning_temp),
     )
     return HABindings(
         notify_service=ha.get("notify_service", HABindings().notify_service),
@@ -365,6 +386,8 @@ def parse_bindings(raw: Mapping[str, Any] | None) -> HABindings:
             "finish_anchor_select", HABindings().finish_anchor_select),
         finish_offset_number=ha.get(
             "finish_offset_number", HABindings().finish_offset_number),
+        auto_timing_switch=ha.get(
+            "auto_timing_switch", HABindings().auto_timing_switch),
         standby_switch=ha.get("standby_switch", HABindings().standby_switch),
         rachio_device_name=ha.get("rachio_device_name", HABindings().rachio_device_name),
         weather=weather, sun=sun, derived=derived,

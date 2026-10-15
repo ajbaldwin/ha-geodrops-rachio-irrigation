@@ -7,12 +7,12 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import random
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .. import units
 from ..brain import (
-    calibration, config, dosing, drought, evaluate, plan, sensors, weather)
+    calibration, config, dosing, drought, evaluate, frost, plan, sensors, weather)
 from .io import IOMixin
 
 _LOGGER = logging.getLogger(__name__)
@@ -173,6 +173,16 @@ class PlanningMixin(IOMixin):
             precip_type=text(wx_ids.precip_type) or "none",
         )
 
+    def _live_temp_f(self) -> float | None:
+        """The live temperature in °F, or None while it cannot be read (unlike
+        _read_weather, which defaults it to 0 °F)."""
+        entity = self._loaded_bindings().weather.temperature
+        try:
+            return self._in_scheduler_units(
+                entity, float(self.port.state(entity) or ""), units.TEMPERATURE)
+        except (TypeError, ValueError):
+            return None
+
     def _in_scheduler_units(self, entity: str, value: float, kind: str | None) -> float:
         """`value`, read from `entity`, converted from the unit that entity
         reports into the scheduler's unit for `kind` (units.to_scheduler)."""
@@ -332,15 +342,103 @@ class PlanningMixin(IOMixin):
         watering ends just as drying begins; Level 3 finishes at dawn, before any
         sun, to minimise evaporative loss when water is scarce. The Finish anchor
         select can replace it at every level, and the Finish offset slider moves
-        the end from where the level would put it. Reads the sun through
-        `cfg.bindings`, so it installs nothing (see project_window)."""
+        the end from where the level would put it. With Automatic watering
+        time on, both controls are ignored: the level's own anchor and offset
+        apply, and the frost shift may move the end later (_apply_frost).
+        Reads the sun through `cfg.bindings`, so it installs nothing (see
+        project_window)."""
         b = cfg.bindings
-        anchor = config.finish_anchor(profile, self.port.state(b.finish_anchor_select))
-        end_offset = config.finish_end_offset(
-            profile, cfg.tunables.end_offset_minutes,
-            self.port.state(b.finish_offset_number))
+        if self._auto_timing(cfg):
+            anchor = profile.end_anchor
+            end_offset = config.resolved_end_offset(
+                profile, cfg.tunables.end_offset_minutes)
+        else:
+            anchor = config.finish_anchor(
+                profile, self.port.state(b.finish_anchor_select))
+            end_offset = config.finish_end_offset(
+                profile, cfg.tunables.end_offset_minutes,
+                self.port.state(b.finish_offset_number))
         end = self._end_anchor_time(anchor, b) - dt.timedelta(minutes=end_offset)
         return anchor, end_offset, end
+
+    def _auto_timing(self, cfg: config.Config) -> bool:
+        """True while the Automatic watering time switch is on."""
+        return config.auto_timing(self.port.state(cfg.bindings.auto_timing_switch))
+
+    def _morning_hourly(self, b: config.HABindings) -> list[tuple[dt.datetime, float]]:
+        """The coming morning's hourly forecast (hour start, °F), or [] while
+        the morning forecast sensor is missing or unavailable."""
+        entity = b.derived.forecast_morning_temp
+        if self.port.state(entity) in (None, "unavailable"):
+            return []
+        return frost.parse_hourly(self.port.attrs(entity).get("hourly"))
+
+    def _frost_decision(self, cfg: config.Config, end: dt.datetime,
+                        span_minutes: float, cap_minutes: float,
+                        ) -> frost.FrostDecision | None:
+        """The frost shift for a run of `span_minutes` finishing at `end`; None
+        while Automatic watering time is off or sunrise cannot be read (the
+        live check at window start still guards those nights).
+
+        Sunrise is read here, at plan time, and never again for this run: the
+        sun's next-rising sensor rolls over to tomorrow once the sun is up."""
+        if not self._auto_timing(cfg):
+            return None
+        raw = self.port.state(cfg.bindings.sun.sunrise)
+        try:
+            sunrise = dt.datetime.fromisoformat(raw or "")
+        except ValueError:
+            return None
+        return frost.frost_shift(
+            self._morning_hourly(cfg.bindings), end, sunrise, span_minutes,
+            cap_minutes, cfg.tunables, now=self.port.now())
+
+    def _apply_frost(self, cfg: config.Config, the_plan: plan.Plan,
+                     end: dt.datetime, disease_cap: float, cap: float,
+                     priority: list[str], minutes: Mapping[str, float],
+                     geo: Mapping[str, str],
+                     adjacency: Mapping[str, Sequence[str]],
+                     ) -> tuple[plan.Plan, dt.datetime, float, dict[str, Any] | None]:
+        """(plan, end, cap, frost record) once the frost shift has moved the
+        window; the inputs unchanged, with a None record, while it does not
+        apply. A skip keeps the plan as built (like a rain skip, it shows what
+        would have watered); the caller takes the no-water path.
+
+        The shift is sized for the plan the full disease window allows, not
+        `the_plan` (clamped to the time left before `end`): a re-plan after a
+        restart past the anchor-based end has no time left there, but may still
+        have it in the shifted window. When the shifted window does not fit
+        that plan, it is rebuilt there, dropping the lowest-priority zones as
+        `insufficient window`, and the finish comes forward to just after the
+        smaller plan."""
+        full_plan = the_plan if cap >= disease_cap else plan.build_plan(
+            priority, minutes, geo, adjacency, disease_cap, cfg.tunables)
+        decision = self._frost_decision(cfg, end, full_plan.span_minutes, disease_cap)
+        if decision is None:
+            return the_plan, end, cap, None
+        record: dict[str, Any] = {
+            "shift_minutes": 0,
+            "clear_at": (decision.clear_at.isoformat()
+                         if decision.clear_at is not None else None),
+            "skip": decision.skip,
+        }
+        if decision.skip or decision.shift_minutes <= 0:
+            return the_plan, end, cap, record
+        new_end, new_cap = decision.end, decision.cap_minutes
+        shifted = full_plan
+        if shifted.span_minutes > new_cap:
+            shifted = plan.build_plan(priority, minutes, geo, adjacency, new_cap,
+                                      cfg.tunables)
+            if not shifted.watered:
+                record["skip"] = True
+                return the_plan, end, cap, record
+            # clear_at is always set when there is a shift.
+            first_start = max(decision.clear_at or end,
+                              self.port.now().astimezone(end.tzinfo))
+            new_end = min(new_end, max(
+                end, first_start + dt.timedelta(minutes=shifted.span_minutes)))
+        record["shift_minutes"] = round((new_end - end).total_seconds() / 60.0)
+        return shifted, new_end, new_cap, record
 
     def _quiet_reading(self, temp: str, humidity: str,
                        wind: str) -> weather.WeatherReading | None:
@@ -368,8 +466,10 @@ class PlanningMixin(IOMixin):
             return []
         d = b.derived.forecast_overnight
         return [b.drought_level_select, b.finish_anchor_select,
-                b.finish_offset_number, b.sun.dawn, b.sun.sunrise,
+                b.finish_offset_number, b.auto_timing_switch,
+                b.sun.dawn, b.sun.sunrise,
                 d["temp"], d["humidity"], d["wind"],
+                b.derived.forecast_morning_temp,
                 b.weather.temperature, b.weather.humidity, b.weather.wind]
 
     def project_window(self) -> dict[str, Any] | None:
@@ -415,6 +515,15 @@ class PlanningMixin(IOMixin):
                 ("warm", flags["warm"]),
                 ("dollar spot", flags.get("dollar_spot", False)),
                 ("humid", flags["humid"]), ("still", flags["stagnant"])) if on]
+        # The frost shift needs the run's length, which only a plan knows: the
+        # Plan sensor's (refreshed hourly and on every setting change), else
+        # the whole window.
+        preview = (self.records.get("preview") or {}).get("attributes") or {}
+        span = preview.get("span_minutes")
+        decision = self._frost_decision(
+            cfg, end, float(span) if isinstance(span, (int, float)) else cap, cap)
+        if decision is not None and not decision.skip and decision.shift_minutes > 0:
+            end, cap = decision.end, decision.cap_minutes
         return {
             "start": end - dt.timedelta(minutes=cap), "end": end,
             "anchor": anchor,
@@ -424,6 +533,10 @@ class PlanningMixin(IOMixin):
             "end_offset_minutes": end_offset,
             "cap_hours": round(cap / 60.0, 2), "cap_source": cap_source,
             "pressure": pressure, "drought_level": level,
+            "timing_mode": "auto" if self._auto_timing(cfg) else "manual",
+            "frost": None if decision is None else {
+                "shift_minutes": round(decision.shift_minutes),
+                "clear_at": decision.clear_at, "skip": decision.skip},
             # The Smith-Kerns inputs behind a "dollar spot" pressure entry; None
             # while the signal is off (disabled, or no assessment).
             "dollar_spot": None if ds_pct is None or risk is None else {
@@ -491,15 +604,16 @@ class PlanningMixin(IOMixin):
             "target_floors": floors,
         })
 
-    async def _plan_context(self, cfg: config.Config,
-                            dry: bool = False) -> dict[str, Any]:
+    async def _plan_context(self, cfg: config.Config, dry: bool = False,
+                            frost_shift: bool = True) -> dict[str, Any]:
         """Evaluate zones and build the full plan — no execution. Shared by the
         real run and the preview so both see identical decisions.
 
         `dry` (the Plan sensor's automatic refresh) plans exactly the same but
         saves nothing — exclusion stamps and recalibrate-on-return stay for a
         real plan to make — and keeps its warnings to debug, since it runs
-        hourly."""
+        hourly. `frost_shift=False` (run now, which waters immediately) plans
+        without the frost shift."""
         tun = cfg.tunables
         level, profile = self._resolve_profile(cfg)
         rng = random.Random()
@@ -681,6 +795,7 @@ class PlanningMixin(IOMixin):
             cap_source = "forecast"
             cap = weather.window_cap_minutes(forecast_wx, tun, ds_pct)
         end_anchor, end_offset, end = self._window_end(cfg, profile)
+        disease_cap = cap
 
         # Clamp the disease-window cap to the time actually left before the end
         # anchor, so a plan can never be scheduled to start in the past or run past
@@ -692,6 +807,11 @@ class PlanningMixin(IOMixin):
             cap = max(0.0, remaining)
 
         the_plan = plan.build_plan(priority, minutes, geo, adjacency, cap, tun)
+        frost_record: dict[str, Any] | None = None
+        if frost_shift:
+            the_plan, end, cap, frost_record = self._apply_frost(
+                cfg, the_plan, end, disease_cap, cap, priority, minutes, geo,
+                adjacency)
         for z in the_plan.dropped:
             uncompleted[z] = "insufficient window"
 
@@ -718,6 +838,10 @@ class PlanningMixin(IOMixin):
             "horizon_hours": profile.rain_skip_horizon_hours,
             "end_anchor": end_anchor,
             "end_offset_minutes": end_offset,
+            "timing_mode": "auto" if self._auto_timing(cfg) else "manual",
+            # What the frost shift did (shift_minutes, clear_at, skip); None
+            # when it does not apply (manual timing, run now, no sunrise).
+            "frost": frost_record,
             "doses": doses,
             "dosing_sources": dosing_sources,
             "dominant_by_zone": dominant_by_zone,

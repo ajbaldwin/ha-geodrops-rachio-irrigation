@@ -163,6 +163,9 @@ shown). Units are °F, mph and mm; readings in other units are converted.
 | `stagnant_wind_mph` | 2.0 | Overnight mean wind that counts as still. |
 | `dollar_spot_enabled` | true | Count dollar spot risk (Smith-Kerns, from the last 5 days of temperature and humidity) as disease pressure. |
 | `dollar_spot_threshold_pct` | 20.0 | Dollar spot probability that counts as pressure. |
+| `frost_temp_f` | 38.0 | With Automatic watering time, a forecast hour below this during the run moves the finish later. |
+| `frost_max_delay_minutes` | 90 | The latest finish a frost shift allows, in minutes after sunrise. |
+| `frost_skip_temp_f` | 34.0 | A live temperature below this when the window opens skips the night (both modes; set very low to disable). |
 | `rain_last_hour_mm` | 0.2 | Rain gauge reading that confirms rain. |
 | `rain_sustain_seconds` | 150 | How long rain must persist before a running zone stops. |
 | `rain_skip_probability_pct` | 70.0 | Forecast chance of rain that can skip a zone… |
@@ -192,21 +195,36 @@ zone, with these entities (all prefixed `geodrops_rachio_`):
   Level 4 Emergency); drives target offsets, runtime scaling and rain-skip
   behavior.
 - **Finish anchor** (`select`, under *Configuration*) — the sun event the
-  watering window ends at. *Auto* (the default) keeps each drought level's
-  own: sunrise at Levels 0–2, dawn at Levels 3–4. *Dawn* or *Sunrise* applies
-  at every level.
+  watering window ends at. *Level default* (the default) keeps each drought
+  level's own: sunrise at Levels 0–2, dawn at Levels 3–4. *Dawn* or *Sunrise*
+  applies at every level.
 - **Finish offset** (`number`, slider, under *Configuration*) — moves the end
   of the window from where the drought level puts it, −90 to +90 minutes:
   positive finishes later, negative earlier, 0 changes nothing. It shifts any
   per-level `end_offset_minutes` override rather than replacing it.
   Changes to either control apply from the next plan, without a restart.
+- **Automatic watering time** (`switch`, under *Configuration*, off by
+  default) — on, the system picks the finish: each drought level's own
+  anchor and offset (the two Finish controls are ignored), moved later on
+  cold mornings. When the morning's hourly forecast has an hour below
+  `frost_temp_f` (38 °F) during the run, the run moves to just after the
+  cold, but never past sunrise + `frost_max_delay_minutes` (90). A shorter
+  window drops the lowest-priority zones; cold through that cap skips the
+  night (`frost-forecast`). Watering in the dew period, before sunrise, stays
+  the rule; only frost moves it.
+- **Frost check at window start** (both modes, nightly only) — a live
+  temperature below `frost_skip_temp_f` (34 °F) when the window opens skips
+  the night (`frost-at-window-start`). It catches a wrong or missing forecast.
 - **Watering window** (`sensor`) — tonight's window as the next plan would
   size it, e.g. `22:55–04:55`, updated as soon as the drought level, the
-  Finish controls, the sun times or the overnight forecast change. Its
-  attributes say how it was arrived at: the anchor and where it came from,
-  the minutes after it the window ends, the window length, and the disease
-  pressure (warm / humid / still) that shortened it. A plan made after the
-  window has opened is clamped to the time left, which this does not show.
+  Finish controls or Automatic watering time, the sun times or the overnight
+  or morning forecast change. Its attributes say how it was arrived at: the
+  timing mode, the anchor and where it came from, the minutes after it the
+  window ends, the window length, the disease pressure (warm / humid /
+  still) that shortened it, and how far frost moves the finish
+  (`frost_shift_minutes`, `frost_clear_at`, `frost_skip`). A plan made after
+  the window has opened is clamped to the time left, which this does not
+  show.
 - **Standby** (`switch`) — pause scheduling.
 - **Run active** (`binary_sensor`) — read-only; on while the scheduler is
   running a watering schedule.
@@ -260,6 +278,10 @@ Home Assistant restarts is not recorded.
 
 - **Forecast overnight** sensors for temperature, humidity and wind — the
   forecast averaged over the local overnight hours up to 06:00.
+- **Forecast morning low** — the coldest forecast hour of the coming
+  morning (00:00–12:00), with every hour in its `hourly` attribute (°F), for
+  the frost shift. It keeps hours already past and its hours survive a
+  restart, so a re-planned run still sees the cold it is waiting out.
 - **Observed overnight** sensors for the same three — what the weather station
   actually measured over last night's 23:00→06:00 (local), weighted by how long
   each reading held. They keep their readings across a restart. The 06:00
@@ -275,11 +297,12 @@ Home Assistant restarts is not recorded.
 - **Rachio runtimes and refill depths** — fetched from the Rachio cloud when a
   plan needs them and kept for 6 hours; *Refresh Rachio runtimes* fetches now.
 - **Plan** — hourly, after a restart, and a few seconds after you change the
-  drought level, a Finish control, *Standby*, a zone's *Exclude* switch or its
+  drought level, a Finish control, *Automatic watering time*, *Standby*, a
+  zone's *Exclude* switch or its
   moisture target. A run shows its own plan there from 23:00 until it ends.
   These refreshes are silent: only *Preview irrigation plan* notifies.
-- **Forecast overnight sensors** — hourly, from the forecast entity, and as
-  soon as that entity comes up after a restart. While the forecast has none of
+- **Forecast overnight and morning sensors** — hourly, from the forecast
+  entity, and as soon as that entity comes up after a restart. While the forecast has none of
   tonight's hours (or cannot be read), they retry every minute for 15 minutes.
 - **Observed overnight sensors** — on every weather-station change, and every
   5 minutes.

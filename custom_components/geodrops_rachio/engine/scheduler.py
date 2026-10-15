@@ -216,9 +216,12 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             _LOGGER.warning("startup target-floor publish skipped (%s)", err)
         # Time gate: only clean up during the overnight run window (~22:00-07:00).
         # A daytime restart must not stop a syringe / pet-cleanup run that shares a
-        # managed zone. (Only managed zones are ever polled — see below.)
+        # managed zone. (Only managed zones are ever polled — see below.) A run
+        # the frost shift moved later can still be waiting or watering after
+        # that, until sunrise + frost_max_delay_minutes; the state it persisted
+        # says so.
         now = self._naive_now()
-        if not (now.hour >= 22 or now.hour <= 7):
+        if not (now.hour >= 22 or now.hour <= 7) and not self._run_state_persisted():
             return
         try:
             cfg = self._load_cfg()
@@ -313,6 +316,12 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         await self._activity("Startup: re-planning the interrupted run from live moisture")
         await self._start_run(True, "startup-heal")
 
+    def _run_state_persisted(self) -> bool:
+        """True when a run left a waiting marker, its progress or the
+        run-active marker behind."""
+        return bool(self.store.read(RUN_ACTIVE) or self.store.read(RUN_PROGRESS)
+                    or self._read_waiting_marker())
+
     async def _handle_progress(self, progress: Any, marker_set: bool,
                                running: list[str]) -> bool:
         """Act on an interrupted night's progress; True if startup is done."""
@@ -394,7 +403,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
     def plan_inputs(self) -> list[str]:
         """The settings whose change moves tonight's plan at once, as
         configured (before any rename): the drought level, the Finish
-        controls, both standby switches and each zone's exclude switch. []
+        controls, Automatic watering time, both standby switches and each
+        zone's exclude switch. []
         while the config does not load."""
         try:
             cfg = self._load_cfg()
@@ -402,7 +412,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             return []
         b = cfg.bindings
         ents = [b.drought_level_select, b.finish_anchor_select,
-                b.finish_offset_number, b.standby_switch, b.standby_boolean]
+                b.finish_offset_number, b.auto_timing_switch,
+                b.standby_switch, b.standby_boolean]
         ents += [z.exclude_boolean for z in cfg.zones.values()]
         return [e for e in ents if e]
 

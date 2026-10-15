@@ -92,6 +92,8 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 "planned_span_minutes": the_plan.span_minutes,
                 "runtime_sources": ctx["runtime_sources"],
                 "horizon_hours": ctx["horizon_hours"],
+                "timing_mode": ctx.get("timing_mode", "manual"),
+                "frost": ctx.get("frost"),
             })
             doses = ctx["doses"]
             attributes["dosing_sources"] = ctx["dosing_sources"]
@@ -221,13 +223,22 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 await self._report(standby_result, tun, event_time=event_time)
                 return
 
-            ctx = await self._plan_context(cfg)
+            # Run now waters at once, so frost cannot move its finish.
+            ctx = await self._plan_context(cfg, frost_shift=wait)
             if resume is not None:
                 self._apply_resume(ctx, resume, cfg, tun)
             # The Plan sensor shows what this run is about to do.
             await self._publish_plan(ctx, stamp, trigger)
             the_plan, start = ctx["the_plan"], ctx["start"]
             uncompleted, priority = ctx["uncompleted"], ctx["priority"]
+
+            frost_rec = ctx["frost"]
+            if frost_rec is not None and frost_rec["skip"]:
+                await self._skip_night(
+                    ctx, stamp, trigger, "frost-forecast",
+                    note=report_format.frost_note(frost_rec, tun),
+                    detail="frost forecast", activity="Skipped: frost forecast")
+                return
 
             skip, skip_detail = self._rain_skip_check(ctx)
             if skip:
@@ -368,6 +379,19 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                     # before the watering reads) makes the run own its context again.
                     self._current_cfg = cfg
                     self._current_bindings = cfg.bindings
+
+                # Frost backstop, in both timing modes: the forecast can be
+                # wrong, missing, or (manual timing) not consulted. An unreadable
+                # temperature skips nothing.
+                temp_now = self._live_temp_f()
+                if temp_now is not None and temp_now < tun.frost_skip_temp_f:
+                    await self._skip_night(
+                        ctx, stamp, trigger, "frost-at-window-start",
+                        note=report_format.frost_live_note(temp_now, tun),
+                        detail=f"frost at window start ({temp_now:.0f}°F)",
+                        activity=("Skipped at window start: frost "
+                                  f"({temp_now:.1f}°F)"))
+                    return
 
                 # The plan was built at 23:00 but watering starts hours later, and the
                 # forecast refreshes every 15 minutes. Without this, a forecast that
@@ -519,6 +543,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 recoveries=outcome.get("recoveries", 0),
                 zone_end_iso={k: self._valve_close_iso(zone_switches[k], finished)
                               for k in watered},
+                note=report_format.frost_note(ctx["frost"], tun),
             )
             # Record what happened BEFORE announcing it. The recap talks to notify and
             # calendar — external services whose failure modes this app does not own —
@@ -573,6 +598,28 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                     _LOGGER.warning("could not clear run progress (%s)", err)
             self._watering_active = False
             self._run_in_progress = False
+
+    async def _skip_night(self, ctx: Mapping[str, Any], stamp: str, trigger: str,
+                          reason: str, *, note: str, detail: str,
+                          activity: str) -> None:
+        """Water nothing tonight for `reason`: every planned zone is marked with
+        it, and the night is recorded, shown and recapped like a rain skip."""
+        uncompleted = ctx["uncompleted"]
+        for z in ctx["priority"]:
+            uncompleted[z] = reason
+        result = report_format.RunResult(
+            watered=[], uncompleted=uncompleted,
+            start="", end="", per_zone_minutes={}, standby=False,
+            window_start=ctx["earliest_start"].astimezone().strftime("%H:%M"),
+            window_end=ctx["end"].astimezone().strftime("%H:%M"),
+            window_hours=round(ctx["cap_minutes"] / 60.0, 2),
+            note=note,
+        )
+        await self._publish_last_run(stamp, trigger, ctx=ctx, result=result,
+                                     skipped=reason)
+        self._set_status("skipped", detail=detail)
+        await self._activity(activity)
+        await self._report(result, ctx["tun"], event_time=ctx["end"])
 
     def _apply_resume(self, ctx: dict[str, Any], owed: Mapping[str, float],
                       cfg: config.Config, tun: config.Tunables) -> None:
@@ -763,6 +810,11 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 f"({int(skip_detail['probability_pct'])}%, {skip_detail['amount_mm']}mm"
                 f" / {skip_detail['horizon_hours']}h)"
             )
+        frost_rec = ctx.get("frost")
+        frost_line = report_format.frost_note(frost_rec, ctx["tun"])
+        if frost_line:
+            prefix = "WOULD SKIP: " if frost_rec and frost_rec.get("skip") else ""
+            msg = msg + f"\n{prefix}{frost_line}"
         activity = (
             f"Preview: would water {len(the_plan.watered)} zone(s), {water_minutes} min "
             f"water over a {span} min span, in window {earliest_str}-{end_str} "
@@ -813,6 +865,8 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
             "forecast_weather": forecast_weather,
             "rain_skip": would_skip,
             "rain_skip_detail": skip_detail,
+            "timing_mode": ctx.get("timing_mode", "manual"),
+            "frost": frost_rec,
         }
 
     async def _log_zone_outcomes(self, cfg: config.Config, watered: Iterable[str],

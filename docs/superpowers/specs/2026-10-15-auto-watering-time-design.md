@@ -1,7 +1,13 @@
 # Auto Watering Time (Frost Shift) — Design
 
 Date: 2026-10-15
-Status: PARKED (2026-10-15) — split out; dollar spot pressure ships first
+Status: IMPLEMENTED (2026-10-15, branch claude/frost-shift). Deviations from
+the text below: the `hourly` attribute keeps past hours and survives a
+restart (RestoreEntity), the frost shift is sized for the plan the full
+disease window allows and takes `now` (a re-plan after the anchor-based end),
+a rebuilt plan's finish comes forward to just after it, and startup recovery
+also runs after 07:00 when a run left a waiting marker, its progress or the
+run-active marker behind.
 Related: [Dollar spot disease pressure](2026-10-15-dollar-spot-pressure-design.md)
 Scope: `brain/config.py`, new `brain/frost.py`, `engine/planning.py`, `engine/orchestration.py`,
 `engine/scheduler.py`, `switch.py`, `sensor.py`, `weather_derive.py`,

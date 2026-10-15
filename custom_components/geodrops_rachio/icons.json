@@ -74,6 +74,9 @@
       "standby": {
         "default": "mdi:power-sleep"
       },
+      "auto_timing": {
+        "default": "mdi:clock-auto"
+      },
       "exclude": {
         "default": "mdi:water-off-outline",
         "state": {
