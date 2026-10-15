@@ -29,7 +29,7 @@
 - **Test commands:**
   - Brain (Windows native OK): `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests_brain -q`
   - Everything else (Docker Desktop running): `bash tools/test.sh <args>`
-  - Golden regeneration: `GOLDEN_UPDATE=1 bash tools/test.sh tests/engine -q`, then `git diff tests/engine/golden`
+  - Golden regeneration (tools/test.sh does not pass env into the container): `MSYS_NO_PATHCONV=1 docker run --rm -e GOLDEN_UPDATE=1 -v "$(pwd -W):/app" -w /app geodrops-rachio-test pytest tests/engine -q`, then `git diff tests/engine/golden`
 
 ## File Map
 
