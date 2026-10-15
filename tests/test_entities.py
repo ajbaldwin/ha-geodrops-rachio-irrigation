@@ -78,7 +78,7 @@ async def test_entities_have_translations_and_categories(
     await hass.async_block_till_done()
     reg = er.async_get(hass)
     entities = er.async_entries_for_config_entry(reg, entry.entry_id)
-    assert len(entities) == 32     # 21 on the hub, 11 per zone
+    assert len(entities) == 34     # 23 on the hub, 11 per zone
     for e in entities:
         assert e.translation_key in strings["entity"][e.domain], e.entity_id
         assert e.original_icon is None, e.entity_id
@@ -92,6 +92,9 @@ async def test_entities_have_translations_and_categories(
     assert category["select.geodrops_rachio_drought_level"] is EntityCategory.CONFIG
     assert category["select.geodrops_rachio_finish_anchor"] is EntityCategory.CONFIG
     assert category["number.geodrops_rachio_finish_offset"] is EntityCategory.CONFIG
+    assert category["switch.geodrops_rachio_auto_timing"] is EntityCategory.CONFIG
+    assert (category["sensor.geodrops_rachio_forecast_morning_temperature"]
+            is EntityCategory.DIAGNOSTIC)
     assert category["sensor.geodrops_rachio_watering_window"] is None
     assert category["sensor.geodrops_rachio_front_deficit"] is None
     assert category["sensor.geodrops_rachio_front_efficacy"] is EntityCategory.DIAGNOSTIC
@@ -211,6 +214,98 @@ async def test_forecast_sensors_follow_the_weather_entity_units(
          "humidity": 90, "wind_speed": 3.0}])
     assert _native(hass, "sensor.geodrops_rachio_forecast_overnight_temp") == 70.0
     assert _native(hass, "sensor.geodrops_rachio_forecast_overnight_wind") == 3.0
+
+
+_MORNING = "sensor.geodrops_rachio_forecast_morning_temperature"
+
+
+def _hour(h: int, temp: float) -> dict:
+    return {"datetime": f"2026-11-02T{h:02d}:00:00+00:00", "temperature": temp,
+            "humidity": 90, "wind_speed": 3.0}
+
+
+async def test_morning_forecast_keeps_this_mornings_hours_in_fahrenheit(
+        hass, enable_pyscript_and_rachio, freezer):
+    """The coldest hour 00:00-12:00 as the state; every hour in °F in
+    `hourly`. Hours a later forecast no longer carries (they are past) are
+    kept, and the morning rolls to tomorrow at noon."""
+    from homeassistant.util.unit_system import METRIC_SYSTEM
+    hass.config.units = METRIC_SYSTEM
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-11-01 23:00:00")
+    hass.states.async_set("weather.home", "cloudy", {"temperature_unit": "°C"})
+    forecast = [_hour(23, 5.0).copy() | {"datetime": "2026-11-01T23:00:00+00:00"},
+                _hour(5, -1.0), _hour(6, 0.0), _hour(12, -5.0)]
+    await _setup_forecast(hass, forecast)
+    assert _native(hass, _MORNING) == pytest.approx(30.2)          # -1 °C
+    assert hass.states.get(_MORNING).attributes["hourly"] == [
+        ["2026-11-02T05:00:00+00:00", 30.2], ["2026-11-02T06:00:00+00:00", 32.0]]
+
+    sensor = hass.data["entity_components"]["sensor"].get_entity(_MORNING)
+    freezer.move_to("2026-11-02 06:10:00")
+    forecast[:] = [_hour(6, 2.0), _hour(7, 4.0)]
+    await sensor._refresh(None)
+    assert [h for h, _t in hass.states.get(_MORNING).attributes["hourly"]] == [
+        "2026-11-02T05:00:00+00:00", "2026-11-02T06:00:00+00:00",
+        "2026-11-02T07:00:00+00:00"]
+    assert hass.states.get(_MORNING).attributes["hourly"][1][1] == pytest.approx(35.6)
+
+    freezer.move_to("2026-11-02 12:30:00")
+    forecast[:] = [{**_hour(4, 1.0), "datetime": "2026-11-03T04:00:00+00:00"}]
+    await sensor._refresh(None)
+    assert hass.states.get(_MORNING).attributes["hourly"] == [
+        ["2026-11-03T04:00:00+00:00", 33.8]]
+
+
+async def test_morning_forecast_survives_a_restart_and_a_failed_refresh(
+        hass, enable_pyscript_and_rachio, freezer):
+    """Restored hours stay readable (not unavailable) while the forecast
+    cannot be read: a run re-planned after a restart still sees the cold."""
+    from homeassistant.core import SupportsResponse
+    from homeassistant.exceptions import HomeAssistantError
+    from pytest_homeassistant_custom_component.common import mock_restore_cache
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-11-02 04:00:00")
+    hourly = [["2026-11-02T05:00:00+00:00", 30.0],
+              ["2026-11-01T05:00:00+00:00", 20.0]]      # yesterday's: dropped
+    mock_restore_cache(hass, [State(_MORNING, "20.0", {"hourly": hourly})])
+
+    async def get_forecasts(call):
+        raise HomeAssistantError("no forecast")
+
+    hass.services.async_register("weather", "get_forecasts", get_forecasts,
+                                 supports_response=SupportsResponse.ONLY)
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        **ENTRY_DATA, "bindings": {"forecast_entity": "weather.home"}})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    st = hass.states.get(_MORNING)
+    assert st.state != "unavailable"
+    assert st.attributes["hourly"] == [["2026-11-02T05:00:00+00:00", 30.0]]
+    assert entry.runtime_data.scheduler._morning_hourly(
+        entry.runtime_data.scheduler._load_cfg().bindings)[0][1] == 30.0
+
+
+async def test_watering_window_reports_the_timing_mode(
+        hass, enable_pyscript_and_rachio):
+    entry = MockConfigEntry(domain=DOMAIN, data={**ENTRY_DATA, "bindings": {
+        "drought_level_select": "select.geodrops_rachio_drought_level"}})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    hass.states.async_set("sensor.sun_next_dawn", "2026-07-02T04:30:00+00:00")
+    hass.states.async_set("sensor.sun_next_rising", "2026-07-02T05:00:00+00:00")
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.geodrops_rachio_auto_timing"},
+        blocking=True)
+    await hass.async_block_till_done()
+    attrs = hass.states.get("sensor.geodrops_rachio_watering_window").attributes
+    assert attrs["timing_mode"] == "auto"
+    assert attrs["finish_anchor_source"] == "drought level"
+    assert attrs["finish_offset"] == 0
+    assert (attrs["frost_shift_minutes"], attrs["frost_clear_at"],
+            attrs["frost_skip"]) == (0, None, False)
 
 
 async def test_action_buttons_created(hass, enable_pyscript_and_rachio):

@@ -42,6 +42,17 @@ class FlagSwitch(GeodropsRachioEntity, _RestoredSwitch):
         super().__init__(entry, ENTITY_ID_FORMAT, key)
 
 
+class AutoTimingSwitch(FlagSwitch):
+    """Automatic watering time: on, the system picks the finish (the drought
+    level's own, moved later on frosty mornings) and the Finish anchor and
+    offset are ignored. Off by default."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, entry: GeodropsRachioConfigEntry) -> None:
+        super().__init__(entry, "auto_timing")
+
+
 class ZoneExcludeSwitch(GeodropsRachioZoneEntity, _RestoredSwitch):
     _attr_entity_category = EntityCategory.CONFIG
 
@@ -54,6 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeodropsRachioConfigEntr
                             async_add_entities: AddEntitiesCallback) -> None:
     hub_device_id = entry.runtime_data.hub_device_id
     entities: list[SwitchEntity] = [FlagSwitch(entry, k) for k in _FLAGS]
+    entities.append(AutoTimingSwitch(entry))
     entities.extend(
         ZoneExcludeSwitch(entry, z["key"], hub_device_id)
         for z in entry.data.get("zones", []))

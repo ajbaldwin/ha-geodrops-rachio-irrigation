@@ -387,7 +387,7 @@
       "finish_anchor": {
         "name": "Finish anchor",
         "state": {
-          "auto": "Auto (by drought level)",
+          "auto": "Level default",
           "dawn": "Dawn",
           "sunrise": "Sunrise"
         }
@@ -423,6 +423,9 @@
       },
       "forecast_overnight_wind": {
         "name": "Forecast overnight wind"
+      },
+      "forecast_morning_temperature": {
+        "name": "Forecast morning low"
       },
       "soil_moisture": {
         "name": "Soil moisture"
@@ -466,6 +469,9 @@
     "switch": {
       "standby": {
         "name": "Standby"
+      },
+      "auto_timing": {
+        "name": "Automatic watering time"
       },
       "exclude": {
         "name": "Exclude from Watering/Calibration"

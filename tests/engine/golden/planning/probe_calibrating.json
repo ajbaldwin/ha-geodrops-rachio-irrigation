@@ -55,10 +55,12 @@
     "bindings": {
      "$dataclass": "custom_components.geodrops_rachio.brain.config.HABindings",
      "fields": {
+      "auto_timing_switch": "switch.geodrops_rachio_auto_timing",
       "calendar_entity": "calendar.lawn",
       "derived": {
        "$dataclass": "custom_components.geodrops_rachio.brain.config.DerivedSensors",
        "fields": {
+        "forecast_morning_temp": "sensor.geodrops_rachio_forecast_morning_temperature",
         "forecast_overnight": {
          "humidity": "sensor.forecast_overnight_humidity",
          "temp": "sensor.forecast_overnight_temp",
@@ -169,6 +171,9 @@
       "dollar_spot_threshold_pct": 20.0,
       "end_offset_minutes": 5,
       "field_capacity_pct": 87.0,
+      "frost_max_delay_minutes": 90,
+      "frost_skip_temp_f": 34.0,
+      "frost_temp_f": 38.0,
       "humid_rh_pct": 90.0,
       "max_pause_minutes": 60,
       "max_pauses_per_schedule": 0,
@@ -317,6 +322,7 @@
     "wind_mph": 3.0
    }
   },
+  "frost": null,
   "horizon_hours": 18,
   "level": "Level 1 - Mild",
   "minutes": {
@@ -397,6 +403,7 @@
     ]
    }
   },
+  "timing_mode": "manual",
   "tun": {
    "$dataclass": "custom_components.geodrops_rachio.brain.config.Tunables",
    "fields": {
@@ -408,6 +415,9 @@
     "dollar_spot_threshold_pct": 20.0,
     "end_offset_minutes": 5,
     "field_capacity_pct": 87.0,
+    "frost_max_delay_minutes": 90,
+    "frost_skip_temp_f": 34.0,
+    "frost_temp_f": 38.0,
     "humid_rh_pct": 90.0,
     "max_pause_minutes": 60,
     "max_pauses_per_schedule": 0,

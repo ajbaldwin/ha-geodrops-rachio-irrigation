@@ -132,6 +132,25 @@ async def test_startup_scenario(freezer, name, caplog):
     _assert_startup_branch(name, world, eng)
 
 
+async def test_startup_after_07_still_rearms_a_frost_shifted_wait(freezer):
+    """A run the frost shift moved past 07:00 is still waiting when HA
+    restarts at 08:15: its waiting marker lets startup re-arm it, where an
+    08:15 restart with nothing persisted stays a no-op."""
+    data = entry_data()
+    freezer.move_to("2026-07-02 08:15:00")
+    world = FakeWorld(freezer)
+    populate(world, data)
+    eng = native_scheduler(world, data, docs={WAITING_MARKER: {
+        "window_end": "2026-07-02T08:40:00+00:00", "stamp": "2026-07-01T23:00:00",
+        "trigger": "nightly"}})
+    await eng._on_startup()
+    if eng.run_task is not None:
+        await eng.run_task
+    assert any("was waiting for its pre-dawn window when HA restarted" in m
+               for m in _logbook(world))
+    assert eng.store.read(WAITING_MARKER) is None
+
+
 async def test_manual_stop_mid_run(freezer, caplog):
     caplog.set_level(logging.INFO, logger=ENGINE_LOGGER_PREFIX)
     data = entry_data()
