@@ -4,6 +4,39 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.5 — Frost: automatic watering time
+
+### Changes
+
+- **New *Automatic watering time* switch** (under *Configuration*, off by
+  default). On, each drought level finishes at its own time and the
+  *Finish anchor* and *Finish offset* controls are ignored. On a cold
+  morning, when the hourly forecast has an hour below 38 °F during the run,
+  the run moves to just after the cold, but never past sunrise + 90 min.
+  A shorter window drops the lowest-priority zones; cold until then skips
+  the night (`frost-forecast`). *Run irrigation now* is never moved.
+- **Frost check when the window opens**, whether the switch is on or off: a
+  live temperature below 34 °F skips the night (`frost-at-window-start`). It
+  catches a wrong or missing forecast. A temperature that cannot be read
+  skips nothing.
+- **New *Forecast morning low* sensor** (diagnostic): the coldest forecast
+  hour from midnight to noon, with every hour in its `hourly` attribute.
+- **Shown everywhere a night is reported:** the *Watering window* sensor
+  gains `timing_mode`, `frost_shift_minutes`, `frost_clear_at` and
+  `frost_skip`; the plan, the run records and the recap add a `Frost: …`
+  line.
+- **Startup recovery after 07:00.** A run moved past 07:00 by frost is now
+  re-armed or finished after a restart, as earlier runs always were.
+- The *Finish anchor* option *Auto* is now labelled *Level default*.
+- **New tunables** `frost_temp_f` (38), `frost_max_delay_minutes` (90) and
+  `frost_skip_temp_f` (34; set very low to turn the live check off).
+- **Requires a Home Assistant restart** after updating.
+
+**Known limit:** a restart after sunrise while a frost-delayed run is still
+waiting misses that morning (nothing waters at the wrong time).
+
+**Rollback:** HACS → Redownload → v1.3.1-beta.4 → restart.
+
 ## v1.3.1-beta.4 — Dollar spot counts as disease pressure
 
 ### Changes
