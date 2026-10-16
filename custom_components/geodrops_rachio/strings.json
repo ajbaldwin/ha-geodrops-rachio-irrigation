@@ -470,8 +470,8 @@
       "standby": {
         "name": "Standby"
       },
-      "auto_timing": {
-        "name": "Automatic watering time"
+      "frost_adjustment": {
+        "name": "Automatic frost adjustment"
       },
       "exclude": {
         "name": "Exclude from Watering/Calibration"

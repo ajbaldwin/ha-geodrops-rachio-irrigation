@@ -92,7 +92,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 "planned_span_minutes": the_plan.span_minutes,
                 "runtime_sources": ctx["runtime_sources"],
                 "horizon_hours": ctx["horizon_hours"],
-                "timing_mode": ctx.get("timing_mode", "manual"),
+                "frost_adjustment": ctx.get("frost_adjustment", False),
                 "frost": ctx.get("frost"),
             })
             doses = ctx["doses"]
@@ -865,7 +865,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
             "forecast_weather": forecast_weather,
             "rain_skip": would_skip,
             "rain_skip_detail": skip_detail,
-            "timing_mode": ctx.get("timing_mode", "manual"),
+            "frost_adjustment": ctx.get("frost_adjustment", False),
             "frost": frost_rec,
         }
 

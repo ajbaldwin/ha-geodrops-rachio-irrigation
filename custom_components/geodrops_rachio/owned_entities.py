@@ -30,7 +30,8 @@ def owned_ids(entry: ConfigEntry) -> dict[str, tuple[str, str]]:
         "select.geodrops_rachio_finish_anchor": ("select", f"{eid}_finish_anchor"),
         "number.geodrops_rachio_finish_offset": ("number", f"{eid}_finish_offset"),
         "switch.geodrops_rachio_standby": ("switch", f"{eid}_standby"),
-        "switch.geodrops_rachio_auto_timing": ("switch", f"{eid}_auto_timing"),
+        "switch.geodrops_rachio_frost_adjustment": (
+            "switch", f"{eid}_frost_adjustment"),
         "sensor.geodrops_rachio_forecast_morning_temperature": (
             "sensor", f"{eid}_forecast_morning_temperature"),
         "sensor.geodrops_rachio_status": ("sensor", f"{eid}_status"),

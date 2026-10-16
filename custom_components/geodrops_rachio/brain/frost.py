@@ -1,10 +1,10 @@
-"""Frost shift for Automatic watering time. Pure Python.
+"""Frost shift for Automatic frost adjustment. Pure Python.
 
 Early morning, in the dew period, is the right time to water in every season;
 only cold justifies watering later. Near freezing a pre-dawn run ices turf,
 walks and drives (Oklahoma State: not below 40 °F) and can damage the system
-(UGA: not at or below 32 °F). So the finish stays at the level's sun anchor
-unless a forecast hour the run would overlap is cold. Then it slides later,
+(UGA: not at or below 32 °F). So the finish stays where the Finish controls
+put it unless a forecast hour the run would overlap is cold. Then it slides later,
 just far enough for the run to follow the cold, and never past sunrise plus a
 short cap: once the dew dries, watering extends leaf wetness. Cold lasting
 through the cap skips the night.

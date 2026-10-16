@@ -241,6 +241,7 @@
     "end_iso": "2026-07-02T04:54:40+00:00",
     "friendly_name": "Irrigation Last Nightly Run",
     "frost": null,
+    "frost_adjustment": false,
     "horizon_hours": 18,
     "planned_minutes": {
      "back": 13.33,
@@ -275,7 +276,6 @@
     },
     "start": "04:09",
     "state_polls": 188,
-    "timing_mode": "manual",
     "trigger": "nightly",
     "uncompleted": {
      "back": "low_quality"
@@ -417,6 +417,7 @@
     "end_iso": "2026-07-02T04:54:40+00:00",
     "friendly_name": "Irrigation Last Run",
     "frost": null,
+    "frost_adjustment": false,
     "horizon_hours": 18,
     "planned_minutes": {
      "back": 13.33,
@@ -451,7 +452,6 @@
     },
     "start": "04:09",
     "state_polls": 188,
-    "timing_mode": "manual",
     "trigger": "nightly",
     "uncompleted": {
      "back": "low_quality"
@@ -485,6 +485,7 @@
      "overnight_wind_mph": 3.0
     },
     "frost": null,
+    "frost_adjustment": false,
     "message": "Would water 1:\n- Front: 13 min\nRuns 04:21–04:55 — 33 min span (13 min water + soaks)\nSkipped:\n- Back: low_quality\nWindow: 23:00–04:55 (5.92h, pressure 0/3: none), ends 5 min before sunrise\nDrought: Level 1 - Mild\nNOTE: static fallback runtimes (Rachio pull failed) for: front",
     "planned_minutes": {
      "front": 13
@@ -525,7 +526,6 @@
     "source": "nightly",
     "span_minutes": 33,
     "start": "04:21",
-    "timing_mode": "manual",
     "updated": "2026-07-01T23:00:00",
     "water_minutes": 13,
     "weather": {
@@ -731,6 +731,7 @@
     "end_iso": "2026-07-02T04:54:40+00:00",
     "friendly_name": "Irrigation Last Nightly Run",
     "frost": null,
+    "frost_adjustment": false,
     "horizon_hours": 18,
     "planned_minutes": {
      "back": 13.33,
@@ -765,7 +766,6 @@
     },
     "start": "04:09",
     "state_polls": 188,
-    "timing_mode": "manual",
     "trigger": "nightly",
     "uncompleted": {
      "back": "low_quality"
@@ -799,6 +799,7 @@
      "overnight_wind_mph": 3.0
     },
     "frost": null,
+    "frost_adjustment": false,
     "message": "Would water 1:\n- Front: 13 min\nRuns 04:21–04:55 — 33 min span (13 min water + soaks)\nSkipped:\n- Back: low_quality\nWindow: 23:00–04:55 (5.92h, pressure 0/3: none), ends 5 min before sunrise\nDrought: Level 1 - Mild\nNOTE: static fallback runtimes (Rachio pull failed) for: front",
     "planned_minutes": {
      "front": 13
@@ -838,7 +839,6 @@
     "source": "nightly",
     "span_minutes": 33,
     "start": "04:21",
-    "timing_mode": "manual",
     "updated": "2026-07-01T23:00:00",
     "water_minutes": 13,
     "weather": {

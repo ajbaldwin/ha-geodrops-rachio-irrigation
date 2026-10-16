@@ -55,7 +55,6 @@
     "bindings": {
      "$dataclass": "custom_components.geodrops_rachio.brain.config.HABindings",
      "fields": {
-      "auto_timing_switch": "switch.geodrops_rachio_auto_timing",
       "calendar_entity": "calendar.lawn",
       "derived": {
        "$dataclass": "custom_components.geodrops_rachio.brain.config.DerivedSensors",
@@ -78,6 +77,7 @@
       "drought_level_select": "select.geodrops_rachio_drought_level",
       "finish_anchor_select": "select.geodrops_rachio_finish_anchor",
       "finish_offset_number": "number.geodrops_rachio_finish_offset",
+      "frost_adjustment_switch": "switch.geodrops_rachio_frost_adjustment",
       "notify_service": "notify.phone",
       "rachio_api_key_secret": "rachio_api_key",
       "rachio_device_name": "Main House",
@@ -323,6 +323,7 @@
    }
   },
   "frost": null,
+  "frost_adjustment": false,
   "horizon_hours": 18,
   "level": "Level 1 - Mild",
   "minutes": {
@@ -403,7 +404,6 @@
     ]
    }
   },
-  "timing_mode": "manual",
   "tun": {
    "$dataclass": "custom_components.geodrops_rachio.brain.config.Tunables",
    "fields": {

@@ -92,7 +92,7 @@ async def test_entities_have_translations_and_categories(
     assert category["select.geodrops_rachio_drought_level"] is EntityCategory.CONFIG
     assert category["select.geodrops_rachio_finish_anchor"] is EntityCategory.CONFIG
     assert category["number.geodrops_rachio_finish_offset"] is EntityCategory.CONFIG
-    assert category["switch.geodrops_rachio_auto_timing"] is EntityCategory.CONFIG
+    assert category["switch.geodrops_rachio_frost_adjustment"] is EntityCategory.CONFIG
     assert (category["sensor.geodrops_rachio_forecast_morning_temperature"]
             is EntityCategory.DIAGNOSTIC)
     assert category["sensor.geodrops_rachio_watering_window"] is None
@@ -287,7 +287,7 @@ async def test_morning_forecast_survives_a_restart_and_a_failed_refresh(
         entry.runtime_data.scheduler._load_cfg().bindings)[0][1] == 30.0
 
 
-async def test_watering_window_reports_the_timing_mode(
+async def test_watering_window_reports_frost_adjustment(
         hass, enable_pyscript_and_rachio):
     entry = MockConfigEntry(domain=DOMAIN, data={**ENTRY_DATA, "bindings": {
         "drought_level_select": "select.geodrops_rachio_drought_level"}})
@@ -297,15 +297,85 @@ async def test_watering_window_reports_the_timing_mode(
     hass.states.async_set("sensor.sun_next_dawn", "2026-07-02T04:30:00+00:00")
     hass.states.async_set("sensor.sun_next_rising", "2026-07-02T05:00:00+00:00")
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.geodrops_rachio_auto_timing"},
-        blocking=True)
+        "switch", "turn_on",
+        {"entity_id": "switch.geodrops_rachio_frost_adjustment"}, blocking=True)
+    await hass.services.async_call(
+        "select", "select_option", {"entity_id": "select.geodrops_rachio_finish_anchor",
+                                    "option": "dawn"}, blocking=True)
     await hass.async_block_till_done()
     attrs = hass.states.get("sensor.geodrops_rachio_watering_window").attributes
-    assert attrs["timing_mode"] == "auto"
-    assert attrs["finish_anchor_source"] == "drought level"
-    assert attrs["finish_offset"] == 0
+    assert attrs["frost_adjustment"] is True
+    # The Finish anchor still applies with the switch on.
+    assert attrs["finish_anchor_source"] == "Finish anchor"
+    assert attrs["finish_anchor"] == "dawn"
     assert (attrs["frost_shift_minutes"], attrs["frost_clear_at"],
             attrs["frost_skip"]) == (0, None, False)
+
+
+async def test_automatic_watering_time_switch_is_renamed(
+        hass, enable_pyscript_and_rachio):
+    # A v1.3.1-beta.5 install has the switch under its old key; setup moves
+    # the registry entry, keeping what the user set on it.
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    reg = er.async_get(hass)
+    garden = ar.async_get(hass).async_create("Garden")
+    old = reg.async_get_or_create(
+        "switch", DOMAIN, f"{entry.entry_id}_auto_timing",
+        suggested_object_id="geodrops_rachio_auto_timing", config_entry=entry)
+    reg.async_update_entity(old.entity_id, area_id=garden.id)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert reg.async_get_entity_id(
+        "switch", DOMAIN, f"{entry.entry_id}_auto_timing") is None
+    moved = reg.async_get("switch.geodrops_rachio_frost_adjustment")
+    assert moved is not None and moved.id == old.id
+    assert moved.unique_id == f"{entry.entry_id}_frost_adjustment"
+    assert moved.area_id == garden.id
+    assert hass.states.get("switch.geodrops_rachio_frost_adjustment").state == "off"
+    assert hass.states.get("switch.geodrops_rachio_auto_timing") is None
+
+
+async def test_renamed_switch_keeps_a_custom_entity_id(
+        hass, enable_pyscript_and_rachio):
+    from homeassistant.helpers import entity_registry as er
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    reg = er.async_get(hass)
+    reg.async_get_or_create(
+        "switch", DOMAIN, f"{entry.entry_id}_auto_timing",
+        suggested_object_id="lawn_frost", config_entry=entry)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert reg.async_get_entity_id(
+        "switch", DOMAIN, f"{entry.entry_id}_frost_adjustment") == "switch.lawn_frost"
+    assert hass.states.get("switch.geodrops_rachio_frost_adjustment") is None
+    # The engine reads it by its current id.
+    scheduler = entry.runtime_data.scheduler
+    assert scheduler._frost_adjustment(scheduler._load_cfg()) is False
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.lawn_frost"}, blocking=True)
+    assert scheduler._frost_adjustment(scheduler._load_cfg()) is True
+
+
+async def test_rename_drops_the_old_switch_when_both_exist(
+        hass, enable_pyscript_and_rachio):
+    # A rollback to beta.5 recreates the old switch beside the moved one.
+    from homeassistant.helpers import entity_registry as er
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    reg = er.async_get(hass)
+    for key in ("frost_adjustment", "auto_timing"):
+        reg.async_get_or_create(
+            "switch", DOMAIN, f"{entry.entry_id}_{key}",
+            suggested_object_id=f"geodrops_rachio_{key}", config_entry=entry)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert reg.async_get_entity_id(
+        "switch", DOMAIN, f"{entry.entry_id}_auto_timing") is None
+    assert hass.states.get("switch.geodrops_rachio_frost_adjustment") is not None
 
 
 async def test_action_buttons_created(hass, enable_pyscript_and_rachio):

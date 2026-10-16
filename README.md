@@ -163,7 +163,7 @@ shown). Units are °F, mph and mm; readings in other units are converted.
 | `stagnant_wind_mph` | 2.0 | Overnight mean wind that counts as still. |
 | `dollar_spot_enabled` | true | Count dollar spot risk (Smith-Kerns, from the last 5 days of temperature and humidity) as disease pressure. |
 | `dollar_spot_threshold_pct` | 20.0 | Dollar spot probability that counts as pressure. |
-| `frost_temp_f` | 38.0 | With Automatic watering time, a forecast hour below this during the run moves the finish later. |
+| `frost_temp_f` | 38.0 | With Automatic frost adjustment, a forecast hour below this during the run moves the finish later. |
 | `frost_max_delay_minutes` | 90 | The latest finish a frost shift allows, in minutes after sunrise. |
 | `frost_skip_temp_f` | 34.0 | A live temperature below this when the window opens skips the night (both modes; set very low to disable). |
 | `rain_last_hour_mm` | 0.2 | Rain gauge reading that confirms rain. |
@@ -203,25 +203,24 @@ zone, with these entities (all prefixed `geodrops_rachio_`):
   positive finishes later, negative earlier, 0 changes nothing. It shifts any
   per-level `end_offset_minutes` override rather than replacing it.
   Changes to either control apply from the next plan, without a restart.
-- **Automatic watering time** (`switch`, under *Configuration*, off by
-  default) — on, the system picks the finish: each drought level's own
-  anchor and offset (the two Finish controls are ignored), moved later on
-  cold mornings. When the morning's hourly forecast has an hour below
+- **Automatic frost adjustment** (`switch`, under *Configuration*, off by
+  default) — on, cold mornings move the finish the two Finish controls set
+  later. When the morning's hourly forecast has an hour below
   `frost_temp_f` (38 °F) during the run, the run moves to just after the
   cold, but never past sunrise + `frost_max_delay_minutes` (90). A shorter
   window drops the lowest-priority zones; cold through that cap skips the
   night (`frost-forecast`). Watering in the dew period, before sunrise, stays
   the rule; only frost moves it.
-- **Frost check at window start** (both modes, nightly only) — a live
+- **Frost check at window start** (switch on or off, nightly only) — a live
   temperature below `frost_skip_temp_f` (34 °F) when the window opens skips
   the night (`frost-at-window-start`). It catches a wrong or missing forecast.
 - **Watering window** (`sensor`) — tonight's window as the next plan would
   size it, e.g. `22:55–04:55`, updated as soon as the drought level, the
-  Finish controls or Automatic watering time, the sun times or the overnight
-  or morning forecast change. Its attributes say how it was arrived at: the
-  timing mode, the anchor and where it came from, the minutes after it the
-  window ends, the window length, the disease pressure (warm / humid /
-  still) that shortened it, and how far frost moves the finish
+  Finish controls or Automatic frost adjustment, the sun times or the
+  overnight or morning forecast change. Its attributes say how it was arrived
+  at: whether frost adjustment is on, the anchor and where it came from, the
+  minutes after it the window ends, the window length, the disease pressure
+  (warm / humid / still) that shortened it, and how far frost moves the finish
   (`frost_shift_minutes`, `frost_clear_at`, `frost_skip`). A plan made after
   the window has opened is clamped to the time left, which this does not
   show.
@@ -297,7 +296,7 @@ Home Assistant restarts is not recorded.
 - **Rachio runtimes and refill depths** — fetched from the Rachio cloud when a
   plan needs them and kept for 6 hours; *Refresh Rachio runtimes* fetches now.
 - **Plan** — hourly, after a restart, and a few seconds after you change the
-  drought level, a Finish control, *Automatic watering time*, *Standby*, a
+  drought level, a Finish control, *Automatic frost adjustment*, *Standby*, a
   zone's *Exclude* switch or its
   moisture target. A run shows its own plan there from 23:00 until it ends.
   These refreshes are silent: only *Preview irrigation plan* notifies.

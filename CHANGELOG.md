@@ -4,6 +4,27 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.6 — Automatic frost adjustment
+
+### Changes
+
+- ***Automatic watering time* is now *Automatic frost adjustment***
+  (`switch.geodrops_rachio_frost_adjustment`). It does one thing: on a cold
+  morning it moves the finish later, past the cold. It no longer overrides
+  the *Finish anchor* and *Finish offset*: they now apply with the switch on
+  too, and frost moves the finish they set. For each drought level's own
+  finish, set *Finish anchor* to *Level default* and *Finish offset* to 0.
+- **The switch comes back off.** The old entity moves to the new id (an id
+  you changed yourself is kept), but its on/off state does not carry over:
+  turn it on again if you want it.
+- The *Watering window* sensor and the run records replace `timing_mode`
+  (`auto` / `manual`) with `frost_adjustment` (`true` / `false`). Update any
+  template or automation that reads `timing_mode`.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.1-beta.5 → restart. The switch comes
+back as *Automatic watering time*, off.
+
 ## v1.3.1-beta.5 — Frost: automatic watering time
 
 ### Changes

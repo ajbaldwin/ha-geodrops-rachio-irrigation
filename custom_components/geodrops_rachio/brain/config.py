@@ -50,10 +50,10 @@ class Tunables:
     # UW-Madison / Purdue action threshold (golf turf); tune for lawns.
     dollar_spot_enabled: bool = True
     dollar_spot_threshold_pct: float = 20.0
-    # Frost. With Automatic watering time on, a forecast hour below
+    # Frost. With Automatic frost adjustment on, a forecast hour below
     # frost_temp_f that the run would overlap slides the finish later, until
     # the forecast clears, but never past sunrise + frost_max_delay_minutes
-    # (brain/frost.py). In both modes, a live temperature below
+    # (brain/frost.py). On or off, a live temperature below
     # frost_skip_temp_f when the window opens skips the night.
     frost_temp_f: float = 38.0
     frost_max_delay_minutes: int = 90
@@ -213,9 +213,9 @@ def finish_end_offset(profile: DroughtProfile, global_offset: int,
     return resolved_end_offset(profile, global_offset) - finish_shift(shift_raw)
 
 
-def auto_timing(raw: str | None) -> bool:
-    """The Automatic watering time switch's state: on only when it reads "on",
-    so a missing switch keeps the Finish controls in charge."""
+def frost_adjustment(raw: str | None) -> bool:
+    """The Automatic frost adjustment switch's state: on only when it reads
+    "on", so a missing switch never moves the finish."""
     return raw == "on"
 
 
@@ -325,7 +325,7 @@ class HABindings:
     # a missing entity reads as Auto / no shift.
     finish_anchor_select: str = "select.geodrops_rachio_finish_anchor"
     finish_offset_number: str = "number.geodrops_rachio_finish_offset"
-    auto_timing_switch: str = "switch.geodrops_rachio_auto_timing"
+    frost_adjustment_switch: str = "switch.geodrops_rachio_frost_adjustment"
     standby_switch: str = "switch.sprinkler_standby"
     rachio_device_name: str = "PLACEHOLDER"
     weather: WeatherEntities = WeatherEntities()
@@ -386,8 +386,8 @@ def parse_bindings(raw: Mapping[str, Any] | None) -> HABindings:
             "finish_anchor_select", HABindings().finish_anchor_select),
         finish_offset_number=ha.get(
             "finish_offset_number", HABindings().finish_offset_number),
-        auto_timing_switch=ha.get(
-            "auto_timing_switch", HABindings().auto_timing_switch),
+        frost_adjustment_switch=ha.get(
+            "frost_adjustment_switch", HABindings().frost_adjustment_switch),
         standby_switch=ha.get("standby_switch", HABindings().standby_switch),
         rachio_device_name=ha.get("rachio_device_name", HABindings().rachio_device_name),
         weather=weather, sun=sun, derived=derived,
