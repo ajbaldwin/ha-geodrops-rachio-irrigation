@@ -403,7 +403,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
     def plan_inputs(self) -> list[str]:
         """The settings whose change moves tonight's plan at once, as
         configured (before any rename): the drought level, the Finish
-        controls, Automatic watering time, both standby switches and each
+        controls, Automatic frost adjustment, both standby switches and each
         zone's exclude switch. []
         while the config does not load."""
         try:
@@ -412,7 +412,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             return []
         b = cfg.bindings
         ents = [b.drought_level_select, b.finish_anchor_select,
-                b.finish_offset_number, b.auto_timing_switch,
+                b.finish_offset_number, b.frost_adjustment_switch,
                 b.standby_switch, b.standby_boolean]
         ents += [z.exclude_boolean for z in cfg.zones.values()]
         return [e for e in ents if e]

@@ -342,28 +342,23 @@ class PlanningMixin(IOMixin):
         watering ends just as drying begins; Level 3 finishes at dawn, before any
         sun, to minimise evaporative loss when water is scarce. The Finish anchor
         select can replace it at every level, and the Finish offset slider moves
-        the end from where the level would put it. With Automatic watering
-        time on, both controls are ignored: the level's own anchor and offset
-        apply, and the frost shift may move the end later (_apply_frost).
-        Reads the sun through `cfg.bindings`, so it installs nothing (see
-        project_window)."""
+        the end from where the level would put it. With Automatic frost
+        adjustment on, the frost shift may then move this end later
+        (_apply_frost). Reads the sun through `cfg.bindings`, so it installs
+        nothing (see project_window)."""
         b = cfg.bindings
-        if self._auto_timing(cfg):
-            anchor = profile.end_anchor
-            end_offset = config.resolved_end_offset(
-                profile, cfg.tunables.end_offset_minutes)
-        else:
-            anchor = config.finish_anchor(
-                profile, self.port.state(b.finish_anchor_select))
-            end_offset = config.finish_end_offset(
-                profile, cfg.tunables.end_offset_minutes,
-                self.port.state(b.finish_offset_number))
+        anchor = config.finish_anchor(
+            profile, self.port.state(b.finish_anchor_select))
+        end_offset = config.finish_end_offset(
+            profile, cfg.tunables.end_offset_minutes,
+            self.port.state(b.finish_offset_number))
         end = self._end_anchor_time(anchor, b) - dt.timedelta(minutes=end_offset)
         return anchor, end_offset, end
 
-    def _auto_timing(self, cfg: config.Config) -> bool:
-        """True while the Automatic watering time switch is on."""
-        return config.auto_timing(self.port.state(cfg.bindings.auto_timing_switch))
+    def _frost_adjustment(self, cfg: config.Config) -> bool:
+        """True while the Automatic frost adjustment switch is on."""
+        return config.frost_adjustment(
+            self.port.state(cfg.bindings.frost_adjustment_switch))
 
     def _morning_hourly(self, b: config.HABindings) -> list[tuple[dt.datetime, float]]:
         """The coming morning's hourly forecast (hour start, °F), or [] while
@@ -377,12 +372,12 @@ class PlanningMixin(IOMixin):
                         span_minutes: float, cap_minutes: float,
                         ) -> frost.FrostDecision | None:
         """The frost shift for a run of `span_minutes` finishing at `end`; None
-        while Automatic watering time is off or sunrise cannot be read (the
+        while Automatic frost adjustment is off or sunrise cannot be read (the
         live check at window start still guards those nights).
 
         Sunrise is read here, at plan time, and never again for this run: the
         sun's next-rising sensor rolls over to tomorrow once the sun is up."""
-        if not self._auto_timing(cfg):
+        if not self._frost_adjustment(cfg):
             return None
         raw = self.port.state(cfg.bindings.sun.sunrise)
         try:
@@ -466,7 +461,7 @@ class PlanningMixin(IOMixin):
             return []
         d = b.derived.forecast_overnight
         return [b.drought_level_select, b.finish_anchor_select,
-                b.finish_offset_number, b.auto_timing_switch,
+                b.finish_offset_number, b.frost_adjustment_switch,
                 b.sun.dawn, b.sun.sunrise,
                 d["temp"], d["humidity"], d["wind"],
                 b.derived.forecast_morning_temp,
@@ -533,7 +528,7 @@ class PlanningMixin(IOMixin):
             "end_offset_minutes": end_offset,
             "cap_hours": round(cap / 60.0, 2), "cap_source": cap_source,
             "pressure": pressure, "drought_level": level,
-            "timing_mode": "auto" if self._auto_timing(cfg) else "manual",
+            "frost_adjustment": self._frost_adjustment(cfg),
             "frost": None if decision is None else {
                 "shift_minutes": round(decision.shift_minutes),
                 "clear_at": decision.clear_at, "skip": decision.skip},
@@ -838,9 +833,9 @@ class PlanningMixin(IOMixin):
             "horizon_hours": profile.rain_skip_horizon_hours,
             "end_anchor": end_anchor,
             "end_offset_minutes": end_offset,
-            "timing_mode": "auto" if self._auto_timing(cfg) else "manual",
+            "frost_adjustment": self._frost_adjustment(cfg),
             # What the frost shift did (shift_minutes, clear_at, skip); None
-            # when it does not apply (manual timing, run now, no sunrise).
+            # when it does not apply (the switch off, run now, no sunrise).
             "frost": frost_record,
             "doses": doses,
             "dosing_sources": dosing_sources,

@@ -572,7 +572,7 @@ _RECORDS = [
 class WateringWindowSensor(GeodropsRachioEntity, SensorEntity):
     """Tonight's watering window as the next plan would size it, e.g.
     "02:10–05:45", recomputed whenever an input changes: the drought level,
-    the Finish anchor and offset or Automatic watering time, the sun times,
+    the Finish anchor and offset, Automatic frost adjustment, the sun times,
     the overnight and morning forecasts. Attributes say how each end was
     arrived at."""
 
@@ -595,23 +595,21 @@ class WateringWindowSensor(GeodropsRachioEntity, SensorEntity):
                 start = dt_util.as_local(w["start"])
                 end = dt_util.as_local(w["end"])
                 choice = w["anchor_choice"]
-                auto = w["timing_mode"] == "auto"
                 frost = w["frost"] or {}
                 clear_at = frost.get("clear_at")
                 self._attr_native_value = (
                     f"{start.strftime('%H:%M')}–{end.strftime('%H:%M')}")
                 self._attr_extra_state_attributes = {
                     "start": start.isoformat(), "end": end.isoformat(),
-                    "timing_mode": w["timing_mode"],
+                    "frost_adjustment": w["frost_adjustment"],
                     "finish_anchor": w["anchor"],
                     "finish_anchor_source": (
-                        "drought level" if auto or choice not in ("dawn", "sunrise")
+                        "drought level" if choice not in ("dawn", "sunrise")
                         else "Finish anchor"),
-                    # Later-is-positive, like the Finish offset slider; the
-                    # level's own, before any frost shift.
+                    # Later-is-positive, like the Finish offset slider; before
+                    # any frost shift.
                     "minutes_after_anchor": -w["end_offset_minutes"],
-                    # Ignored with automatic watering time.
-                    "finish_offset": 0 if auto else w["shift_minutes"],
+                    "finish_offset": w["shift_minutes"],
                     # How much later frost moves the finish, from when the
                     # forecast clears; a skip means it does not clear in time.
                     "frost_shift_minutes": frost.get("shift_minutes", 0),

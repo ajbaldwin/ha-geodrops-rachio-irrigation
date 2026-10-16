@@ -101,6 +101,8 @@ async def async_setup_entry(hass: HomeAssistant,
         hub_device_id=hub.id, renamed=renamed, setup_snapshot=_snapshot(entry),
         targets=config_writer.zone_targets(entry.data.get("zones", [])))
     entry.async_on_unload(coordinator.async_stop)
+    # Before the platforms, so a renamed entity is set up on its moved entry.
+    _migrate_renamed_entities(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # A stage-1 shutdown job runs BEFORE HA cancels background tasks (the run
     # task is one) and fires EVENT_HOMEASSISTANT_STOP, so the safety stop still
@@ -214,6 +216,35 @@ def _purge_retired_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
             platform, DOMAIN, f"{entry.entry_id}_{suffix}")
         if entity_id is not None:
             reg.async_remove(entity_id)
+
+
+# (platform, old unique-id suffix, new suffix) of entities a past version
+# created under another key: v1.3.1-beta.5's Automatic watering time switch is
+# Automatic frost adjustment since beta.6.
+_RENAMED_ENTITIES = (("switch", "auto_timing", "frost_adjustment"),)
+
+
+def _migrate_renamed_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Move each renamed entity's registry entry to its new unique id, keeping
+    what the user set on it (area, name, a custom entity id). An entity id
+    still at the old default follows the new key. The last state is not
+    carried over: the switch comes back off."""
+    reg = er.async_get(hass)
+    for platform, old, new in _RENAMED_ENTITIES:
+        entity_id = reg.async_get_entity_id(
+            platform, DOMAIN, f"{entry.entry_id}_{old}")
+        if entity_id is None:
+            continue
+        if reg.async_get_entity_id(platform, DOMAIN, f"{entry.entry_id}_{new}"):
+            # Both exist (a rollback, then this version again): drop the old.
+            reg.async_remove(entity_id)
+            continue
+        changes: dict[str, Any] = {"new_unique_id": f"{entry.entry_id}_{new}"}
+        target = f"{platform}.geodrops_rachio_{new}"
+        if (entity_id == f"{platform}.geodrops_rachio_{old}"
+                and not reg.async_is_registered(target)):
+            changes["new_entity_id"] = target
+        reg.async_update_entity(entity_id, **changes)
 
 
 def _snapshot(entry: ConfigEntry) -> dict[str, Any]:

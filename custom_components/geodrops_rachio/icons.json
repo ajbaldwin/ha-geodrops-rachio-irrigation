@@ -74,8 +74,8 @@
       "standby": {
         "default": "mdi:power-sleep"
       },
-      "auto_timing": {
-        "default": "mdi:clock-auto"
+      "frost_adjustment": {
+        "default": "mdi:snowflake-thermometer"
       },
       "exclude": {
         "default": "mdi:water-off-outline",
