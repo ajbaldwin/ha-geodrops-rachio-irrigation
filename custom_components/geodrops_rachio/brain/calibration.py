@@ -10,6 +10,12 @@ if TYPE_CHECKING:
     from .config import Tunables
 
 
+# Reject reasons that mean "the probe was too small to measure": the next one grows.
+TOO_SMALL = ("no_rise", "small_rise")
+# Rachio runs whole minutes, so a full-refill probe can deliver up to this much less.
+FULL_REFILL_TOLERANCE_MIN = 1.0
+
+
 def efficacy_to_span(efficacy: float, full_refill_min: float) -> float:
     """Convert efficacy to span in points.
 
@@ -76,7 +82,10 @@ def classify(obs: Observation, t: Tunables) -> str:
     3. obs.rained → "rain"
     4. obs.settled_dominant >= t.saturation_reject → "saturated"
     5. (obs.settled_dominant - obs.pre_dominant) <= 0 → "no_rise"
-    6. else → "ok"
+    6. rise < t.measurable_rise_pts → "small_rise" (inside probe noise: the
+       probe is too small to measure, and a rate learned from it could be off
+       by its whole size)
+    7. else → "ok"
     """
     if not obs.sensor_ok:
         return "unavailable"
@@ -86,8 +95,11 @@ def classify(obs: Observation, t: Tunables) -> str:
         return "rain"
     if obs.settled_dominant >= t.saturation_reject:
         return "saturated"
-    if (obs.settled_dominant - obs.pre_dominant) <= 0:
+    rise = obs.settled_dominant - obs.pre_dominant
+    if rise <= 0:
         return "no_rise"
+    if rise < t.measurable_rise_pts:
+        return "small_rise"
     return "ok"
 
 
@@ -197,8 +209,8 @@ def apply_reject(zrec: Mapping[str, Any], reason: str, minutes: float, rise: flo
 
     Both dose-size rejects resize the probe so it self-corrects toward the clean
     measurable band:
-    - "no_rise": the probe was too small — record its size and (non-positive)
-      rise so probe_minutes grows the next probe.
+    - "no_rise" / "small_rise": the probe was too small — record its size and
+      (unmeasurable) rise so probe_minutes grows the next probe.
     - "saturated": the probe was too large — record the shrunk size (÷probe_shrink)
       with last_rise=None so probe_minutes holds there next time.
     Confounded reasons (rain/unavailable/training) never tested efficacy, so they
@@ -206,12 +218,47 @@ def apply_reject(zrec: Mapping[str, Any], reason: str, minutes: float, rise: flo
     """
     out = dict(zrec)
     out["last_reject_reason"] = reason
-    if reason == "no_rise":
+    if reason in TOO_SMALL:
         out["prior_minutes"] = minutes
         out["last_rise"] = rise
     elif reason == "saturated":
         out["prior_minutes"] = minutes / t.probe_shrink
         out["last_rise"] = None
+    return out
+
+
+def unresponsive(reason: str, minutes: float, full_refill_min: float | None) -> bool:
+    """Did a full refill still produce no measurable rise?
+
+    A full refill is the most one night delivers, so a probe grown to it has
+    nowhere left to go: no measurable rise from it means the water is not
+    reaching the probe (a clogged or misaligned head, a probe outside the
+    spray pattern, fast-draining soil, or a probe needing GeoDrops
+    calibration). `minutes` within FULL_REFILL_TOLERANCE_MIN of the full
+    refill counts, since Rachio runs whole minutes. An obs queued before its
+    full refill was recorded (None or 0) never decides it.
+    """
+    if reason not in TOO_SMALL or not full_refill_min:
+        return False
+    return minutes >= full_refill_min - FULL_REFILL_TOLERANCE_MIN
+
+
+def resume(rec: Mapping[str, Any]) -> dict[str, Any]:
+    """Restart an unresponsive zone's calibration from a first probe.
+
+    For after its heads or probe were checked: the learned rate and the stuck
+    probe size are dropped, the lifetime n_obs and retention are kept.
+    """
+    out = dict(rec)
+    out.pop("unresponsive_since", None)
+    out["state"] = "recalibrating"
+    out["efficacy"] = None
+    out["span_pts"] = 0
+    out["recent"] = []
+    out["prior_minutes"] = None
+    out["last_rise"] = None
+    out["miss_streak"] = 0
+    out["last_reject_reason"] = None
     return out
 
 

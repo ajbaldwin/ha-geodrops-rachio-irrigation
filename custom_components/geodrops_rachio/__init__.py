@@ -22,7 +22,7 @@ from .coordinator import (
     GeodropsRachioConfigEntry, GeodropsRachioData, ZoneStateCoordinator)
 from .engine.port import HassPort
 from .engine.scheduler import Scheduler
-from .engine.store import async_open_store, async_remove_store
+from .engine.store import EFFICACY, async_open_store, async_remove_store
 from .entity import device_info
 from .util import slug
 
@@ -115,6 +115,14 @@ async def async_setup_entry(hass: HomeAssistant,
     # Re-raised by the next setup if still true; a disabled or deleted entry
     # must not leave it behind.
     entry.async_on_unload(lambda: issues.async_clear(hass, entry))
+    # The unresponsive-zones repair follows the efficacy store: re-checked on
+    # every engine write, and at setup for a zone already stuck.
+
+    @callback
+    def _check_unresponsive() -> None:
+        issues.async_check_unresponsive(hass, entry, scheduler.store.read(EFFICACY))
+    entry.async_on_unload(scheduler.add_listener(_check_unresponsive))
+    _check_unresponsive()
     entry.async_create_background_task(
         hass, _async_check_api_key(hass, entry, session), "geodrops_rachio_check_key")
     _purge_orphan_zone_devices(hass, entry)

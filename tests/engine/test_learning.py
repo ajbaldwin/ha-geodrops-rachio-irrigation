@@ -19,13 +19,15 @@ def _obs(zone, run_end=RUN_END):
             "peak": None, "retained": None, "last_seen_updated": None}
 
 
-def _engine(freezer, *, pending, when="2026-07-02 04:30:00", self_cal=True):
+def _engine(freezer, *, pending, when="2026-07-02 04:30:00", self_cal=True,
+            efficacy=None):
     data = entry_data(self_cal=self_cal)
     freezer.move_to(when)
     w = FakeWorld(freezer)
     populate(w, data)
     eng = native_engine(w, data, *ALL_MIXINS, docs={
-        PENDING_OBS: pending, EFFICACY: {"front": {"state": "calibrating"}}})
+        PENDING_OBS: pending,
+        EFFICACY: efficacy or {"front": {"state": "calibrating"}}})
     return w, eng
 
 
@@ -85,6 +87,69 @@ async def test_accept_without_a_retained_reading_keeps_retention_unset(freezer):
     await _poll(w, eng, 1)
     front = eng.store.read(EFFICACY)["front"]
     assert front["n_obs"] == 1 and front["retention"] is None
+
+
+# --- small rises and unresponsive zones -----------------------------------
+
+def _rise_to(w, peak, retained):
+    """A post-watering peak reading, then a retained one past the settle floor."""
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", peak))
+    w.at("2026-07-02 11:00:00", lambda: w.set("sensor.front_dominant", retained))
+
+
+async def test_a_small_rise_grows_the_probe_and_is_not_learned(freezer):
+    w, eng = _engine(freezer, pending=[{**_obs("front"), "full_refill_min": 60.0}])
+    _rise_to(w, "61.0", "60.8")            # +1 from 60: inside probe noise
+    await _poll(w, eng, 15)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["state"] == "calibrating"
+    assert front["last_reject_reason"] == "small_rise"
+    assert (front["prior_minutes"], front["last_rise"]) == (20, pytest.approx(1.0))
+    assert front.get("efficacy") is None and "n_obs" not in front
+
+
+async def test_a_full_refill_with_no_measurable_rise_marks_the_zone_unresponsive(freezer):
+    w, eng = _engine(freezer, pending=[
+        {**_obs("front"), "minutes": 40, "full_refill_min": 40.4}])
+    _rise_to(w, "61.0", "60.8")
+    await _poll(w, eng, 15)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["state"] == "unresponsive"
+    assert front["last_reject_reason"] == "small_rise"
+    assert front["unresponsive_since"] == "2026-07-02T11:30:00+00:00"
+
+
+async def test_an_obs_without_a_full_refill_never_marks_unresponsive(freezer):
+    # queued before full_refill_min was recorded
+    w, eng = _engine(freezer, pending=[{**_obs("front"), "minutes": 40}])
+    _rise_to(w, "61.0", "60.8")
+    await _poll(w, eng, 15)
+    assert eng.store.read(EFFICACY)["front"]["state"] == "calibrating"
+
+
+async def test_a_measurable_rise_clears_unresponsive(freezer):
+    w, eng = _engine(freezer, pending=[{**_obs("front"), "full_refill_min": 60.0}],
+                     efficacy={"front": {"state": "unresponsive",
+                                         "unresponsive_since": "2026-07-01T12:00:00+00:00"}})
+    _rise_to(w, "68.0", "64.0")
+    await _poll(w, eng, 15)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["state"] == "recalibrating" and front["n_obs"] == 1
+    assert "unresponsive_since" not in front
+
+
+async def test_resume_calibration_restarts_only_unresponsive_zones(freezer):
+    w, eng = _engine(freezer, pending=[], efficacy={
+        "front": {"state": "unresponsive", "prior_minutes": 40, "last_rise": 0.5,
+                  "last_reject_reason": "no_rise", "n_obs": 2,
+                  "unresponsive_since": "2026-07-01T12:00:00+00:00"},
+        "back": {"state": "calibrating", "prior_minutes": 20}})
+    assert await eng.async_resume_calibration() == ["front"]
+    store = eng.store.read(EFFICACY)
+    assert store["front"]["state"] == "recalibrating"
+    assert store["front"]["prior_minutes"] is None and store["front"]["n_obs"] == 2
+    assert store["back"] == {"state": "calibrating", "prior_minutes": 20}
+    assert await eng.async_resume_calibration() == []
 
 
 # --- GeoDrops reading time ------------------------------------------------

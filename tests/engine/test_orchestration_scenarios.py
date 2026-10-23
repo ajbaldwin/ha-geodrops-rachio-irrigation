@@ -180,6 +180,9 @@ async def test_calibration_obs_baseline_and_times_are_per_zone(freezer):
         end = dt.datetime.fromisoformat(rec["zone_end_iso"])
         assert start < end <= dt.datetime.fromisoformat(rec["run_end_iso"])
         assert rec["zone_end_iso"] == attrs["zone_end_iso"][k]
+        # One full refill, so the settle poll can tell a stuck zone from a small probe.
+        assert rec["full_refill_min"] == pytest.approx(
+            attrs["dosing"][k]["scaled_full_refill_min"], abs=0.1)
         starts.append(start)
     assert starts[0] != starts[1]                       # each zone's own valve
 

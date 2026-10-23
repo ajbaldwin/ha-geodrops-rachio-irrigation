@@ -144,6 +144,21 @@ class LearningMixin(PlanningMixin):
         async with self._obs_lock:
             await self._settle_pending(cfg, tun)
 
+    async def async_resume_calibration(self) -> list[str]:
+        """Restart calibration for every unresponsive zone (the repair's fix
+        flow, once its heads and probe were checked). Returns the zones."""
+        async with self._obs_lock:
+            store = self._read_efficacy_store()
+            resumed = [k for k, rec in store.items()
+                       if isinstance(rec, dict) and rec.get("state") == "unresponsive"]
+            if not resumed:
+                return []
+            for k in resumed:
+                store[k] = calibration.resume(store[k])
+            await self._write_efficacy_store(store)
+        await self._activity("Calibration resumed: " + ", ".join(resumed))
+        return resumed
+
     async def _settle_pending(self, cfg: config.Config, tun: config.Tunables) -> None:
         pending = self.store.read(PENDING_OBS)
         if not isinstance(pending, list) or not pending:
@@ -251,8 +266,12 @@ class LearningMixin(PlanningMixin):
                     else:
                         miss = 0
                     conv = calibration.converged(recent, tun)
-                    state_name = calibration.next_state(
-                        zrec.get("state", "calibrating"), conv, False, miss, tun)
+                    prior_state = zrec.get("state", "calibrating")
+                    if prior_state == "unresponsive":
+                        # A measurable rise: the zone responds again. Its rate
+                        # starts over from this sample, like any recalibration.
+                        prior_state = "recalibrating"
+                    state_name = calibration.next_state(prior_state, conv, False, miss, tun)
                     zrec = {
                         "state": state_name, "efficacy": eff, "retention": r,
                         "span_pts": span, "recent": recent,
@@ -272,6 +291,12 @@ class LearningMixin(PlanningMixin):
                     zrec["last_reject_reason"] = reason
                 else:
                     zrec = calibration.apply_reject(zrec, reason, minutes, peak - pre, tun)
+                    if calibration.unresponsive(reason, minutes, rec.get("full_refill_min")):
+                        # No probe size left to try: stop probing and raise the
+                        # repair (issues.async_check_unresponsive) until the zone
+                        # rises again or its calibration is resumed.
+                        zrec["state"] = "unresponsive"
+                        zrec.setdefault("unresponsive_since", now.isoformat())
                 store[zone] = zrec
             except Exception as err:
                 _LOGGER.warning("settle-and-learn skipped a record (%s)", err)

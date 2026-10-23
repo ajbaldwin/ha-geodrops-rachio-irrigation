@@ -109,6 +109,24 @@ async def test_plan_context_scenario(freezer, name, caplog):
         assert ctx["priority"] == []
 
 
+async def test_an_unresponsive_zone_is_not_probed_or_dosed_on_its_learned_span(freezer):
+    """While its repair is open a zone gets no probe (headroom or not), and a
+    triggered one is dosed without the span it learned before it stopped
+    responding."""
+    data = entry_data(self_cal=True)
+    world = _world(freezer, data, lambda w: w.set("sensor.front_dominant", "70.0"))
+    eng = native_engine(world, data, PlanningMixin, RunnerMixin, IOMixin, docs={EFFICACY: {
+        "front": {"state": "unresponsive"},
+        "back": {"state": "unresponsive", "efficacy": 0.5, "span_pts": 12.0}}})
+    cfg = eng._load_cfg()
+    prime(eng, cfg)
+    ctx = await eng._plan_context(cfg)
+    assert ctx["priority"] == ["back"]              # front: untriggered, no probe
+    assert ctx["dosing_sources"]["back"] != "probe"
+    assert ctx["doses"]["back"].span_pts != 12.0
+    assert ctx["recovery_candidates"] == []
+
+
 async def test_plan_context_raises_on_missing_zone_sensor(freezer, caplog):
     """`state.get` RAISES NameError for a nonexistent entity, and the zone-signal
     read has no enclosing `except NameError:` -- the exception propagates all

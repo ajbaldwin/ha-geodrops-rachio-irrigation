@@ -511,6 +511,17 @@
     "legacy_script_loaded": {
       "title": "The old GeoDrops + Rachio pyscript may still be running",
       "description": "The integration removed the pyscript version of the scheduler (v0.9) from `/config/pyscript`, but reloading pyscript failed ({error}). The old script may still be loaded and could water a second time tonight.\n\nRestart Home Assistant. This notice clears with the restart."
+    },
+    "zone_unresponsive": {
+      "title": "Some {title} zones are not responding to watering",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Resume watering calibration",
+            "description": "A full refill raised the soil moisture of these zones by less than a measurable amount: {zones}.\n\nCalibration has stopped probing them. They are still watered when dry, dosed from Rachio's runtimes instead of their learned rates. A full refill is the most one night delivers, so the water is most likely not reaching the probe. Check:\n\n- each zone's heads near the probe: clogged, knocked out of alignment, or blocked\n- that the probe sits inside the zone's spray pattern\n- the probe in the GeoDrops app, including its moisture calibration\n\nVery fast-draining soil can also cause this.\n\nOnce checked, submit to restart calibration for these zones from a first probe. The notice also clears on its own if a later watering shows a measurable rise."
+          }
+        }
+      }
     }
   }
 }

@@ -595,6 +595,7 @@
   },
   "pending_obs": [
    {
+    "full_refill_min": 40.0,
     "last_seen_updated": null,
     "minutes": 13,
     "peak": null,
@@ -607,6 +608,7 @@
     "zone_start_iso": "2026-07-02T04:10:10+00:00"
    },
    {
+    "full_refill_min": 40.0,
     "last_seen_updated": null,
     "minutes": 13,
     "peak": null,

@@ -271,3 +271,51 @@ async def test_entry_issues_wait_for_start_and_clear_on_unload(
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert _issue(hass, entry, "notify_missing") is None
     assert _issue(hass, entry, "rachio_not_loaded") is None
+
+
+async def test_unresponsive_zones_raise_a_repair_that_resumes_calibration(
+        hass, enable_pyscript_and_rachio):
+    from custom_components.geodrops_rachio import repairs
+    entry = await _setup(hass)
+    sched = entry.runtime_data.scheduler
+    assert _issue(hass, entry, "zone_unresponsive") is None
+
+    await sched.store.write("efficacy", {
+        "front": {"state": "unresponsive", "prior_minutes": 40, "last_rise": 0.5},
+        "back": {"state": "calibrating"}})
+    await hass.async_block_till_done()
+    issue = _issue(hass, entry, "zone_unresponsive")
+    assert issue is not None and issue.is_fixable
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.translation_placeholders["zones"] == "front"
+
+    # Still true at the next setup: raised again.
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    issue = _issue(hass, entry, "zone_unresponsive")
+    assert issue is not None
+
+    # The fix flow confirms, then restarts calibration for the listed zones.
+    flow = await repairs.async_create_fix_flow(hass, issue.issue_id, issue.data)
+    flow.hass = hass
+    result = await flow.async_step_init()
+    assert result["type"] == "form" and result["step_id"] == "confirm"
+    assert result["description_placeholders"]["zones"] == "front"
+    result = await flow.async_step_confirm({})
+    assert result["type"] == "create_entry"
+    await hass.async_block_till_done()
+    efficacy = entry.runtime_data.scheduler.store.read("efficacy")
+    assert efficacy["front"]["state"] == "recalibrating"
+    assert efficacy["front"]["prior_minutes"] is None
+    assert efficacy["back"] == {"state": "calibrating"}
+    assert _issue(hass, entry, "zone_unresponsive") is None
+
+
+async def test_the_fix_flow_for_an_unloaded_entry_changes_nothing(
+        hass, enable_pyscript_and_rachio):
+    from custom_components.geodrops_rachio import repairs
+    flow = await repairs.async_create_fix_flow(
+        hass, "zone_unresponsive_gone", {"entry_id": "gone"})
+    flow.hass = hass
+    result = await flow.async_step_confirm({})
+    assert result["type"] == "create_entry"

@@ -32,6 +32,10 @@ def test_format_calibration_status():
     assert format_calibration_status("calibrating", 0, None) == "Calibrating"
     # Missing state passes through.
     assert format_calibration_status(None, 0, None) is None
+    # A small rise reads like no rise: the probe was too small to measure.
+    assert format_calibration_status("calibrating", 1, "small_rise") ==         "Calibrating — probe too small"
+    # An unresponsive zone's label names the problem, whatever the last reason.
+    assert format_calibration_status("unresponsive", 2, "small_rise") ==         "Not responding — check heads and probe"
 
 
 def test_parse_refill_depth_prefers_live_then_static():

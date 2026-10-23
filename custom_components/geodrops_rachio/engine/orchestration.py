@@ -589,6 +589,11 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                         # read before the first, the samples after the second.
                         "zone_start_iso": self._valve_open_iso(zone_switches[k], began),
                         "zone_end_iso": result.zone_end_iso[k],
+                        # One full refill: a probe this long that still does not
+                        # rise has nowhere left to grow (calibration.unresponsive).
+                        "full_refill_min": plan.cycles_minutes(
+                            ctx["api_runtimes"].get(cfg.zones[k].rachio_zone_id)
+                            or cfg.zones[k].runtime_minutes, 1.0),
                         # Accumulator (peak + retained) filled by the settle poll.
                         "peak": None,
                         "retained": None,

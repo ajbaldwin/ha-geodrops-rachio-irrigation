@@ -696,14 +696,16 @@ class PlanningMixin(IOMixin):
                 runtime_sources[k] = "static"
             # Resolve span: config pin -> learned -> live Rachio -> None (fallback).
             # A set refill_span_pts PINS the zone (wins over learning). A learned span
-            # is used unless the zone is recalibrating (post-swap, efficacy invalid).
+            # is used unless the zone is recalibrating (post-swap, efficacy invalid)
+            # or unresponsive (its rate no longer describes the water it gets).
             live_span = api_spans.get(zone_cfg.rachio_zone_id)
             eff = efficacy_store.get(k)
             span_pts: float | None
             if zone_cfg.refill_span_pts > 0:
                 span_pts = zone_cfg.refill_span_pts
                 span_source = "config"
-            elif eff and eff.get("span_pts", 0) > 0 and eff.get("state") != "recalibrating":
+            elif (eff and eff.get("span_pts", 0) > 0
+                  and eff.get("state") not in ("recalibrating", "unresponsive")):
                 span_pts = eff["span_pts"]
                 span_source = "learned"
             elif live_span:
