@@ -142,6 +142,9 @@ class FakeWorld:
         # sensor -> its probe's GeoDrops "Last Reading" sensor (HassPort finds it
         # through the entity registry); unlinked sensors are non-GeoDrops.
         self.reading_links: dict[str, str] = {}
+        # sensor -> its probe's GeoDrops "Active" switch, found the same way;
+        # unlinked sensors have none (non-GeoDrops, or a GeoDrops version without it).
+        self.active_links: dict[str, str] = {}
         self.published: dict[str, tuple[Any, dict]] = {}
         self.published_history: list[tuple[str, Any, dict]] = []
         self.calls: list[tuple[str, str, dict]] = []
@@ -246,6 +249,9 @@ class FakePort:
 
     def reading_time_entity(self, entity_id):
         return self.world.reading_links.get(entity_id)
+
+    def probe_active_entity(self, entity_id):
+        return self.world.active_links.get(entity_id)
 
     async def call(self, domain, service, data, *, blocking=False):
         self.world.call(domain, service, data)

@@ -215,6 +215,23 @@ async def test_a_zone_excluded_since_the_restart_is_not_resumed(freezer):
     assert eng.records["last_run"]["attributes"]["uncompleted"].get("back") == "excluded"
 
 
+async def test_a_zone_whose_probe_went_inactive_since_the_restart_is_not_resumed(
+        freezer):
+    data = entry_data()
+    world = _world(freezer, "2026-07-02 02:40:00", data)
+    world.active_links["sensor.back_dominant"] = "switch.back_probe_active"
+    world.set("switch.back_probe_active", "off")
+    left = {"stamp": "2026-07-01T23:00:00", "trigger": "nightly",
+            "window_end": WINDOW_END, "planned": {"front": 24, "back": 24},
+            "delivered": {"front": 12}}
+    eng = native_scheduler(world, data, docs={RUN_PROGRESS: left})
+    await eng._on_startup()
+    await eng.run_task
+    assert _sent_minutes(world) == {"front": 12}
+    uncompleted = eng.records["last_run"]["attributes"]["uncompleted"]
+    assert uncompleted.get("back") == "probe_inactive"
+
+
 async def test_owed_water_that_no_longer_fits_the_window_is_dropped(freezer):
     data = entry_data()
     world = _world(freezer, "2026-07-02 04:05:00", data)   # little window left

@@ -1255,6 +1255,31 @@ async def test_plan_refreshes_once_after_settings_change(
         refresh.assert_awaited_once()
 
 
+async def test_plan_refreshes_when_a_probes_active_switch_changes(
+        hass, enable_pyscript_and_rachio):
+    """GeoDrops' Active switch takes a zone out of the plan, so turning it
+    off refreshes the Plan sensor like the zone's own exclude switch."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    geo = MockConfigEntry(domain="geodrops")
+    geo.add_to_hass(hass)
+    probe = dr.async_get(hass).async_get_or_create(
+        config_entry_id=geo.entry_id, identifiers={("geodrops", "SN1")})
+    reg = er.async_get(hass)
+    reg.async_get_or_create("sensor", "geodrops", "SN1_moisture", device_id=probe.id,
+                            config_entry=geo, suggested_object_id="d")
+    active = reg.async_get_or_create(
+        "switch", "geodrops", "SN1_active", device_id=probe.id, config_entry=geo,
+        suggested_object_id="front_probe_active").entity_id
+    hass.states.async_set(active, "on")
+    entry = await _setup_zone(hass)
+    await _settle(hass, 10)
+    with _plan_refreshes(entry) as refresh:
+        hass.states.async_set(active, "off")
+        await _settle(hass, 10)
+        refresh.assert_awaited_once()
+
+
 async def test_plan_refreshes_when_a_moisture_target_changes(
         hass, enable_pyscript_and_rachio):
     entry = await _setup_zone(hass)

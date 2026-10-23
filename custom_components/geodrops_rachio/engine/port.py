@@ -12,13 +12,53 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-# The ha-geodrops-hacs integration's domain, and the unique_id suffix of the
-# per-probe "Last Reading" timestamp sensor it creates (`<serial>_last_reading`).
+# The ha-geodrops-hacs integration's domain, and the unique_id suffixes of the
+# per-probe "Last Reading" timestamp sensor (`<serial>_last_reading`) and the
+# "Active" switch (`<serial>_active`) it creates. Older GeoDrops versions have
+# no Active switch.
 GEODROPS_DOMAIN = "geodrops"
 LAST_READING_SUFFIX = "_last_reading"
+ACTIVE_SUFFIX = "_active"
+
+
+def geodrops_sibling(hass: HomeAssistant, entity_id: str, domain: str,
+                     suffix: str) -> str | None:
+    """The `domain` entity with unique_id `<serial><suffix>` on the same
+    GeoDrops probe as `entity_id`, or None when `entity_id` is not a GeoDrops
+    entity or its probe has no such entity. Matched on the probe's serial (its
+    device identifier), so another entity whose key merely ends the same way
+    is never picked."""
+    reg = er.async_get(hass)
+    entry = reg.async_get(entity_id)
+    if entry is None or entry.platform != GEODROPS_DOMAIN or not entry.device_id:
+        return None
+    device = dr.async_get(hass).async_get(entry.device_id)
+    if device is None:
+        return None
+    wanted = {f"{serial}{suffix}" for dom, serial in device.identifiers
+              if dom == GEODROPS_DOMAIN}
+    for sibling in er.async_entries_for_device(
+            reg, entry.device_id, include_disabled_entities=True):
+        if (sibling.platform == GEODROPS_DOMAIN and sibling.domain == domain
+                and sibling.unique_id in wanted):
+            return sibling.entity_id
+    return None
+
+
+def probe_out_of_service(active_entity: str | None,
+                         state: Callable[[str], str | None]) -> bool:
+    """True only when a probe's Active switch (`active_entity`) reads an
+    explicit "off", read through `state`.
+
+    Anything else keeps the probe in service: no switch (a GeoDrops version
+    without it, or not a GeoDrops sensor), a disabled switch (no state), or
+    one GeoDrops is not providing (unavailable/unknown, e.g. not loaded or
+    downgraded)."""
+    return active_entity is not None and state(active_entity) == "off"
 
 
 class HAPort(Protocol):
@@ -29,6 +69,8 @@ class HAPort(Protocol):
     def last_updated(self, entity_id: str) -> dt.datetime | None: ...
 
     def reading_time_entity(self, entity_id: str) -> str | None: ...
+
+    def probe_active_entity(self, entity_id: str) -> str | None: ...
 
     async def call(self, domain: str, service: str, data: dict[str, Any], *,
                    blocking: bool = False) -> None: ...
@@ -67,16 +109,15 @@ class HassPort:
         """The GeoDrops "Last Reading" sensor on the same probe as `entity_id`,
         or None when `entity_id` is not a GeoDrops entity (or has no such
         sibling): another integration's sensor, a template, or a missing one."""
-        reg = er.async_get(self.hass)
-        entry = reg.async_get(self._resolve(entity_id))
-        if entry is None or entry.platform != GEODROPS_DOMAIN or not entry.device_id:
-            return None
-        for sibling in er.async_entries_for_device(
-                reg, entry.device_id, include_disabled_entities=True):
-            if (sibling.platform == GEODROPS_DOMAIN
-                    and sibling.unique_id.endswith(LAST_READING_SUFFIX)):
-                return sibling.entity_id
-        return None
+        return geodrops_sibling(self.hass, self._resolve(entity_id), "sensor",
+                                LAST_READING_SUFFIX)
+
+    def probe_active_entity(self, entity_id: str) -> str | None:
+        """The GeoDrops "Active" switch on the same probe as `entity_id`, or None
+        when it has none: not a GeoDrops entity, or a GeoDrops version without
+        the switch."""
+        return geodrops_sibling(self.hass, self._resolve(entity_id), "switch",
+                                ACTIVE_SUFFIX)
 
     async def call(self, domain: str, service: str, data: dict[str, Any], *,
                    blocking: bool = False) -> None:

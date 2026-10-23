@@ -59,3 +59,44 @@ async def test_hass_port_finds_the_geodrops_last_reading_sibling(hass):
     assert port.reading_time_entity("sensor.old") == last.entity_id   # resolved
     assert port.reading_time_entity(other.entity_id) is None          # not GeoDrops
     assert port.reading_time_entity("sensor.nope") is None            # unregistered
+
+
+async def test_hass_port_finds_the_geodrops_active_switch(hass):
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(domain="geodrops")
+    entry.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    reg = er.async_get(hass)
+    probe = devices.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={("geodrops", "SN1")})
+    moisture = reg.async_get_or_create(
+        "sensor", "geodrops", "SN1_moisture", device_id=probe.id, config_entry=entry)
+    # Another switch whose key merely ends the same way, registered first.
+    reg.async_get_or_create("switch", "geodrops", "SN1_alerts_active",
+                            device_id=probe.id, config_entry=entry)
+    reg.async_get_or_create("sensor", "geodrops", "SN1_previous_last_reading",
+                            device_id=probe.id, config_entry=entry)
+    last = reg.async_get_or_create("sensor", "geodrops", "SN1_last_reading",
+                                   device_id=probe.id, config_entry=entry)
+    active = reg.async_get_or_create(
+        "switch", "geodrops", "SN1_active", device_id=probe.id, config_entry=entry)
+    # A GeoDrops version without the switch; a non-switch entity whose unique
+    # id happens to end the same way is not it.
+    older = devices.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={("geodrops", "SN2")})
+    old_moisture = reg.async_get_or_create(
+        "sensor", "geodrops", "SN2_moisture", device_id=older.id, config_entry=entry)
+    reg.async_get_or_create("binary_sensor", "geodrops", "SN2_active",
+                            device_id=older.id, config_entry=entry)
+    other = reg.async_get_or_create("sensor", "template", "front_mirror")
+
+    port = HassPort(hass, lambda e: {"sensor.old": moisture.entity_id}.get(e, e))
+    assert port.probe_active_entity(moisture.entity_id) == active.entity_id
+    assert port.reading_time_entity(moisture.entity_id) == last.entity_id
+    assert port.probe_active_entity("sensor.old") == active.entity_id   # resolved
+    assert port.probe_active_entity(old_moisture.entity_id) is None     # no switch
+    assert port.probe_active_entity(other.entity_id) is None            # not GeoDrops
+    assert port.probe_active_entity("sensor.nope") is None              # unregistered

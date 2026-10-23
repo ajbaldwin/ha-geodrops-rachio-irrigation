@@ -174,6 +174,86 @@ async def test_unavailable_own_entities_are_not_reported(
     assert _issue(hass, entry, "unavailable_entities") is None
 
 
+def _geodrops_probe(hass, *, switch: bool = True) -> str | None:
+    """Register the zone's moisture and state sensors on one GeoDrops probe,
+    with its Active switch unless `switch` is False (a version without it).
+    Returns the switch's entity id."""
+    from homeassistant.helpers import device_registry as dr
+
+    geo = MockConfigEntry(domain="geodrops")
+    geo.add_to_hass(hass)
+    probe = dr.async_get(hass).async_get_or_create(
+        config_entry_id=geo.entry_id, identifiers={("geodrops", "SN1")})
+    reg = er.async_get(hass)
+    for uid, object_id in (("SN1_moisture", "front_moisture"),
+                           ("SN1_state", "front_state")):
+        reg.async_get_or_create("sensor", "geodrops", uid, device_id=probe.id,
+                                config_entry=geo, suggested_object_id=object_id)
+    if not switch:
+        return None
+    return reg.async_get_or_create(
+        "switch", "geodrops", "SN1_active", device_id=probe.id, config_entry=geo,
+        suggested_object_id="front_probe_active").entity_id
+
+
+async def _probe_unavailable_for_a_day(hass, freezer, active: str | None):
+    for eid in BOUND:
+        hass.states.async_set(eid, "1")
+    for eid in ("sensor.front_moisture", "sensor.front_state"):
+        hass.states.async_set(eid, "unavailable")
+    if active is not None:
+        hass.states.async_set(active, "off")
+    entry = await _setup(hass)
+    freezer.tick(dt.timedelta(hours=25))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_an_inactive_probe_raises_no_unavailable_issue(
+        hass, freezer, enable_pyscript_and_rachio):
+    """A probe taken out of service in GeoDrops is unavailable on purpose."""
+    active = _geodrops_probe(hass)
+    entry = await _probe_unavailable_for_a_day(hass, freezer, active)
+    assert _issue(hass, entry, "unavailable_entities") is None
+    assert _issue(hass, entry) is None
+
+
+async def test_a_probe_put_out_of_service_drops_from_the_issue_at_once(
+        hass, freezer, enable_pyscript_and_rachio):
+    active = _geodrops_probe(hass)
+    hass.states.async_set(active, "on")
+    entry = await _probe_unavailable_for_a_day(hass, freezer, None)
+    assert _issue(hass, entry, "unavailable_entities") is not None
+
+    # Not at the next hourly check: turning the switch off clears it.
+    hass.states.async_set(active, "off")
+    await hass.async_block_till_done()
+    assert _issue(hass, entry, "unavailable_entities") is None
+
+
+@pytest.mark.parametrize("state", ["on", "unavailable", None])
+async def test_an_active_or_unknown_probe_still_raises_the_issue(
+        hass, freezer, enable_pyscript_and_rachio, state):
+    """Only an explicit "off" silences it: on, a switch GeoDrops isn't
+    providing (unavailable), or a disabled switch (no state)."""
+    active = _geodrops_probe(hass)
+    if state is not None:
+        hass.states.async_set(active, state)
+    entry = await _probe_unavailable_for_a_day(hass, freezer, None)
+    issue = _issue(hass, entry, "unavailable_entities")
+    assert issue is not None
+    assert issue.translation_placeholders["entities"] == (
+        "`sensor.front_moisture`, `sensor.front_state`")
+
+
+async def test_a_geodrops_version_without_the_switch_still_raises_the_issue(
+        hass, freezer, enable_pyscript_and_rachio):
+    _geodrops_probe(hass, switch=False)
+    entry = await _probe_unavailable_for_a_day(hass, freezer, None)
+    assert _issue(hass, entry, "unavailable_entities") is not None
+
+
 # --- Rachio integration ---------------------------------------------------------
 async def test_rachio_not_loaded_raises_an_issue_until_it_loads(
         hass, enable_pyscript_and_rachio):
