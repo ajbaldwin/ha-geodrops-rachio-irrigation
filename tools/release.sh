@@ -84,15 +84,39 @@ if [ "$PRERELEASE" = true ]; then
   fi
 fi
 
-# CI: the latest run of every workflow on HEAD must have passed.
-ci=$(gh run list --commit "$SHA" --json workflowName,status,conclusion \
-  --jq 'unique_by(.workflowName)[] | "\(.workflowName)|\(.status)|\(.conclusion)"' 2>/dev/null || true)
-# unique_by keeps the first entry per workflow; gh lists newest first.
+# CI: the latest run of every workflow on HEAD must have passed. A run still
+# queued or in progress (CI on a just-merged release PR) is waited for, not
+# failed, so publishing right after the merge needs no separate wait.
+ci_runs() {
+  # unique_by keeps the first entry per workflow; gh lists newest first.
+  gh run list --commit "$SHA" --json databaseId,workflowName,status,conclusion \
+    --jq 'unique_by(.workflowName)[] | "\(.databaseId)|\(.workflowName)|\(.status)|\(.conclusion)"' \
+    2>/dev/null || true
+}
+ci=$(ci_runs)
+waited=0
+while IFS='|' read -r id name status _; do
+  [ -n "$id" ] || continue
+  # run from inside a workflow, that workflow's own run is still in progress
+  if [ -n "${GITHUB_WORKFLOW:-}" ] && [ "$name" = "$GITHUB_WORKFLOW" ]; then
+    continue
+  fi
+  if [ "$status" != completed ]; then
+    echo "  wait  CI '$name' is $status; waiting for it to finish"
+    gh run watch "$id" </dev/null >/dev/null 2>&1 || true
+    waited=1
+  fi
+done <<< "$ci"
+if [ "$waited" = 1 ]; then
+  ci=$(ci_runs)
+fi
+# Drop the run id: the checks below read name|status|conclusion.
+ci=$(printf '%s\n' "$ci" | cut -d'|' -f2-)
 if [ -z "$ci" ]; then
   problem "no CI runs found for ${SHA:0:7}"
 else
   while IFS='|' read -r name status conclusion; do
-    # inside .github/workflows/publish.yml, that run is itself in progress
+    # run from inside a workflow, that workflow's own run is still in progress
     if [ -n "${GITHUB_WORKFLOW:-}" ] && [ "$name" = "$GITHUB_WORKFLOW" ]; then
       continue
     fi
