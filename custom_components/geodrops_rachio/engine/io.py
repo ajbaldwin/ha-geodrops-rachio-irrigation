@@ -47,11 +47,13 @@ class IOMixin(EngineBase):
         return running
 
     def _note_valve(self, zone_switch: str, running: bool) -> None:
-        """Remember when a polled valve closed: the first poll that sees it off
-        after one saw it on. Rachio steps zones inside one schedule on its own,
-        so these polls are the only per-zone record of when each finished — at
-        most one poll interval late."""
+        """Remember when a polled valve first opened this run and when it last
+        closed: the first poll that sees it off after one saw it on. Rachio
+        steps zones inside one schedule on its own, so these polls are the only
+        per-zone record of when each started and finished — at most one poll
+        interval late."""
         if running:
+            self._valve_opened.setdefault(zone_switch, self.port.now())
             self._valve_on.add(zone_switch)
         elif zone_switch in self._valve_on:
             self._valve_on.discard(zone_switch)
@@ -59,7 +61,13 @@ class IOMixin(EngineBase):
 
     def _reset_valve_closes(self) -> None:
         self._valve_on = set()
+        self._valve_opened = {}
         self._valve_closed = {}
+
+    def _valve_open_iso(self, zone_switch: str, began: dt.datetime) -> str:
+        """When `zone_switch` first opened this run, as ISO. A valve never seen
+        open (stepped through between two polls) opened with the run."""
+        return self._valve_opened.get(zone_switch, began).isoformat()
 
     def _valve_close_iso(self, zone_switch: str, finished: dt.datetime) -> str:
         """When `zone_switch` last closed this run, as ISO. A valve still seen on

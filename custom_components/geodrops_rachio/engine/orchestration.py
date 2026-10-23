@@ -118,6 +118,9 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                     "efficacy": crec.get("efficacy"),
                     "span_pts": crec.get("span_pts"),
                     "n_obs": crec.get("n_obs", 0),
+                    # Accepted samples counting toward convergence (n_obs is
+                    # lifetime and outlives a recalibration reset).
+                    "samples": len(crec.get("recent") or []),
                     "last_reject_reason": crec.get("last_reject_reason"),
                 }
             attributes["calibration"] = calibration_detail
@@ -492,6 +495,22 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
             # they describe. RunResult.start is documented as "when watering actually
             # began"; now it is.
             began = self.port.now()
+            # The calibration baseline: each zone's moisture as watering begins,
+            # with when that reading was taken. The plan read it at ~23:00 and the
+            # soil drifts by several points before the window opens; the settle
+            # poll can still move it to a reading taken closer to the zone's own
+            # valve-open (calibration.upgrade_pre). A zone unreadable now keeps
+            # the plan's value, with no reading time.
+            baseline: dict[str, tuple[float | None, dt.datetime | None]] = {}
+            if tun.self_calibration_enabled:
+                for k in the_plan.watered:
+                    bzc = cfg.zones[k]
+                    breading = sensors.read_zone(bzc, self._read_zone_signals(bzc))
+                    if breading.online and breading.dominant is not None:
+                        baseline[k] = (breading.dominant,
+                                       self._sensor_reading_time(bzc.dominant_sensor))
+                    else:
+                        baseline[k] = (ctx["dominant_by_zone"].get(k), None)
             # From here until the finally, valves may open. A preview is refused for
             # this span (it would clobber the run-scoped globals a live run reads).
             self._watering_active = True
@@ -558,11 +577,18 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
             if tun.self_calibration_enabled and watered and trigger != "startup-resume":
                 pend = []
                 for k in watered:
+                    pre, pre_read_at = baseline.get(
+                        k, (ctx["dominant_by_zone"].get(k), None))
                     pend.append({
                         "zone": k,
-                        "pre_dominant": ctx["dominant_by_zone"].get(k),
+                        "pre_dominant": pre,
+                        "pre_read_at": pre_read_at.isoformat() if pre_read_at else None,
                         "minutes": delivered.get(k, 0),
                         "run_end_iso": finished.isoformat(),
+                        # This zone's own valve open and close: the baseline is
+                        # read before the first, the samples after the second.
+                        "zone_start_iso": self._valve_open_iso(zone_switches[k], began),
+                        "zone_end_iso": result.zone_end_iso[k],
                         # Accumulator (peak + retained) filled by the settle poll.
                         "peak": None,
                         "retained": None,

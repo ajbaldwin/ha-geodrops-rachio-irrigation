@@ -81,17 +81,22 @@ def test_parse_last_nightly_falls_back_to_updated_without_end_iso():
 
 def test_parse_nightly_calibration_extracts_zone_state():
     attrs = {"calibration": {"front": {"state": "calibrating", "efficacy": 0.35,
-                                       "n_obs": 2, "last_reject_reason": "no_rise"}}}
+                                       "n_obs": 5, "samples": 2,
+                                       "last_reject_reason": "no_rise"}}}
+    # Progress is the samples counting toward convergence, not lifetime n_obs.
     assert parse_nightly_calibration(attrs, "front") == {
         "efficacy": 0.35, "calibration_state": "calibrating",
-        "n_obs": 2, "last_reject_reason": "no_rise"}
+        "samples": 2, "last_reject_reason": "no_rise"}
+    # A snapshot from before `samples` was recorded shows no count at all.
+    old = {"calibration": {"front": {"state": "calibrating", "n_obs": 4}}}
+    assert parse_nightly_calibration(old, "front")["samples"] == 0
     # A zone not in this night's calibration block -> state/efficacy/reason None.
     assert parse_nightly_calibration(attrs, "back") == {
         "efficacy": None, "calibration_state": None,
-        "n_obs": 0, "last_reject_reason": None}
+        "samples": 0, "last_reject_reason": None}
     assert parse_nightly_calibration({}, "front") == {
         "efficacy": None, "calibration_state": None,
-        "n_obs": 0, "last_reject_reason": None}
+        "samples": 0, "last_reject_reason": None}
 
 
 def test_parse_last_nightly_missing_keys_are_none():
@@ -100,14 +105,19 @@ def test_parse_last_nightly_missing_keys_are_none():
 
 
 def test_parse_efficacy_extracts_zone():
-    store = {"front": {"efficacy": 0.42, "state": "converged",
-                       "n_obs": 3, "last_reject_reason": None}}
+    store = {"front": {"efficacy": 0.42, "state": "converged", "n_obs": 3,
+                       "recent": [0.4, 0.42, 0.44], "last_reject_reason": None},
+             # Lifetime n_obs outlives a reset; only `recent` counts toward
+             # convergence, so a recalibrating zone with 4 lifetime obs is 1/3.
+             "slope": {"efficacy": 0.61, "state": "recalibrating", "n_obs": 4,
+                       "recent": [0.61], "last_reject_reason": None}}
     assert parse_efficacy(store, "front") == {
         "efficacy": 0.42, "calibration_state": "converged",
-        "n_obs": 3, "last_reject_reason": None}
+        "samples": 3, "last_reject_reason": None}
+    assert parse_efficacy(store, "slope")["samples"] == 1
     assert parse_efficacy(store, "missing") == {
         "efficacy": None, "calibration_state": None,
-        "n_obs": 0, "last_reject_reason": None}
+        "samples": 0, "last_reject_reason": None}
 
 
 def test_remove_listener_stops_callbacks():
@@ -147,7 +157,8 @@ def test_data_for_reads_scheduler_records(hass):
             "last_nightly": {"value": 1, "attributes": {
                 "watered": ["front"], "delivered_minutes": {"front": 42.0},
                 "end_iso": "2026-09-13T06:00:00+00:00",
-                "calibration": {"front": {"state": "calibrating", "n_obs": 2}}}},
+                "calibration": {"front": {"state": "calibrating", "n_obs": 2,
+                                          "samples": 2}}}},
             "targets": {"value": 1, "attributes": {"target_floors": {"front": 65.0}}},
             "runtimes": {"value": 1, "attributes": {"refill_depths_mm": {"z1": 8.5}}},
             "preview": {"value": 1, "attributes": {"planned_minutes": {"front": 30}}},
@@ -170,8 +181,10 @@ def test_store_calibration_wins_over_stale_nightly_snapshot(hass):
         records={"last_nightly": {"value": 1, "attributes": {
             "calibration": {
                 "front": {"state": "recalibrating", "n_obs": 1, "efficacy": None},
-                "back": {"state": "calibrating", "n_obs": 1, "efficacy": 0.2}}}}},
+                "back": {"state": "calibrating", "n_obs": 1, "samples": 1,
+                         "efficacy": 0.2}}}}},
         docs={"efficacy": {"front": {"state": "recalibrating", "n_obs": 2,
+                                     "recent": [0.3, 0.35],
                                      "efficacy": 0.325, "last_reject_reason": None},
                            # no state in the store: the nightly snapshot fills in
                            "back": {"excluded_since": "2026-09-20T19:54:38-04:00"}}})

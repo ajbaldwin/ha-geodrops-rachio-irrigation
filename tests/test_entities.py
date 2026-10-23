@@ -690,8 +690,8 @@ async def test_calibration_state_shows_progress_and_reason(hass, enable_pyscript
     publish_record(
         hass, entry, "last_nightly", 1,
         {"calibration": {
-            "front": {"state": "calibrating", "n_obs": 2},
-            "side": {"state": "calibrating", "n_obs": 1,
+            "front": {"state": "calibrating", "n_obs": 5, "samples": 2},
+            "side": {"state": "calibrating", "n_obs": 1, "samples": 1,
                      "last_reject_reason": "saturated"}}})
     await hass.async_block_till_done()
     # Progress toward convergence.

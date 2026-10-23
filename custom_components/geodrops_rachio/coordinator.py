@@ -27,7 +27,7 @@ _REJECT_PHRASES = {
 }
 
 
-def format_calibration_status(state: str | None, n_obs: int | None,
+def format_calibration_status(state: str | None, samples: int | None,
                               last_reject_reason: str | None) -> str | None:
     """One human label folding the raw calibration state together with progress
     and, when a zone is stuck, why.
@@ -47,8 +47,8 @@ def format_calibration_status(state: str | None, n_obs: int | None,
     phrase = _REJECT_PHRASES.get(last_reject_reason or "")
     if phrase:
         return f"{label} — {phrase}"
-    if n_obs:
-        return f"{label} ({n_obs}/{_CONVERGENCE_TARGET})"
+    if samples:
+        return f"{label} ({samples}/{_CONVERGENCE_TARGET})"
     return label
 
 
@@ -78,7 +78,9 @@ def parse_nightly_calibration(attrs: Mapping[str, Any] | None,
     file (which lags and carries no `state` for excluded zones)."""
     cal = ((attrs or {}).get("calibration") or {}).get(key) or {}
     return {"efficacy": cal.get("efficacy"), "calibration_state": cal.get("state"),
-            "n_obs": cal.get("n_obs", 0),
+            # A snapshot from before `samples` was recorded shows no count:
+            # its lifetime n_obs would overstate progress after a reset.
+            "samples": cal.get("samples", 0),
             "last_reject_reason": cal.get("last_reject_reason")}
 
 
@@ -104,7 +106,9 @@ def parse_refill_depth(runtimes_attrs: Mapping[str, Any] | None, rachio_zone_id:
 def parse_efficacy(store: Mapping[str, Any] | None, key: str) -> dict[str, Any]:
     rec = (store or {}).get(key) or {}
     return {"efficacy": rec.get("efficacy"), "calibration_state": rec.get("state"),
-            "n_obs": rec.get("n_obs", 0),
+            # Progress toward convergence is the accepted samples still in the
+            # window, not lifetime n_obs (which survives a recalibration reset).
+            "samples": len(rec.get("recent") or []),
             "last_reject_reason": rec.get("last_reject_reason")}
 
 
@@ -207,14 +211,14 @@ class ZoneStateCoordinator:
             if out["calibration_state"] is None and cal["calibration_state"] is not None:
                 out["calibration_state"] = cal["calibration_state"]
                 # Take progress + reject reason from the same source as the state.
-                out["n_obs"] = cal["n_obs"]
+                out["samples"] = cal["samples"]
                 out["last_reject_reason"] = cal["last_reject_reason"]
             if out["efficacy"] is None and cal["efficacy"] is not None:
                 out["efficacy"] = cal["efficacy"]
         # Fold the raw state + progress + why-stuck into one display label; drop
         # the helper keys so the returned dict keeps its documented shape.
         out["calibration_state"] = format_calibration_status(
-            out.get("calibration_state"), out.pop("n_obs", 0),
+            out.get("calibration_state"), out.pop("samples", 0),
             out.pop("last_reject_reason", None))
         return out
 

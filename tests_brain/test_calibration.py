@@ -147,6 +147,31 @@ def test_accumulate_ignores_reading_taken_before_run_end():
         None, None, None, 85.0, _t(0), _t(0), 4.0)
     assert (peak, ret, seen, ch) == (85.0, None, _t(0), True)
 
+# --- upgrade_pre (the pre-watering baseline, gated on when it was TAKEN) ---
+def test_upgrade_pre_takes_a_newer_reading_taken_before_the_valve_opened():
+    # a reading taken after the snapshot's but before the zone opened arrives
+    # late (GeoDrops lag) -> it is the closer baseline
+    assert calibration.upgrade_pre(60.0, _t(-3), 58.0, _t(-1), _t(0)) == (58.0, _t(-1))
+
+def test_upgrade_pre_ignores_readings_taken_once_the_valve_opened():
+    # taken during watering (or after) -> not a baseline, however it arrives
+    assert calibration.upgrade_pre(60.0, _t(-3), 62.0, _t(0), _t(0)) == (60.0, _t(-3))
+    assert calibration.upgrade_pre(60.0, _t(-3), 62.0, _t(1), _t(0)) == (60.0, _t(-3))
+
+def test_upgrade_pre_ignores_stale_and_missing():
+    # not newer than the baseline it would replace -> no change
+    assert calibration.upgrade_pre(60.0, _t(-1), 58.0, _t(-1), _t(0)) == (60.0, _t(-1))
+    assert calibration.upgrade_pre(60.0, _t(-1), 58.0, _t(-2), _t(0)) == (60.0, _t(-1))
+    assert calibration.upgrade_pre(60.0, _t(-3), None, _t(-1), _t(0)) == (60.0, _t(-3))
+    assert calibration.upgrade_pre(60.0, _t(-3), 58.0, None, _t(0)) == (60.0, _t(-3))
+
+def test_upgrade_pre_needs_the_valve_open_time():
+    # an obs queued before valve-open times were recorded keeps its baseline
+    assert calibration.upgrade_pre(60.0, None, 58.0, _t(-1), None) == (60.0, None)
+
+def test_upgrade_pre_with_no_snapshot_time_takes_any_pre_open_reading():
+    assert calibration.upgrade_pre(60.0, None, 58.0, _t(-1), _t(0)) == (58.0, _t(-1))
+
 # --- retention_factor ---
 def test_retention_factor_and_clamps():
     assert calibration.retention_factor(80.0, 92.0, 84.0, 0.1) == pytest.approx((84-80)/(92-80))  # 0.333

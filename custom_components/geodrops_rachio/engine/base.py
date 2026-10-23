@@ -67,10 +67,11 @@ class EngineBase:
         # Serialises read-modify-writes of the pending calibration queue (the
         # settle poll awaits a fetch between its read and its write).
         self._obs_lock = asyncio.Lock()
-        # Valve closes the runner's polls have seen during the current run
-        # (see IOMixin._note_valve): switches last seen on, and switch -> when
-        # it was first seen off after that.
+        # Valve opens and closes the runner's polls have seen during the current
+        # run (see IOMixin._note_valve): switches last seen on, switch -> when it
+        # was first seen on, and switch -> when it was first seen off after that.
         self._valve_on: set[str] = set()
+        self._valve_opened: dict[str, dt.datetime] = {}
         self._valve_closed: dict[str, dt.datetime] = {}
         self.records: dict[str, dict[str, Any]] = {}
         # Recent publishes, oldest first — a debugging/test trail, so bounded: the

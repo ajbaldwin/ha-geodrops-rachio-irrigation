@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from custom_components.geodrops_rachio.engine.store import EFFICACY
+from custom_components.geodrops_rachio.engine.store import EFFICACY, PENDING_OBS
 from tests.engine import golden
 from tests.engine.helpers import ENGINE_LOGGER_PREFIX, log_trail_native
 from tests.engine.scenario import ALL_MIXINS, entry_data, native_engine, populate
@@ -155,6 +155,33 @@ async def test_night_scenario(freezer, name, caplog):
     logs = log_trail_native(caplog)
     golden.check(f"night/{name}", golden.engine_effects(world, eng, logs))
     _assert_branch(name, eng, logs)
+
+
+async def test_calibration_obs_baseline_and_times_are_per_zone(freezer):
+    """The queued observation's baseline is the moisture when watering began,
+    not at 23:00 planning, and it carries the zone's own valve open/close."""
+    data = entry_data(self_cal=True)
+    world = _prepare(freezer, "x", data)
+    eng = native_engine(world, data, *ALL_MIXINS, docs=CAL)
+    world.at("2026-07-02 01:00:00", lambda: world.set("sensor.front_dominant", "58.0"))
+    for coro in world.advance(2):
+        await coro
+    await eng._plan_and_run(True, "nightly")
+
+    attrs = eng.records["last_run"]["attributes"]
+    pending = {r["zone"]: r for r in eng.store.read(PENDING_OBS)}
+    assert sorted(pending) == sorted(attrs["watered"]) == ["back", "front"]
+    assert pending["front"]["pre_dominant"] == 58.0     # not the 60.0 planned on
+    assert pending["back"]["pre_dominant"] == 60.0
+    starts = []
+    for k, rec in pending.items():
+        assert rec["pre_read_at"] is not None
+        start = dt.datetime.fromisoformat(rec["zone_start_iso"])
+        end = dt.datetime.fromisoformat(rec["zone_end_iso"])
+        assert start < end <= dt.datetime.fromisoformat(rec["run_end_iso"])
+        assert rec["zone_end_iso"] == attrs["zone_end_iso"][k]
+        starts.append(start)
+    assert starts[0] != starts[1]                       # each zone's own valve
 
 
 async def test_preview_refused_while_watering(freezer):
