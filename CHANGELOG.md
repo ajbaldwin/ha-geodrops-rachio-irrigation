@@ -4,6 +4,24 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.8 — Probes out of service; faster calibration
+
+### Changes
+
+- **A zone whose GeoDrops probe has its *Active* switch off is skipped like
+  an excluded zone**, shown as `probe_inactive` among the skipped zones, and
+  its unavailable sensors no longer raise a repair; this needs GeoDrops
+  0.9.0-beta.3 or later, and earlier GeoDrops versions work as before.
+- **With *Active Watering Calibration* on, a zone whose probe was out of
+  service for 48 hours or more restarts calibration** when it comes back,
+  since the probe may not sit where it did.
+- **With *Active Watering Calibration* on, zones on short doses now finish
+  calibrating**: samples that differ by no more than normal probe noise count
+  as agreeing, and a zone that converges takes the average of those samples.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.1-beta.7 → restart.
+
 ## v1.3.1-beta.7 — More accurate watering calibration
 
 These changes apply only with *Active Watering Calibration* on.
