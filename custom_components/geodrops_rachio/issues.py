@@ -206,11 +206,17 @@ def unresponsive_zones(efficacy: Mapping[str, Any] | None) -> list[str]:
 
 @callback
 def async_check_unresponsive(hass: HomeAssistant, entry: ConfigEntry,
-                             efficacy: Mapping[str, Any] | None) -> None:
-    """Raise, update or clear the entry's unresponsive-zones repair."""
-    zones = unresponsive_zones(efficacy)
-    _set(hass, entry, ZONE_UNRESPONSIVE, bool(zones), ir.IssueSeverity.WARNING,
-         is_fixable=True, zones=", ".join(zones))
+                             efficacy: Mapping[str, Any] | None,
+                             zones: Iterable[str], enabled: bool) -> None:
+    """Raise, update or clear the entry's unresponsive-zones repair.
+
+    Only configured zones count, and only while self-calibration is on: with it
+    off nothing probes or resumes a zone, so the repair could never clear.
+    """
+    configured = list(zones)
+    stuck = [k for k in unresponsive_zones(efficacy) if enabled and k in configured]
+    _set(hass, entry, ZONE_UNRESPONSIVE, bool(stuck), ir.IssueSeverity.WARNING,
+         is_fixable=True, zones=", ".join(stuck))
 
 
 # --- lifecycle ----------------------------------------------------------------

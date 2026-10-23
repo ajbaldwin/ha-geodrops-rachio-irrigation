@@ -152,6 +152,65 @@ async def test_resume_calibration_restarts_only_unresponsive_zones(freezer):
     assert await eng.async_resume_calibration() == []
 
 
+async def test_resume_calibration_drops_the_zones_queued_samples(freezer):
+    """A sample from a watering before the fix would re-mark the zone at once."""
+    w, eng = _engine(freezer, pending=[_obs("front"), _obs("back")], efficacy={
+        "front": {"state": "unresponsive"}, "back": {"state": "calibrating"}})
+    assert await eng.async_resume_calibration() == ["front"]
+    assert [r["zone"] for r in eng.store.read(PENDING_OBS)] == ["back"]
+
+
+CONVERGED = {"state": "converged", "efficacy": 0.5, "span_pts": 10.0,
+             "recent": [0.5, 0.5, 0.5], "n_obs": 3, "miss_streak": 2}
+
+
+async def test_a_converged_zone_misses_when_its_rate_predicted_a_measurable_rise(freezer):
+    # 0.5 pts/min x 20 min predicts +10; +1 is the third miss in a row
+    w, eng = _engine(freezer, pending=[{**_obs("front"), "full_refill_min": 60.0}],
+                     efficacy={"front": dict(CONVERGED)})
+    _rise_to(w, "61.0", "60.8")
+    await _poll(w, eng, 15)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["last_reject_reason"] == "small_rise"
+    assert front["miss_streak"] == 3 and front["state"] == "calibrating"
+
+
+async def test_a_converged_zone_is_not_missed_for_a_small_dose(freezer):
+    # 0.1 pts/min x 20 min predicts +2: a small rise is what it should give
+    w, eng = _engine(freezer, pending=[{**_obs("front"), "full_refill_min": 60.0}],
+                     efficacy={"front": {**CONVERGED, "efficacy": 0.1}})
+    _rise_to(w, "61.0", "60.8")
+    await _poll(w, eng, 15)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["miss_streak"] == 2 and front["state"] == "converged"
+
+
+async def test_leaving_unresponsive_learns_the_rate_from_scratch(freezer):
+    w, eng = _engine(freezer, pending=[{**_obs("front"), "full_refill_min": 60.0}],
+                     efficacy={"front": {"state": "unresponsive", "efficacy": 0.9,
+                                         "recent": [0.9, 0.9], "n_obs": 5,
+                                         "unresponsive_since": "2026-07-01T12:00:00+00:00"}})
+    _rise_to(w, "68.0", "64.0")            # +8 over 20 min
+    await _poll(w, eng, 15)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["state"] == "recalibrating"
+    assert front["efficacy"] == pytest.approx(0.4)        # not blended with 0.9
+    assert front["recent"] == [pytest.approx(0.4)]
+
+
+async def test_a_training_reset_restarts_an_unresponsive_zone(freezer):
+    w, eng = _engine(freezer, pending=[_obs("front")], efficacy={
+        "front": {"state": "unresponsive", "prior_minutes": 40, "last_rise": 0.5,
+                  "unresponsive_since": "2026-07-01T12:00:00+00:00"}})
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    for q in ("sensor.front_q1", "sensor.front_q2", "sensor.front_q3"):
+        w.at("2026-07-02 10:00:00", lambda q=q: w.set(q, "training"))
+    await _poll(w, eng, PEAK_ONLY)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["state"] == "recalibrating" and front["last_reject_reason"] == "training"
+    assert front["prior_minutes"] is None and "unresponsive_since" not in front
+
+
 # --- GeoDrops reading time ------------------------------------------------
 
 async def test_geodrops_samples_are_gated_on_when_the_reading_was_taken(freezer):

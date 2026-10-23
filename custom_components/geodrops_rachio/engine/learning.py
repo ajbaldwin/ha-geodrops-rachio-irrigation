@@ -155,7 +155,16 @@ class LearningMixin(PlanningMixin):
                 return []
             for k in resumed:
                 store[k] = calibration.resume(store[k])
+            # Written before anything else awaits: planning writes this store
+            # without the lock, and a stale copy would undo its update.
             await self._write_efficacy_store(store)
+            # Queued samples are from waterings before the fix: one would
+            # mark the zone unresponsive again at once.
+            pending = self.store.read(PENDING_OBS)
+            if isinstance(pending, list):
+                await self.store.write(PENDING_OBS, [
+                    r for r in pending
+                    if not (isinstance(r, dict) and r.get("zone") in resumed)])
         await self._activity("Calibration resumed: " + ", ".join(resumed))
         return resumed
 
@@ -250,9 +259,18 @@ class LearningMixin(PlanningMixin):
                 zrec = store.get(zone) or {}
                 if reason == "ok":
                     prev = zrec.get("efficacy")
+                    recent = zrec.get("recent") or []
+                    prior_state = zrec.get("state", "calibrating")
+                    if prior_state == "unresponsive":
+                        # A measurable rise: the zone responds again. Its rate
+                        # starts over from this sample, not blended with the
+                        # one learned before it stopped responding.
+                        prev = None
+                        recent = []
+                        prior_state = "recalibrating"
                     eff = calibration.update_efficacy(prev, obs, tun)   # peak rate
                     eff_obs = (peak - pre) / minutes
-                    recent = (zrec.get("recent") or []) + [eff_obs]
+                    recent = recent + [eff_obs]
                     if len(recent) > tun.convergence_samples:
                         recent = recent[-tun.convergence_samples:]
                     r_obs = calibration.retention_factor(pre, peak, retained, tun.retention_floor)
@@ -266,11 +284,6 @@ class LearningMixin(PlanningMixin):
                     else:
                         miss = 0
                     conv = calibration.converged(recent, tun)
-                    prior_state = zrec.get("state", "calibrating")
-                    if prior_state == "unresponsive":
-                        # A measurable rise: the zone responds again. Its rate
-                        # starts over from this sample, like any recalibration.
-                        prior_state = "recalibrating"
                     state_name = calibration.next_state(prior_state, conv, False, miss, tun)
                     zrec = {
                         "state": state_name, "efficacy": eff, "retention": r,
@@ -282,6 +295,8 @@ class LearningMixin(PlanningMixin):
                     }
                     learned += 1
                 elif reason == "training":
+                    if zrec.get("state") == "unresponsive":
+                        zrec = calibration.resume(zrec)   # a reset restarts it too
                     zrec["state"] = calibration.next_state(
                         zrec.get("state", "calibrating"), False, True, 0, tun)
                     zrec["efficacy"] = None
@@ -290,7 +305,18 @@ class LearningMixin(PlanningMixin):
                     zrec["miss_streak"] = 0
                     zrec["last_reject_reason"] = reason
                 else:
+                    state = zrec.get("state", "calibrating")
+                    miss = zrec.get("miss_streak") or 0
+                    # A converged zone whose rate predicted a measurable rise
+                    # but got none is missing, like an off-rate rise.
+                    missed = (reason in calibration.TOO_SMALL and state == "converged"
+                              and calibration.small_rise_miss(
+                                  zrec.get("efficacy"), minutes, tun))
                     zrec = calibration.apply_reject(zrec, reason, minutes, peak - pre, tun)
+                    if missed:
+                        zrec["miss_streak"] = miss + 1
+                        zrec["state"] = calibration.next_state(
+                            state, False, False, miss + 1, tun)
                     if calibration.unresponsive(reason, minutes, rec.get("full_refill_min")):
                         # No probe size left to try: stop probing and raise the
                         # repair (issues.async_check_unresponsive) until the zone
