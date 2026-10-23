@@ -155,6 +155,9 @@ class LearningMixin(PlanningMixin):
                 return []
             for k in resumed:
                 store[k] = calibration.resume(store[k])
+            # Written before anything else awaits: planning writes this store
+            # without the lock, and a stale copy would undo its update.
+            await self._write_efficacy_store(store)
             # Queued samples are from waterings before the fix: one would
             # mark the zone unresponsive again at once.
             pending = self.store.read(PENDING_OBS)
@@ -162,7 +165,6 @@ class LearningMixin(PlanningMixin):
                 await self.store.write(PENDING_OBS, [
                     r for r in pending
                     if not (isinstance(r, dict) and r.get("zone") in resumed)])
-            await self._write_efficacy_store(store)
         await self._activity("Calibration resumed: " + ", ".join(resumed))
         return resumed
 

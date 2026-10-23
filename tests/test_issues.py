@@ -336,3 +336,13 @@ async def test_the_repair_lists_only_configured_zones_with_calibration_on(
     await entry.runtime_data.scheduler.store.write("efficacy", efficacy)
     await hass.async_block_till_done()
     assert _issue(hass, entry, "zone_unresponsive") is None
+
+
+async def test_the_repair_follows_a_calibration_switch_set_in_the_overrides(
+        hass, enable_pyscript_and_rachio):
+    # The engine reads the tunable, which the advanced overrides can turn on.
+    entry = await _setup(hass, {**DATA, "advanced_overrides": "self_calibration_enabled: true"})
+    await entry.runtime_data.scheduler.store.write(
+        "efficacy", {"front": {"state": "unresponsive"}})
+    await hass.async_block_till_done()
+    assert _issue(hass, entry, "zone_unresponsive") is not None

@@ -118,12 +118,18 @@ async def async_setup_entry(hass: HomeAssistant,
     # The unresponsive-zones repair follows the efficacy store: re-checked on
     # every engine write, and at setup for a zone already stuck.
 
+    # The engine's switch is the tunable, which the advanced overrides can set.
+    try:
+        calibrating = bool(
+            config_writer.build_config(data)["tunables"]["self_calibration_enabled"])
+    except ValueError:  # unparseable overrides: the engine's load fails the same way
+        calibrating = bool(data.get("self_calibration_enabled"))
+
     @callback
     def _check_unresponsive() -> None:
         issues.async_check_unresponsive(
             hass, entry, scheduler.store.read(EFFICACY),
-            [z["key"] for z in data.get("zones", [])],
-            bool(data.get("self_calibration_enabled")))
+            [z["key"] for z in data.get("zones", [])], calibrating)
     entry.async_on_unload(scheduler.add_listener(_check_unresponsive))
     _check_unresponsive()
     entry.async_create_background_task(
