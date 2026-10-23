@@ -121,8 +121,14 @@ class Tunables:
     retention_floor: float = 0.1
     # EWMA smoothing factor for calibration convergence.
     calibration_ewma_alpha: float = 0.3
-    # Tolerance threshold for convergence detection.
+    # Tolerance threshold for convergence detection (and for counting a converged
+    # zone's sample as a miss): a fraction of the rate...
     convergence_tolerance: float = 0.10
+    # ...or this many points of rise over the sample's dose, whichever is wider.
+    # A rise is two probe readings apart, so on short doses probe noise alone
+    # spreads the rates past 10%; the floor keeps that noise from blocking
+    # convergence. Long doses (rises over 20 pts) keep the 10% band.
+    convergence_floor_pts: float = 2.0
     # Number of converged samples to declare tuning complete.
     convergence_samples: int = 3
     # Dominant level below which a zone may be probed.

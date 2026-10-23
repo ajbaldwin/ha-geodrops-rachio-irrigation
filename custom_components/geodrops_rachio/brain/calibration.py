@@ -121,38 +121,45 @@ def update_efficacy(prev: float | None, obs: Observation, t: Tunables) -> float:
     return t.calibration_ewma_alpha * efficacy_obs + (1 - t.calibration_ewma_alpha) * prev
 
 
-def converged(recent: Sequence[float], t: Tunables) -> bool:
+def agrees(spread: float, rate: float, minutes: float | None, t: Tunables) -> bool:
+    """Are rates `spread` apart the same rate, given `rate` and the dose length?
+
+    The band is convergence_tolerance * rate, or convergence_floor_pts of rise
+    over `minutes` of dose, whichever is wider: on a short dose a few points of
+    probe noise is a large fraction of the rate. No dose (None) = relative band.
+    """
+    band = t.convergence_tolerance * rate
+    if minutes:
+        band = max(band, t.convergence_floor_pts / minutes)
+    return spread <= band
+
+
+def off_rate(eff_obs: float, prev: float | None, minutes: float, t: Tunables) -> bool:
+    """Is a sample's rate a miss against the learned rate `prev`?"""
+    return prev is not None and prev > 0 and not agrees(abs(eff_obs - prev), prev, minutes, t)
+
+
+def converged_efficacy(recent: Sequence[float]) -> float:
+    """The rate a zone converges on: the mean of the samples that agreed."""
+    return sum(recent) / len(recent)
+
+
+def converged(recent: Sequence[float], t: Tunables, minutes: float | None = None) -> bool:
     """Check if recent efficacy samples have converged.
 
-    recent: list of efficacy values
+    recent: list of efficacy values; minutes: the latest sample's dose
     Returns True if:
     - length >= t.convergence_samples AND
     - mean != 0 AND
-    - (max - min) <= convergence_tolerance * mean
+    - (max - min) is within the band of `agrees` around the mean
     """
     if len(recent) < t.convergence_samples:
         return False
 
-    # Compute mean explicitly (no generator expressions per pyscript)
-    total = 0.0
-    for val in recent:
-        total = total + val
-    mean = total / len(recent)
-
+    mean = converged_efficacy(recent)
     if mean == 0:
         return False
-
-    # Find max and min
-    max_val = recent[0]
-    min_val = recent[0]
-    for i in range(len(recent)):
-        if recent[i] > max_val:
-            max_val = recent[i]
-        if recent[i] < min_val:
-            min_val = recent[i]
-
-    tolerance_band = t.convergence_tolerance * mean
-    return (max_val - min_val) <= tolerance_band
+    return agrees(max(recent) - min(recent), mean, minutes, t)
 
 
 def next_state(state: str, converged_flag: bool, training: bool, miss_streak: int,

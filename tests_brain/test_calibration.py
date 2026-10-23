@@ -58,6 +58,39 @@ def test_update_and_converged():
     assert calibration.converged([0.40, 0.42], t) is False
 
 
+def test_converged_short_dose_uses_the_points_floor():
+    t = Tunables()  # tolerance 10%, floor 2.0 pts
+    # 13-min doses: spread 0.10/min = 1.3 pts of rise, inside the 2-pt probe noise
+    # floor though 23% of the mean.
+    assert calibration.converged([0.377, 0.477, 0.42], t, minutes=13) is True
+    assert calibration.converged([0.377, 0.477, 0.42], t) is False   # no dose: 10% only
+    # 0.20/min over 13 min = 2.6 pts: past the floor too.
+    assert calibration.converged([0.30, 0.50, 0.40], t, minutes=13) is False
+
+
+def test_converged_long_dose_keeps_the_relative_band():
+    t = Tunables()
+    # 28-min doses: spread 0.11/min = 3.1 pts, past both the floor and 10%.
+    assert calibration.converged([0.614, 0.504, 0.56], t, minutes=28) is False
+    # A big rate on a long dose: 10% of the mean (0.2/min) is wider than the floor
+    # (2/40 = 0.05/min), so the floor never narrows the band.
+    assert calibration.converged([1.9, 2.08, 2.0], t, minutes=40) is True
+
+
+def test_off_rate_uses_the_same_band():
+    t = Tunables()
+    assert calibration.off_rate(0.477, 0.377, 13, t) is False   # 1.3 pts: noise
+    assert calibration.off_rate(0.504, 0.614, 28, t) is True    # 3.1 pts: a real miss
+    assert calibration.off_rate(0.4, 0.1, 20, t) is True        # 6 pts
+    assert calibration.off_rate(2.15, 2.0, 40, t) is False      # within 10%
+    assert calibration.off_rate(0.5, None, 20, t) is False      # nothing learned yet
+    assert calibration.off_rate(0.5, 0.0, 20, t) is False
+
+
+def test_converged_efficacy_is_the_mean_of_recent():
+    assert calibration.converged_efficacy([0.40, 0.42, 0.38]) == pytest.approx(0.40)
+
+
 def test_next_state():
     t = Tunables()  # convergence_samples=3
     assert calibration.next_state("calibrating", False, True, 0, t) == "recalibrating"   # training wins

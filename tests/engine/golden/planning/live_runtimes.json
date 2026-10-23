@@ -168,6 +168,7 @@
      "$dataclass": "custom_components.geodrops_rachio.brain.config.Tunables",
      "fields": {
       "calibration_ewma_alpha": 0.3,
+      "convergence_floor_pts": 2.0,
       "convergence_samples": 3,
       "convergence_tolerance": 0.1,
       "cycle_minutes": 12,
@@ -419,6 +420,7 @@
    "$dataclass": "custom_components.geodrops_rachio.brain.config.Tunables",
    "fields": {
     "calibration_ewma_alpha": 0.3,
+    "convergence_floor_pts": 2.0,
     "convergence_samples": 3,
     "convergence_tolerance": 0.1,
     "cycle_minutes": 12,

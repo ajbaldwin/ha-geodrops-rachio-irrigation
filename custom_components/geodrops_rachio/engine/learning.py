@@ -276,15 +276,21 @@ class LearningMixin(PlanningMixin):
                     r_obs = calibration.retention_factor(pre, peak, retained, tun.retention_floor)
                     prev_r = zrec.get("retention")
                     r = prev_r if r_obs is None else calibration.ewma(prev_r, r_obs, tun.calibration_ewma_alpha)
-                    base = api_runtimes.get(zone_cfg.rachio_zone_id) or zone_cfg.runtime_minutes
-                    span = calibration.retained_span(eff, r, base, tun.span_min, tun.span_max)
                     miss = zrec.get("miss_streak") or 0
-                    if prev and prev > 0 and abs(eff_obs - prev) / prev > tun.convergence_tolerance:
+                    if calibration.off_rate(eff_obs, prev, minutes, tun):
                         miss = miss + 1
                     else:
                         miss = 0
-                    conv = calibration.converged(recent, tun)
+                    conv = calibration.converged(recent, tun, minutes)
                     state_name = calibration.next_state(prior_state, conv, False, miss, tun)
+                    if state_name == "converged" and prior_state != "converged":
+                        # Converging: take the rate the agreeing samples measured,
+                        # not the EWMA, which still carries the samples before them.
+                        # Misses counted against that EWMA go with it.
+                        eff = calibration.converged_efficacy(recent)
+                        miss = 0
+                    base = api_runtimes.get(zone_cfg.rachio_zone_id) or zone_cfg.runtime_minutes
+                    span = calibration.retained_span(eff, r, base, tun.span_min, tun.span_max)
                     zrec = {
                         "state": state_name, "efficacy": eff, "retention": r,
                         "span_pts": span, "recent": recent,
