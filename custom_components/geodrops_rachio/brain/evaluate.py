@@ -65,7 +65,7 @@ def recovery_candidate(state: str, uncompleted_reason: str | None,
     """True iff a zone is worth re-checking during the pre-dawn wait: it is
     calibrating/recalibrating AND was skipped from tonight's plan for a SENSOR
     reason (offline / low-quality), so a mid-window sensor recovery could still
-    earn a probe. Excluded ("excluded") and above-floor (None) skips are not
+    earn a probe. Excluded ("excluded", "probe_inactive") and above-floor (None) skips are not
     candidates.
     """
     if state not in ("calibrating", "recalibrating"):

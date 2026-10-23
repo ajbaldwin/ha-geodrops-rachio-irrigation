@@ -13,6 +13,7 @@ from typing import Any
 from .. import units
 from ..brain import (
     calibration, config, dosing, drought, evaluate, frost, plan, sensors, weather)
+from . import port
 from .io import IOMixin
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,6 +45,13 @@ class PlanningMixin(IOMixin):
         if not ent:
             return False
         return self.port.state(ent) == "on"
+
+    def _probe_inactive(self, zone: config.ZoneConfig) -> bool:
+        """True when the zone's GeoDrops probe is out of service: its Active
+        switch reads "off". A missing, disabled or unavailable switch (older
+        GeoDrops, or a non-GeoDrops sensor) fails safe to in service."""
+        ent = self.port.probe_active_entity(zone.dominant_sensor)
+        return ent is not None and port.probe_inactive(self.port.state(ent))
 
     def _is_standby(self) -> bool:
         # Either standby source disables the system: the Rachio-native switch OR the
@@ -624,17 +632,21 @@ class PlanningMixin(IOMixin):
         dominant_by_zone: dict[str, float] = {}
         for key, zone in cfg.zones.items():
             rec = efficacy_store.get(key)
-            if self._zone_excluded(zone):
-                # Excluded (e.g. an overseeded zone watered separately): skip the
-                # nightly plan AND probing. Stamp the first excluded plan so a later
-                # return can time-gate whether to recalibrate.
+            excluded = ("excluded" if self._zone_excluded(zone)
+                        else "probe_inactive" if self._probe_inactive(zone)
+                        else None)
+            if excluded:
+                # Excluded (e.g. an overseeded zone watered separately), or its
+                # probe taken out of service in GeoDrops: skip the nightly plan AND
+                # probing. Stamp the first excluded plan so a later return can
+                # time-gate whether to recalibrate.
                 if rec is None:
                     rec = {}
                 if "excluded_since" not in rec:
                     rec["excluded_since"] = now.isoformat()
                     efficacy_store[key] = rec
                     store_dirty = True
-                uncompleted[key] = "excluded"
+                uncompleted[key] = excluded
                 continue
             if rec is not None and rec.get("excluded_since") is not None:
                 # Returned from exclusion: reset to recalibrating if it was out long

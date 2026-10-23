@@ -257,6 +257,9 @@ Home Assistant restarts is not recorded.
 - **Exclude from Watering/Calibration** (`switch`) — when on, the zone is
   skipped from both the nightly plan and calibration probing. Its *Deficit*
   still shows, with an `excluded: true` attribute.
+  A zone whose GeoDrops probe has its *Active* switch off (GeoDrops 0.9.0-beta.3 or
+  later) is skipped the same way, shown as `probe_inactive` among the skipped
+  zones; see [Examples](#examples).
 - **Moisture target** (`select`) — the GeoDrops band (Dry → Wet+) the
   scheduler keeps the zone at. The same setting as the zone's target moisture
   level in the options; changing it takes effect from the next plan without
@@ -372,6 +375,13 @@ target:
 Keep a newly seeded zone out of the plan and calibration:
 `switch.geodrops_rachio_<zone>_exclude` on.
 
+Pull a probe for the winter or a battery swap: turn off its *Active* switch on
+the GeoDrops device page instead. Its zone is skipped as if excluded, and its
+unavailable sensors raise no repair. Either way, with Active Watering
+Calibration on, a zone out for 48 hours or more restarts calibration when it
+comes back, since the probe may not sit where it did. GeoDrops versions
+without the switch work as before.
+
 ## Known limitations
 
 - **Rachio and GeoDrops only.** The scheduler needs Rachio zone switches and
@@ -391,13 +401,15 @@ Keep a newly seeded zone out of the plan and calibration:
   `sensor.geodrops_rachio_last_nightly` in Developer Tools → States: the
   planned minutes per zone, and any zones skipped and why, are in the
   attributes. Check *Standby*, the
-  zone's *Exclude* switch, and the drought level.
+  zone's *Exclude* switch, its GeoDrops probe's *Active* switch, and the
+  drought level.
 - **"Entities used by … are missing"** in Settings → Repairs: an entity picked
   in setup was deleted. Pick a replacement under Configure; the notice clears
   on its own.
 - **Other notices in Settings → Repairs**, each of which clears on its own once fixed:
   - *Entities … have been unavailable for a day*: the integration providing
-    them is down. Fix it, or pick replacements under Configure.
+    them is down. Fix it, or pick replacements under Configure. A GeoDrops
+    probe with its *Active* switch off is left out of this notice.
   - *… cannot control the Rachio controller*: the Rachio integration is not
     loaded, so safety stops fail. Fix or re-add it.
   - *… names a Rachio controller that is not on the account*: the controller

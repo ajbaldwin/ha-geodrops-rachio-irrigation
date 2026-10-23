@@ -49,6 +49,7 @@ from homeassistant.helpers.event import (
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+from .engine.port import ACTIVE_SUFFIX, geodrops_sibling, probe_inactive
 from .entity_renames import bound_entity_ids
 from .owned_entities import owned_ids
 
@@ -132,14 +133,26 @@ def _missing(hass: HomeAssistant, entry: ConfigEntry,
         or (hass.states.get(eid) is None and reg.async_get(eid) is None))
 
 
+def _on_inactive_probe(hass: HomeAssistant, entity_id: str) -> bool:
+    """True when `entity_id` belongs to a GeoDrops probe whose Active switch is
+    off: the probe was taken out of service, so it is unavailable on purpose."""
+    active = geodrops_sibling(hass, entity_id, "switch", ACTIVE_SUFFIX)
+    if active is None:
+        return False
+    state = hass.states.get(active)
+    return probe_inactive(state.state if state is not None else None)
+
+
 def _unavailable(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
-    """Bound entity ids unavailable for at least UNAVAILABLE_GRACE."""
+    """Bound entity ids unavailable for at least UNAVAILABLE_GRACE, except those
+    on a probe taken out of service in GeoDrops."""
     cutoff = dt_util.utcnow() - UNAVAILABLE_GRACE
     found = []
     for eid in _watched(entry):
         state = hass.states.get(eid)
         if (state is not None and state.state == STATE_UNAVAILABLE
-                and state.last_changed <= cutoff):
+                and state.last_changed <= cutoff
+                and not _on_inactive_probe(hass, eid)):
             found.append(eid)
     return sorted(found)
 

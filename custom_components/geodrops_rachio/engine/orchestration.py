@@ -657,13 +657,15 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
         """Replace the moisture-based plan in `ctx` with one for what is owed.
 
         Zones keep tonight's priority order; one no longer configured is dropped,
-        and so is one excluded since (its exclude switch is the operator's say).
+        and so is one excluded since (its exclude switch is the operator's say)
+        or whose probe was taken out of service in GeoDrops since.
         No probes are folded in: the watch for recovering sensors is a first-run
         nicety, not part of finishing a night.
         """
         uncompleted = ctx["uncompleted"]
         owed = {z: m for z, m in owed.items()
-                if z in cfg.zones and uncompleted.get(z) != "excluded"}
+                if z in cfg.zones
+                and uncompleted.get(z) not in ("excluded", "probe_inactive")}
         order = [z for z in ctx["priority"] if z in owed]
         order += [z for z in owed if z not in order]
         for z in order:
