@@ -219,16 +219,15 @@ async def test_an_inactive_probe_raises_no_unavailable_issue(
     assert _issue(hass, entry) is None
 
 
-async def test_a_probe_put_out_of_service_drops_from_the_issue_within_the_hour(
+async def test_a_probe_put_out_of_service_drops_from_the_issue_at_once(
         hass, freezer, enable_pyscript_and_rachio):
     active = _geodrops_probe(hass)
     hass.states.async_set(active, "on")
     entry = await _probe_unavailable_for_a_day(hass, freezer, None)
     assert _issue(hass, entry, "unavailable_entities") is not None
 
+    # Not at the next hourly check: turning the switch off clears it.
     hass.states.async_set(active, "off")
-    freezer.tick(dt.timedelta(hours=1, minutes=1))
-    async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert _issue(hass, entry, "unavailable_entities") is None
 

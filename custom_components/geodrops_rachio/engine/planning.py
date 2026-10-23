@@ -50,8 +50,8 @@ class PlanningMixin(IOMixin):
         """True when the zone's GeoDrops probe is out of service: its Active
         switch reads "off". A missing, disabled or unavailable switch (older
         GeoDrops, or a non-GeoDrops sensor) fails safe to in service."""
-        ent = self.port.probe_active_entity(zone.dominant_sensor)
-        return ent is not None and port.probe_inactive(self.port.state(ent))
+        return port.probe_out_of_service(
+            self.port.probe_active_entity(zone.dominant_sensor), self.port.state)
 
     def _is_standby(self) -> bool:
         # Either standby source disables the system: the Rachio-native switch OR the

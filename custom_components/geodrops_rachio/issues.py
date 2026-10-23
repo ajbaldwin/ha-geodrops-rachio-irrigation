@@ -49,7 +49,7 @@ from homeassistant.helpers.event import (
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
-from .engine.port import ACTIVE_SUFFIX, geodrops_sibling, probe_inactive
+from .engine.port import ACTIVE_SUFFIX, geodrops_sibling, probe_out_of_service
 from .entity_renames import bound_entity_ids
 from .owned_entities import owned_ids
 
@@ -133,14 +133,18 @@ def _missing(hass: HomeAssistant, entry: ConfigEntry,
         or (hass.states.get(eid) is None and reg.async_get(eid) is None))
 
 
+def _active_switch(hass: HomeAssistant, entity_id: str) -> str | None:
+    """The GeoDrops Active switch on `entity_id`'s probe, if it has one."""
+    return geodrops_sibling(hass, entity_id, "switch", ACTIVE_SUFFIX)
+
+
 def _on_inactive_probe(hass: HomeAssistant, entity_id: str) -> bool:
     """True when `entity_id` belongs to a GeoDrops probe whose Active switch is
     off: the probe was taken out of service, so it is unavailable on purpose."""
-    active = geodrops_sibling(hass, entity_id, "switch", ACTIVE_SUFFIX)
-    if active is None:
-        return False
-    state = hass.states.get(active)
-    return probe_inactive(state.state if state is not None else None)
+    def state(eid: str) -> str | None:
+        st = hass.states.get(eid)
+        return st.state if st is not None else None
+    return probe_out_of_service(_active_switch(hass, entity_id), state)
 
 
 def _unavailable(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
@@ -281,8 +285,12 @@ def async_track(hass: HomeAssistant, entry: ConfigEntry) -> CALLBACK_TYPE:
     @callback
     def _start_tracking() -> None:
         _check_all()
+        # A probe's GeoDrops Active switch decides whether its unavailable
+        # sensors are reported, so a change to it re-checks at once too.
+        switches = {s for eid in watched if (s := _active_switch(hass, eid))}
         unsubs.extend([
-            async_track_state_change_event(hass, list(watched), _on_bound_state),
+            async_track_state_change_event(
+                hass, sorted(watched | switches), _on_bound_state),
             async_track_time_interval(
                 hass, _on_interval, UNAVAILABLE_CHECK_INTERVAL,
                 cancel_on_shutdown=True),

@@ -74,8 +74,13 @@ async def test_hass_port_finds_the_geodrops_active_switch(hass):
         config_entry_id=entry.entry_id, identifiers={("geodrops", "SN1")})
     moisture = reg.async_get_or_create(
         "sensor", "geodrops", "SN1_moisture", device_id=probe.id, config_entry=entry)
-    reg.async_get_or_create("sensor", "geodrops", "SN1_last_reading",
+    # Another switch whose key merely ends the same way, registered first.
+    reg.async_get_or_create("switch", "geodrops", "SN1_alerts_active",
                             device_id=probe.id, config_entry=entry)
+    reg.async_get_or_create("sensor", "geodrops", "SN1_previous_last_reading",
+                            device_id=probe.id, config_entry=entry)
+    last = reg.async_get_or_create("sensor", "geodrops", "SN1_last_reading",
+                                   device_id=probe.id, config_entry=entry)
     active = reg.async_get_or_create(
         "switch", "geodrops", "SN1_active", device_id=probe.id, config_entry=entry)
     # A GeoDrops version without the switch; a non-switch entity whose unique
@@ -90,6 +95,7 @@ async def test_hass_port_finds_the_geodrops_active_switch(hass):
 
     port = HassPort(hass, lambda e: {"sensor.old": moisture.entity_id}.get(e, e))
     assert port.probe_active_entity(moisture.entity_id) == active.entity_id
+    assert port.reading_time_entity(moisture.entity_id) == last.entity_id
     assert port.probe_active_entity("sensor.old") == active.entity_id   # resolved
     assert port.probe_active_entity(old_moisture.entity_id) is None     # no switch
     assert port.probe_active_entity(other.entity_id) is None            # not GeoDrops

@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
@@ -26,28 +27,38 @@ ACTIVE_SUFFIX = "_active"
 
 def geodrops_sibling(hass: HomeAssistant, entity_id: str, domain: str,
                      suffix: str) -> str | None:
-    """The `domain` entity whose unique_id ends in `suffix` on the same GeoDrops
-    probe as `entity_id`, or None when `entity_id` is not a GeoDrops entity or
-    its probe has no such entity."""
+    """The `domain` entity with unique_id `<serial><suffix>` on the same
+    GeoDrops probe as `entity_id`, or None when `entity_id` is not a GeoDrops
+    entity or its probe has no such entity. Matched on the probe's serial (its
+    device identifier), so another entity whose key merely ends the same way
+    is never picked."""
     reg = er.async_get(hass)
     entry = reg.async_get(entity_id)
     if entry is None or entry.platform != GEODROPS_DOMAIN or not entry.device_id:
         return None
+    device = dr.async_get(hass).async_get(entry.device_id)
+    if device is None:
+        return None
+    wanted = {f"{serial}{suffix}" for dom, serial in device.identifiers
+              if dom == GEODROPS_DOMAIN}
     for sibling in er.async_entries_for_device(
             reg, entry.device_id, include_disabled_entities=True):
         if (sibling.platform == GEODROPS_DOMAIN and sibling.domain == domain
-                and sibling.unique_id.endswith(suffix)):
+                and sibling.unique_id in wanted):
             return sibling.entity_id
     return None
 
 
-def probe_inactive(state: str | None) -> bool:
-    """True only when a probe's Active switch reads an explicit "off".
+def probe_out_of_service(active_entity: str | None,
+                         state: Callable[[str], str | None]) -> bool:
+    """True only when a probe's Active switch (`active_entity`) reads an
+    explicit "off", read through `state`.
 
     Anything else keeps the probe in service: no switch (a GeoDrops version
-    without it), a disabled switch (no state), or one GeoDrops is not
-    providing (unavailable/unknown, e.g. not loaded or downgraded)."""
-    return state == "off"
+    without it, or not a GeoDrops sensor), a disabled switch (no state), or
+    one GeoDrops is not providing (unavailable/unknown, e.g. not loaded or
+    downgraded)."""
+    return active_entity is not None and state(active_entity) == "off"
 
 
 class HAPort(Protocol):

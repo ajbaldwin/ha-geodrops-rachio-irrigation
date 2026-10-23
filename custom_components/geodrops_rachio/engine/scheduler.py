@@ -403,18 +403,21 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
     def plan_inputs(self) -> list[str]:
         """The settings whose change moves tonight's plan at once, as
         configured (before any rename): the drought level, the Finish
-        controls, Automatic frost adjustment, both standby switches and each
-        zone's exclude switch. []
-        while the config does not load."""
+        controls, Automatic frost adjustment, both standby switches, each
+        zone's exclude switch and its GeoDrops probe's Active switch (when the
+        probe has one). [] while the config does not load."""
         try:
             cfg = self._load_cfg()
         except Exception:
             return []
         b = cfg.bindings
-        ents = [b.drought_level_select, b.finish_anchor_select,
-                b.finish_offset_number, b.frost_adjustment_switch,
-                b.standby_switch, b.standby_boolean]
+        ents: list[str | None] = [
+            b.drought_level_select, b.finish_anchor_select,
+            b.finish_offset_number, b.frost_adjustment_switch,
+            b.standby_switch, b.standby_boolean]
         ents += [z.exclude_boolean for z in cfg.zones.values()]
+        ents += [self.port.probe_active_entity(z.dominant_sensor)
+                 for z in cfg.zones.values()]
         return [e for e in ents if e]
 
     async def async_publish_targets(self) -> None:
