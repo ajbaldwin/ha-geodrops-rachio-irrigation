@@ -17,6 +17,9 @@ must go on without it:
   nothing waters until Home Assistant restarts.
 - legacy_script_loaded: the v0.9 pyscript app may still be loaded alongside
   the native engine and water a second time tonight.
+- zone_unresponsive: a zone's full-refill watering raised its soil moisture
+  by no measurable amount, so calibration stopped probing it. Fixable: the
+  fix flow restarts its calibration once its heads and probe were checked.
 
 The entry-scoped checks run once Home Assistant has started (other
 integrations' entities and services load after ours) and again on whatever
@@ -64,9 +67,10 @@ RACHIO_DEVICE_UNKNOWN = "rachio_device_unknown"
 NOTIFY_MISSING = "notify_missing"
 UNLOAD_FAILED = "unload_failed"
 LEGACY_SCRIPT_LOADED = "legacy_script_loaded"
+ZONE_UNRESPONSIVE = "zone_unresponsive"
 # Cleared on unload; re-raised by the next setup if still true.
 _ENTRY_ISSUES = (MISSING_ENTITIES, UNAVAILABLE_ENTITIES, RACHIO_NOT_LOADED,
-                 RACHIO_DEVICE_UNKNOWN, NOTIFY_MISSING)
+                 RACHIO_DEVICE_UNKNOWN, NOTIFY_MISSING, ZONE_UNRESPONSIVE)
 
 
 def issue_id(key: str, entry: ConfigEntry) -> str:
@@ -75,16 +79,18 @@ def issue_id(key: str, entry: ConfigEntry) -> str:
 
 def _set(hass: HomeAssistant, entry: ConfigEntry, key: str, raised: bool,
          severity: ir.IssueSeverity = ir.IssueSeverity.ERROR,
-         **placeholders: str) -> None:
-    """Raise (or update) the entry's `key` issue, or clear it."""
+         is_fixable: bool = False, **placeholders: str) -> None:
+    """Raise (or update) the entry's `key` issue, or clear it. A fixable one
+    carries the entry id for its fix flow (repairs.py)."""
     if not raised:
         ir.async_delete_issue(hass, DOMAIN, issue_id(key, entry))
         return
     ir.async_create_issue(
         hass, DOMAIN, issue_id(key, entry),
-        is_fixable=False, is_persistent=False, severity=severity,
+        is_fixable=is_fixable, is_persistent=False, severity=severity,
         translation_key=key,
-        translation_placeholders={"title": entry.title, **placeholders})
+        translation_placeholders={"title": entry.title, **placeholders},
+        data={"entry_id": entry.entry_id} if is_fixable else None)
 
 
 def _code_list(ids: Iterable[str]) -> str:
@@ -189,6 +195,22 @@ def async_check_rachio_device(hass: HomeAssistant, entry: ConfigEntry,
     _set(hass, entry, RACHIO_DEVICE_UNKNOWN,
          not any(name in bound for name in names),
          device=f"`{bound}`", controllers=", ".join(names) or "none")
+
+
+# --- calibration ----------------------------------------------------------------
+def unresponsive_zones(efficacy: Mapping[str, Any] | None) -> list[str]:
+    """Zones the efficacy store marks unresponsive, in store order."""
+    return [k for k, rec in (efficacy or {}).items()
+            if isinstance(rec, Mapping) and rec.get("state") == "unresponsive"]
+
+
+@callback
+def async_check_unresponsive(hass: HomeAssistant, entry: ConfigEntry,
+                             efficacy: Mapping[str, Any] | None) -> None:
+    """Raise, update or clear the entry's unresponsive-zones repair."""
+    zones = unresponsive_zones(efficacy)
+    _set(hass, entry, ZONE_UNRESPONSIVE, bool(zones), ir.IssueSeverity.WARNING,
+         is_fixable=True, zones=", ".join(zones))
 
 
 # --- lifecycle ----------------------------------------------------------------

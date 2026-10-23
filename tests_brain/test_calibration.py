@@ -41,6 +41,14 @@ def test_classify_priority():
     assert calibration.classify(obs(), t) == "ok"
 
 
+def test_classify_a_rise_below_measurable_is_too_small_to_learn():
+    t = Tunables()  # measurable_rise_pts 3.0
+    assert calibration.classify(obs(settled=62), t) == "small_rise"     # +2: noise band
+    assert calibration.classify(obs(settled=62.9), t) == "small_rise"
+    assert calibration.classify(obs(settled=63), t) == "ok"             # +3: measurable
+    assert calibration.classify(obs(settled=59), t) == "no_rise"        # <=0 keeps its name
+
+
 def test_update_and_converged():
     t = Tunables()
     e = calibration.update_efficacy(None, obs(60, 30, 72), t)  # 12/30 = 0.4
@@ -68,6 +76,7 @@ def test_should_probe():
     assert calibration.should_probe("converged", 70.0, False, t) is False   # not calibrating
     assert calibration.should_probe("calibrating", 70.0, True, t) is False  # pinned
     assert calibration.should_probe("calibrating", 90.0, False, t) is False # no headroom
+    assert calibration.should_probe("unresponsive", 70.0, False, t) is False  # repair open
 
 
 import datetime as dt
@@ -242,6 +251,45 @@ def test_apply_reject_no_rise_records_growth_fields():
     assert out["last_rise"] == -0.5
     # the recorded fields must let the next probe grow, not restart at the floor
     assert calibration.probe_minutes(40.0, out["prior_minutes"], out["last_rise"], t) == 15.0
+
+
+def test_apply_reject_small_rise_grows_the_probe_like_no_rise():
+    t = Tunables()  # growth 1.5, measurable 3.0
+    out = calibration.apply_reject({"state": "calibrating"}, "small_rise", 10.0, 1.3, t)
+    assert out["last_reject_reason"] == "small_rise"
+    assert (out["prior_minutes"], out["last_rise"]) == (10.0, 1.3)
+    assert calibration.probe_minutes(40.0, out["prior_minutes"], out["last_rise"], t) == 15.0
+
+
+def test_unresponsive_needs_a_full_refill_that_still_did_not_rise():
+    # a full refill is the most one night delivers: no measurable rise from it
+    # means the zone is not reaching the probe, whatever the probe size
+    for reason in ("no_rise", "small_rise"):
+        assert calibration.unresponsive(reason, 50.0, 50.3) is True    # Rachio rounds down
+        assert calibration.unresponsive(reason, 49.3, 50.3) is True    # within 1 min
+        assert calibration.unresponsive(reason, 49.2, 50.3) is False   # still room to grow
+    # every other reason says nothing about the zone's response
+    for reason in ("ok", "saturated", "rain", "unavailable", "training"):
+        assert calibration.unresponsive(reason, 50.0, 50.0) is False
+    # an obs queued before the full refill was recorded never decides it
+    assert calibration.unresponsive("no_rise", 50.0, None) is False
+    assert calibration.unresponsive("no_rise", 50.0, 0.0) is False
+
+
+def test_resume_restarts_an_unresponsive_zone_from_a_first_probe():
+    rec = {"state": "unresponsive", "efficacy": 0.4, "span_pts": 8.0,
+           "recent": [0.4], "n_obs": 3, "prior_minutes": 50.0, "last_rise": 0.5,
+           "miss_streak": 1, "last_reject_reason": "small_rise",
+           "unresponsive_since": "2026-07-02T11:30:00+00:00", "retention": 0.6}
+    out = calibration.resume(rec)
+    assert out == {"state": "recalibrating", "efficacy": None, "span_pts": 0,
+                   "recent": [], "n_obs": 3, "prior_minutes": None,
+                   "last_rise": None, "miss_streak": 0,
+                   "last_reject_reason": None, "retention": 0.6}
+    # restarts at the first-probe size, not the stuck full refill
+    assert calibration.probe_minutes(60.0, out["prior_minutes"], out["last_rise"],
+                                     Tunables()) == 20.0
+    assert rec["state"] == "unresponsive"                  # input untouched
 
 
 def test_apply_reject_saturated_shrinks_and_holds():

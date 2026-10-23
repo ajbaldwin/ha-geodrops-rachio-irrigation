@@ -22,6 +22,7 @@ _CONVERGENCE_TARGET = 3
 # Why the last probe didn't count, translated for the status label.
 _REJECT_PHRASES = {
     "no_rise": "probe too small",
+    "small_rise": "probe too small",
     "saturated": "soil too wet",
     "rain": "rained out",
 }
@@ -36,6 +37,7 @@ def format_calibration_status(state: str | None, samples: int | None,
       calibrating, last probe rejected  -> "Calibrating — soil too wet"
       calibrating, 2 accepted probes    -> "Calibrating (2/3)"
       calibrating, no probes yet        -> "Calibrating"
+      unresponsive                      -> "Not responding — check heads and probe"
 
     A reject reason wins over the count: it explains why the count is not
     growing, which is what someone checking a stuck zone actually needs."""
@@ -44,6 +46,9 @@ def format_calibration_status(state: str | None, samples: int | None,
     label = state.replace("_", " ").title()
     if state == "converged":
         return label
+    if state == "unresponsive":
+        # The repair says what to check; the label points there.
+        return "Not responding — check heads and probe"
     phrase = _REJECT_PHRASES.get(last_reject_reason or "")
     if phrase:
         return f"{label} — {phrase}"

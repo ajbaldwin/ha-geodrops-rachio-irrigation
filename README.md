@@ -317,6 +317,16 @@ wizard is **Beta and off by default** (`self_calibration_enabled`). Leave it
 off unless you specifically want to try it; it is not required for the
 scheduler's normal drought-level/soil-moisture-driven watering to work.
 
+With it on, a calibrating zone gets a short probe watering, and the next
+probe grows until it raises soil moisture by a measurable amount (3 points).
+A rise smaller than that is treated as noise and not learned from. If even a
+full refill gives no measurable rise, the zone's *Calibration state* reads
+*Not responding — check heads and probe*, it stops getting probes (it is
+still watered when dry), and a repair under **Settings → System → Repairs**
+lists what to check. Submit the repair once you have checked the zone to
+restart its calibration; it also clears on its own if a later watering shows
+a measurable rise.
+
 ## If watering is interrupted
 
 - **Home Assistant restarts (or crashes) mid-watering.** On startup the
