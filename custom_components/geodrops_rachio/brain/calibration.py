@@ -103,6 +103,11 @@ def classify(obs: Observation, t: Tunables) -> str:
     return "ok"
 
 
+def small_rise_miss(efficacy: float | None, minutes: float, t: Tunables) -> bool:
+    """Was a too-small rise a miss: did the learned rate predict a measurable one?"""
+    return efficacy is not None and efficacy > 0 and efficacy * minutes >= t.measurable_rise_pts
+
+
 def update_efficacy(prev: float | None, obs: Observation, t: Tunables) -> float:
     """Update efficacy with EWMA from a new observation.
 
@@ -195,6 +200,8 @@ def exclusion_return(rec: Mapping[str, Any], now: dt.datetime,
     except (TypeError, ValueError):
         return out  # malformed stamp: clear it, keep the calibration
     if hours >= threshold_hours:
+        if out.get("state") == "unresponsive":
+            out = resume(out)  # a long exclusion is as good as checking it
         out["state"] = "recalibrating"
         out["efficacy"] = None
         out["span_pts"] = 0

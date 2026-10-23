@@ -273,10 +273,13 @@ async def test_entry_issues_wait_for_start_and_clear_on_unload(
     assert _issue(hass, entry, "rachio_not_loaded") is None
 
 
+CAL_DATA = {**DATA, "self_calibration_enabled": True}
+
+
 async def test_unresponsive_zones_raise_a_repair_that_resumes_calibration(
         hass, enable_pyscript_and_rachio):
     from custom_components.geodrops_rachio import repairs
-    entry = await _setup(hass)
+    entry = await _setup(hass, CAL_DATA)
     sched = entry.runtime_data.scheduler
     assert _issue(hass, entry, "zone_unresponsive") is None
 
@@ -319,3 +322,17 @@ async def test_the_fix_flow_for_an_unloaded_entry_changes_nothing(
     flow.hass = hass
     result = await flow.async_step_confirm({})
     assert result["type"] == "create_entry"
+
+
+@pytest.mark.parametrize("data, efficacy", [
+    # calibration off: nothing will ever probe or resume the zone
+    (DATA, {"front": {"state": "unresponsive"}}),
+    # a zone no longer configured
+    (CAL_DATA, {"gone": {"state": "unresponsive"}}),
+])
+async def test_the_repair_lists_only_configured_zones_with_calibration_on(
+        hass, enable_pyscript_and_rachio, data, efficacy):
+    entry = await _setup(hass, data)
+    await entry.runtime_data.scheduler.store.write("efficacy", efficacy)
+    await hass.async_block_till_done()
+    assert _issue(hass, entry, "zone_unresponsive") is None

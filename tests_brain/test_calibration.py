@@ -292,6 +292,34 @@ def test_resume_restarts_an_unresponsive_zone_from_a_first_probe():
     assert rec["state"] == "unresponsive"                  # input untouched
 
 
+def test_small_rise_miss_needs_a_rate_that_predicted_a_measurable_rise():
+    t = Tunables()  # measurable 3.0
+    # 0.5 pts/min x 10 min predicts +5: an unmeasurable rise is a miss
+    assert calibration.small_rise_miss(0.5, 10.0, t) is True
+    assert calibration.small_rise_miss(0.3, 10.0, t) is True       # predicts exactly 3
+    # a small dose was expected to give a small rise: not a miss
+    assert calibration.small_rise_miss(0.2, 10.0, t) is False
+    assert calibration.small_rise_miss(None, 10.0, t) is False
+    assert calibration.small_rise_miss(0.0, 10.0, t) is False
+
+
+def test_exclusion_return_restarts_an_unresponsive_zone_from_a_first_probe():
+    import datetime as _dt
+    now = _dt.datetime(2026, 7, 5, 12, 0)
+    rec = {"state": "unresponsive", "efficacy": 0.4, "span_pts": 8.0,
+           "recent": [0.4], "prior_minutes": 50.0, "last_rise": 0.5,
+           "unresponsive_since": "2026-07-01T12:00:00",
+           "excluded_since": "2026-07-01T12:00:00"}
+    out = calibration.exclusion_return(rec, now, 48.0)
+    assert out["state"] == "recalibrating"
+    assert out["prior_minutes"] is None and out["last_rise"] is None
+    assert "unresponsive_since" not in out and "excluded_since" not in out
+    # a short exclusion keeps the zone unresponsive (its repair stays open)
+    short = calibration.exclusion_return(
+        {**rec, "excluded_since": "2026-07-05T00:00:00"}, now, 48.0)
+    assert short["state"] == "unresponsive"
+
+
 def test_apply_reject_saturated_shrinks_and_holds():
     t = Tunables()  # shrink 1.5
     out = calibration.apply_reject({"state": "calibrating"}, "saturated", 30.0, 12.0, t)

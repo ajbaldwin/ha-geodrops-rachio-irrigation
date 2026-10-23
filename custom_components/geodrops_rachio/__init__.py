@@ -120,7 +120,10 @@ async def async_setup_entry(hass: HomeAssistant,
 
     @callback
     def _check_unresponsive() -> None:
-        issues.async_check_unresponsive(hass, entry, scheduler.store.read(EFFICACY))
+        issues.async_check_unresponsive(
+            hass, entry, scheduler.store.read(EFFICACY),
+            [z["key"] for z in data.get("zones", [])],
+            bool(data.get("self_calibration_enabled")))
     entry.async_on_unload(scheduler.add_listener(_check_unresponsive))
     _check_unresponsive()
     entry.async_create_background_task(
