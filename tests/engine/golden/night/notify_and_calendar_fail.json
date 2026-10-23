@@ -207,6 +207,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      },
@@ -214,6 +215,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      }
@@ -393,6 +395,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      },
@@ -400,6 +403,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      }
@@ -687,6 +691,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      },
@@ -694,6 +699,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      }

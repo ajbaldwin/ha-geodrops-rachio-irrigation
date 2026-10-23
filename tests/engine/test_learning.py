@@ -122,6 +122,36 @@ async def test_geodrops_samples_are_gated_on_when_the_reading_was_taken(freezer)
     assert eng.store.read(PENDING_OBS) == []
 
 
+async def test_the_zone_is_measured_from_its_own_valve_open_and_close(freezer):
+    """The baseline is the last reading taken before THIS zone's valve opened,
+    and peak / retained / finalize count from when THIS zone's valve closed —
+    not from the whole run's end. A reading taken while it watered is neither."""
+    obs = {**_obs("front"), "pre_read_at": "2026-07-02T04:00:00+00:00",
+           "zone_start_iso": "2026-07-02T04:10:00+00:00",
+           "zone_end_iso": "2026-07-02T04:20:00+00:00"}
+    w, eng = _engine(freezer, pending=[obs])
+    _geodrops(w, "front")
+    _reading(w, "front", "60.0", "2026-07-02T04:00:00+00:00")
+    # 05:00: taken at 04:05, before the valve opened -> the closer baseline
+    w.at("2026-07-02 05:00:00", lambda: _reading(
+        w, "front", "58.0", "2026-07-02T04:05:00+00:00"))
+    # 05:30: taken at 04:15, mid-watering -> ignored
+    w.at("2026-07-02 05:30:00", lambda: _reading(
+        w, "front", "62.0", "2026-07-02T04:15:00+00:00"))
+    # 06:00: taken at 04:25, after the zone closed but before the run ended -> peak
+    w.at("2026-07-02 06:00:00", lambda: _reading(
+        w, "front", "68.0", "2026-07-02T04:25:00+00:00"))
+    # 11:00: taken at 10:25, past zone close + settle_hours (10:20) -> retained
+    w.at("2026-07-02 11:00:00", lambda: _reading(
+        w, "front", "63.0", "2026-07-02T10:25:00+00:00"))
+    await _poll(w, eng, 14)                # to 11:30, past zone close + retain (11:20)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["n_obs"] == 1
+    assert front["last_rise"] == pytest.approx(10.0)     # 68 - 58
+    assert front["retention"] == pytest.approx(0.5)      # (63-58)/(68-58)
+    assert eng.store.read(PENDING_OBS) == []
+
+
 @pytest.mark.parametrize("stamp", ["unavailable", "unknown", "2026-07-02T05:00:00"])
 async def test_an_unusable_last_reading_is_not_fresh(freezer, stamp):
     """With a Last Reading sensor present, an unusable stamp (unavailable,

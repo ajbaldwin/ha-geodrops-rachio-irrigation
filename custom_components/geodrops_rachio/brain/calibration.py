@@ -299,6 +299,31 @@ def accumulate_sample(
     return new_peak, new_ret, read_at, True
 
 
+def upgrade_pre(
+        pre: float | None, pre_read_at: dt.datetime | None,
+        value: float | None, read_at: dt.datetime | None,
+        zone_start: dt.datetime | None,
+) -> tuple[float | None, dt.datetime | None]:
+    """Move the pre-watering baseline to a later reading taken before the valve opened.
+
+    The baseline snapshot is whatever HA held when watering began, and a
+    GeoDrops reading reaches HA up to an hour after it is TAKEN, so a reading
+    taken closer to the zone's valve-open can land after the run. It replaces
+    the baseline when it was taken strictly before `zone_start` and strictly
+    after `pre_read_at` (a snapshot with no reading time gives way to any).
+    Readings taken once the valve opened describe the watering, not the soil
+    before it. No `zone_start` (an obs queued before valve-open times were
+    recorded) keeps the baseline. Returns (pre, pre_read_at).
+    """
+    if value is None or read_at is None or zone_start is None:
+        return pre, pre_read_at
+    if read_at >= zone_start:
+        return pre, pre_read_at
+    if pre_read_at is not None and read_at <= pre_read_at:
+        return pre, pre_read_at
+    return value, read_at
+
+
 def retention_factor(pre: float, peak: float, retained: float | None,
                      floor: float) -> float | None:
     """r = (retained - pre) / (peak - pre), clamped to [floor, 1.0].

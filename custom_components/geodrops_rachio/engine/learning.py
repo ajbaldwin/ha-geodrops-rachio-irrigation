@@ -159,6 +159,15 @@ class LearningMixin(PlanningMixin):
         for rec in pending:
             try:
                 run_end = dt.datetime.fromisoformat(rec["run_end_iso"])
+                # Samples count from THIS zone's valve close, the baseline from
+                # before its valve open. An obs queued before these were
+                # recorded falls back to the run's end and keeps its baseline.
+                zone_end = (dt.datetime.fromisoformat(rec["zone_end_iso"])
+                            if rec.get("zone_end_iso") else run_end)
+                zone_start = (dt.datetime.fromisoformat(rec["zone_start_iso"])
+                              if rec.get("zone_start_iso") else None)
+                pre_read_at = (dt.datetime.fromisoformat(rec["pre_read_at"])
+                               if rec.get("pre_read_at") else None)
             except (KeyError, ValueError):
                 continue
             zone = rec.get("zone")
@@ -176,15 +185,20 @@ class LearningMixin(PlanningMixin):
                                  if rec.get("last_seen_updated") else None)
                 except ValueError:
                     last_seen = None
+                if zone_start is not None:
+                    pre, pre_read_at = calibration.upgrade_pre(
+                        rec.get("pre_dominant"), pre_read_at, value, read_at, zone_start)
+                    rec["pre_dominant"] = pre
+                    rec["pre_read_at"] = pre_read_at.isoformat() if pre_read_at else None
                 peak, retained, last_seen, _ch = calibration.accumulate_sample(
                     rec.get("peak"), rec.get("retained"), last_seen,
-                    value, read_at, run_end, tun.settle_hours)
+                    value, read_at, zone_end, tun.settle_hours)
                 rec["peak"] = peak
                 rec["retained"] = retained
                 rec["last_seen_updated"] = last_seen.isoformat() if last_seen else None
                 # --- decide ---
                 decision = calibration.settle_decision(
-                    now, run_end, tun.retain_hours, tun.settle_max_wait_hours,
+                    now, zone_end, tun.retain_hours, tun.settle_max_wait_hours,
                     peak is not None, retained is not None)
             except Exception as err:
                 # A single zone's missing/renamed sensor (or any other accumulate

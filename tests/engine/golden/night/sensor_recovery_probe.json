@@ -198,6 +198,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      },
@@ -205,6 +206,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      }
@@ -374,6 +376,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      },
@@ -381,6 +384,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      }
@@ -595,18 +599,24 @@
     "minutes": 13,
     "peak": null,
     "pre_dominant": 60.0,
+    "pre_read_at": "2026-07-01T22:59:58+00:00",
     "retained": null,
     "run_end_iso": "2026-07-02T04:54:40+00:00",
-    "zone": "front"
+    "zone": "front",
+    "zone_end_iso": "2026-07-02T04:42:40+00:00",
+    "zone_start_iso": "2026-07-02T04:10:10+00:00"
    },
    {
     "last_seen_updated": null,
     "minutes": 13,
     "peak": null,
     "pre_dominant": 60.0,
+    "pre_read_at": "2026-07-01T22:59:58+00:00",
     "retained": null,
     "run_end_iso": "2026-07-02T04:54:40+00:00",
-    "zone": "back"
+    "zone": "back",
+    "zone_end_iso": "2026-07-02T04:54:40+00:00",
+    "zone_start_iso": "2026-07-02T04:21:40+00:00"
    }
   ],
   "record.calibration": null,
@@ -688,6 +698,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      },
@@ -695,6 +706,7 @@
       "efficacy": null,
       "last_reject_reason": null,
       "n_obs": 0,
+      "samples": 0,
       "span_pts": null,
       "state": "calibrating"
      }
