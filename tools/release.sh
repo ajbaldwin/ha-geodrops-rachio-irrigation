@@ -97,13 +97,13 @@ ci=$(ci_runs)
 waited=0
 while IFS='|' read -r id name status _; do
   [ -n "$id" ] || continue
-  # inside .github/workflows/publish.yml, that run is itself in progress
+  # run from inside a workflow, that workflow's own run is still in progress
   if [ -n "${GITHUB_WORKFLOW:-}" ] && [ "$name" = "$GITHUB_WORKFLOW" ]; then
     continue
   fi
   if [ "$status" != completed ]; then
     echo "  wait  CI '$name' is $status; waiting for it to finish"
-    gh run watch "$id" >/dev/null 2>&1 || true
+    gh run watch "$id" </dev/null >/dev/null 2>&1 || true
     waited=1
   fi
 done <<< "$ci"
@@ -116,7 +116,7 @@ if [ -z "$ci" ]; then
   problem "no CI runs found for ${SHA:0:7}"
 else
   while IFS='|' read -r name status conclusion; do
-    # inside .github/workflows/publish.yml, that run is itself in progress
+    # run from inside a workflow, that workflow's own run is still in progress
     if [ -n "${GITHUB_WORKFLOW:-}" ] && [ "$name" = "$GITHUB_WORKFLOW" ]; then
       continue
     fi
