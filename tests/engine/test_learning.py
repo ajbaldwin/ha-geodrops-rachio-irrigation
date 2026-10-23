@@ -411,6 +411,64 @@ async def test_accept_trims_recent_and_counts_a_miss(freezer):
     assert front["miss_streak"] == 1
 
 
+async def test_an_off_rate_sample_inside_probe_noise_is_not_a_miss(freezer):
+    w, eng = _engine(freezer, pending=[_obs("front")], efficacy={"front": {
+        "state": "recalibrating", "efficacy": 0.33, "recent": [0.33],
+        "miss_streak": 1}})
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    await _poll(w, eng, PEAK_ONLY)
+    # 0.4 vs 0.33 is 21% off, but over a 20-min dose only 1.4 pts of rise: noise.
+    assert eng.store.read(EFFICACY)["front"]["miss_streak"] == 0
+
+
+async def test_converging_sets_efficacy_to_the_mean_of_recent(freezer):
+    w, eng = _engine(freezer, pending=[_obs("front")], efficacy={"front": {
+        "state": "recalibrating", "efficacy": 0.1, "recent": [0.36, 0.44],
+        "miss_streak": 0}})
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    await _poll(w, eng, PEAK_ONLY)
+    front = eng.store.read(EFFICACY)["front"]
+    # [0.36, 0.44, 0.40] spreads 1.6 pts over 20 min, inside the 2-pt floor.
+    assert front["state"] == "converged"
+    # The mean of the agreeing samples, not the EWMA still dragged by the old 0.1.
+    assert front["efficacy"] == pytest.approx(0.40)
+    assert front["span_pts"] == pytest.approx(0.40 * 40)   # r unset: peak span
+
+
+async def test_converging_clears_misses_counted_against_the_old_rate(freezer):
+    w, eng = _engine(freezer, pending=[_obs("front")], efficacy={"front": {
+        "state": "recalibrating", "efficacy": 0.1, "recent": [0.36, 0.44],
+        "miss_streak": 2}})
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    await _poll(w, eng, PEAK_ONLY)
+    front = eng.store.read(EFFICACY)["front"]
+    # The misses were against an EWMA the agreeing samples just replaced: a
+    # fresh convergence must not be one miss from falling back.
+    assert front["state"] == "converged" and front["miss_streak"] == 0
+
+
+@pytest.mark.parametrize("peak, misses", [("68.0", 0), ("72.0", 1)])
+async def test_a_converged_zone_counts_misses_past_the_floor(freezer, peak, misses):
+    w, eng = _engine(freezer, pending=[_obs("front")], efficacy={"front": {
+        "state": "converged", "efficacy": 0.33, "recent": [0.33, 0.33, 0.33],
+        "miss_streak": 0}})
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", peak))
+    await _poll(w, eng, PEAK_ONLY)
+    # 0.40 is 1.4 pts off over 20 min (noise); 0.60 is 5.4 pts off (a miss).
+    assert eng.store.read(EFFICACY)["front"]["miss_streak"] == misses
+
+
+async def test_a_converged_zone_keeps_blending(freezer):
+    w, eng = _engine(freezer, pending=[_obs("front")], efficacy={"front": {
+        "state": "converged", "efficacy": 0.32, "recent": [0.36, 0.44, 0.40],
+        "miss_streak": 0}})
+    w.at("2026-07-02 05:00:00", lambda: w.set("sensor.front_dominant", "68.0"))
+    await _poll(w, eng, PEAK_ONLY)
+    front = eng.store.read(EFFICACY)["front"]
+    assert front["state"] == "converged"
+    assert front["efficacy"] == pytest.approx(0.3 * 0.4 + 0.7 * 0.32)   # EWMA
+
+
 async def test_a_corrupt_zone_record_skips_that_obs(freezer, caplog):
     """A finalize failure (here a corrupt stored zone record) is logged and the
     obs dropped; it is not retried, since the next poll would fail the same way."""

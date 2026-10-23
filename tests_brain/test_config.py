@@ -338,6 +338,7 @@ def test_self_calibration_tunables_defaults():
     assert t.probe_shrink == 1.5
     assert t.probe_floor_minutes == 10.0
     assert t.convergence_tolerance == 0.10
+    assert t.convergence_floor_pts == 2.0
     assert t.span_max == 60.0
 
 
