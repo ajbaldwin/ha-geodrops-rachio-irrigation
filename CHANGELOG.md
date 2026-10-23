@@ -4,6 +4,32 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.7 — More accurate watering calibration
+
+These changes apply only with *Active Watering Calibration* on.
+
+### Changes
+
+- **Each zone is now measured from its own watering**: moisture before
+  watering is read when its valve opens, not at 23:00, so overnight drift no
+  longer hides a zone's response or rejects a real one.
+- **A rise under 3 points no longer counts as a calibration sample**; it is
+  within the probe's normal noise, so the next probe grows instead.
+- **New repair for zones not responding to watering**: when even a full
+  refill gives no measurable rise, the zone stops getting probes (it is still
+  watered when dry), its *Calibration state* reads *Not responding — check
+  heads and probe*, and the repair lists what to check and restarts its
+  calibration when you submit it.
+- **A calibrated zone whose response fades goes back to calibrating** when
+  its rises become too small to measure where its learned rate expected more.
+- ***Calibration state*'s progress count** now shows only the samples that
+  count toward calibration, so a recalibrating zone no longer reads *(4/3)*.
+- Calibration samples still waiting when you update finish the old way.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** submit any open *not responding* repair first (v1.3.1-beta.6
+cannot clear that state), then HACS → Redownload → v1.3.1-beta.6 → restart.
+
 ## v1.3.1-beta.6 — Automatic frost adjustment
 
 ### Changes
