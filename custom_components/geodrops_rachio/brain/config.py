@@ -15,7 +15,7 @@ def band_rank(name: str) -> int:
 
 def enum_key(text: str | None) -> str:
     """A GeoDrops enum state as its translation key: "Moist+" -> "moist_plus",
-    "Good" -> "good". GeoDrops reported the labels until ha-geodrops-hacs PR #12
+    "Good" -> "good". GeoDrops reported the labels until ha-geodrops PR #12
     and the keys since (the label is display only); the two integrations update
     independently, so every comparison goes through this."""
     return (text or "").strip().lower().replace("+", "_plus")
