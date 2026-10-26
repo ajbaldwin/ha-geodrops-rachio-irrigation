@@ -16,7 +16,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-# The ha-geodrops-hacs integration's domain, and the unique_id suffixes of the
+# The ha-geodrops integration's domain, and the unique_id suffixes of the
 # per-probe "Last Reading" timestamp sensor (`<serial>_last_reading`) and the
 # "Active" switch (`<serial>_active`) it creates. Older GeoDrops versions have
 # no Active switch.

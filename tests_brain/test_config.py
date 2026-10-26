@@ -372,7 +372,7 @@ def test_recovery_poll_seconds_override():
 
 
 def test_state_rank_accepts_geodrops_translation_keys():
-    """GeoDrops (ha-geodrops-hacs PR #12) reports enum states as translation
+    """GeoDrops (ha-geodrops PR #12) reports enum states as translation
     keys; the UI label is only display. Both forms must rank the same, since
     the two integrations can be updated on different days."""
     for label, key in (("Dry", "dry"), ("Dry+", "dry_plus"), ("Moist", "moist"),

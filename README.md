@@ -32,7 +32,7 @@ bindings and generates the scheduler's settings directly from your answers.
   supports (zones are driven through its zone switches and its
   `rachio.start_multiple_zone_schedule` / pause actions).
 - **Soil moisture:** GeoDrops sensors, through
-  [ha-geodrops-hacs](https://github.com/ajbaldwin/ha-geodrops-hacs) or any
+  [ha-geodrops](https://github.com/ajbaldwin/ha-geodrops) or any
   integration exposing the same dominant, state and quality sensors.
 - **Weather:** any Home Assistant sensors for the five observed conditions,
   and any `weather.*` entity with an hourly forecast (see Prerequisites).
@@ -49,7 +49,7 @@ set up and working in Home Assistant:
 - **GeoDrops soil-moisture sensors** already flowing into Home Assistant as
   entities (one dominant sensor and quality/agreement sensors per zone you
   want to schedule). The simplest way to get these into Home Assistant is
-  **[ha-geodrops-hacs](https://github.com/ajbaldwin/ha-geodrops-hacs)**, a
+  **[ha-geodrops](https://github.com/ajbaldwin/ha-geodrops)**, a
   native HACS integration that reads GeoDrops readings straight from BigQuery
   with no external service to run.
 - Weather inputs for the five observed conditions the wizard binds:

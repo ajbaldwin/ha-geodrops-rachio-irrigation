@@ -596,7 +596,7 @@ async def test_reset_marker_cleanup_failure_is_logged_not_raised(freezer, caplog
 
 
 def _to_translation_keys(world, data):
-    """Rewrite the GeoDrops states the way ha-geodrops-hacs PR #12 reports
+    """Rewrite the GeoDrops states the way ha-geodrops PR #12 reports
     them: translation keys instead of UI labels."""
     for z in data["zones"]:
         world.set(z["state_sensor"], world.get(z["state_sensor"]).lower()
