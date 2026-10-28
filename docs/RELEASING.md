@@ -141,7 +141,8 @@ CHANGELOG sections:
    the tag is new, and `CHANGELOG.md`
    has the version's section. It then tags `vX.Y.Z` and creates the GitHub
    release — a pre-release for `-beta.N`, the latest release for a stable —
-   titled from the CHANGELOG heading. `--dry-run` runs every check and shows
+   titled with the CHANGELOG heading's subtitle (HACS already shows the tag
+   in front of it). `--dry-run` runs every check and shows
    the notes without publishing.
 
    HACS installs updates from GitHub releases, so the release is what makes the

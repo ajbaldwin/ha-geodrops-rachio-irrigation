@@ -146,9 +146,11 @@ else
   ok "notes from CHANGELOG.md '$HEADING'"
 fi
 
+# HACS heads each release's notes "<tag> - <title>" when the two differ, so
+# the title is the heading's subtitle alone; without one it is the tag.
 TITLE="$TAG"
 case "$HEADING" in
-  *" — "*) TITLE="$TAG — ${HEADING#* — }" ;;
+  *" — "*) TITLE="${HEADING#* — }" ;;
 esac
 if [ "$PRERELEASE" = true ]; then
   NOTES="> **Beta.** HACS only offers this to users who turned on this integration's *Pre-release* switch in HACS.
