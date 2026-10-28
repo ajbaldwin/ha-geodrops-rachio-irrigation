@@ -77,6 +77,25 @@ def test_converged_long_dose_keeps_the_relative_band():
     assert calibration.converged([1.9, 2.08, 2.0], t, minutes=40) is True
 
 
+def test_consistent_count_is_the_newest_samples_that_agree():
+    t = Tunables()  # floor 2.0 pts
+    assert calibration.consistent_count([], t, 28) == 0
+    assert calibration.consistent_count([0.6], t, 28) == 1
+    # 28-min doses: 0.614 and 0.657 agree (1.2 pts); 0.504 is 4.3 pts off the newest.
+    assert calibration.consistent_count([0.614, 0.504, 0.657], t, 28) == 1
+    assert calibration.consistent_count([0.504, 0.614, 0.657], t, 28) == 2
+    # 13-min doses, 1.3 pts apart: both agree.
+    assert calibration.consistent_count([0.377, 0.477], t, 13) == 2
+
+
+def test_a_full_consistent_window_is_exactly_convergence():
+    t = Tunables()
+    for recent, minutes in [([0.377, 0.477, 0.42], 13), ([0.614, 0.504, 0.56], 28),
+                            ([1.9, 2.08, 2.0], 40)]:
+        full = calibration.consistent_count(recent, t, minutes) == len(recent)
+        assert full is calibration.converged(recent, t, minutes)
+
+
 def test_off_rate_uses_the_same_band():
     t = Tunables()
     assert calibration.off_rate(0.477, 0.377, 13, t) is False   # 1.3 pts: noise

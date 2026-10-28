@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 
+from .brain.calibration import consistent_count
+from .brain.config import Tunables
 from .engine.store import EFFICACY, ZONE_WATERED
 
 if TYPE_CHECKING:
@@ -15,10 +17,11 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Scheduler default `convergence_samples` — the accepted-probe count a zone needs
-# to converge. Only the denominator of a progress hint; a rare advanced override
-# would change it, but the reason phrase (below) carries the important signal.
-_CONVERGENCE_TARGET = 3
+# Scheduler defaults for the progress hint: how many agreeing samples a zone
+# needs to converge, and the band they must agree within. A rare advanced
+# override would shift them; the label is a hint, the state is the engine's.
+_DEFAULTS = Tunables()
+_CONVERGENCE_TARGET = _DEFAULTS.convergence_samples
 # Why the last probe didn't count, translated for the status label.
 _REJECT_PHRASES = {
     "no_rise": "probe too small",
@@ -29,31 +32,37 @@ _REJECT_PHRASES = {
 
 
 def format_calibration_status(state: str | None, samples: int | None,
+                              consistent: int | None,
                               last_reject_reason: str | None) -> str | None:
     """One human label folding the raw calibration state together with progress
     and, when a zone is stuck, why.
 
-      converged                         -> "Converged"
+      converged                         -> "Calibrated"
       calibrating, last probe rejected  -> "Calibrating — soil too wet"
-      calibrating, 2 accepted probes    -> "Calibrating (2/3)"
+      calibrating, newest 2 agree       -> "Calibrating (2 of 3 consistent)"
+      calibrating, newest agrees with none of several -> "Calibrating — results vary"
       calibrating, no probes yet        -> "Calibrating"
       unresponsive                      -> "Not responding — check heads and probe"
 
-    A reject reason wins over the count: it explains why the count is not
-    growing, which is what someone checking a stuck zone actually needs."""
+    Progress counts the runs that agree, not the runs taken, so "3 of 3" is
+    only ever calibrated. A reject reason wins over the count: it explains why
+    the count is not growing, which is what someone checking a stuck zone
+    actually needs."""
     if not state:
         return state
-    label = state.replace("_", " ").title()
     if state == "converged":
-        return label
+        return "Calibrated"
     if state == "unresponsive":
         # The repair says what to check; the label points there.
         return "Not responding — check heads and probe"
+    label = state.replace("_", " ").title()
     phrase = _REJECT_PHRASES.get(last_reject_reason or "")
     if phrase:
         return f"{label} — {phrase}"
-    if samples:
-        return f"{label} ({samples}/{_CONVERGENCE_TARGET})"
+    if (samples or 0) > 1 and consistent == 1:
+        return f"{label} — results vary"
+    if consistent:
+        return f"{label} ({consistent} of {_CONVERGENCE_TARGET} consistent)"
     return label
 
 
@@ -82,10 +91,14 @@ def parse_nightly_calibration(attrs: Mapping[str, Any] | None,
     zones watered that night appear; missing keys fall back to the efficacy
     file (which lags and carries no `state` for excluded zones)."""
     cal = ((attrs or {}).get("calibration") or {}).get(key) or {}
+    # A snapshot from before `samples` was recorded shows no count:
+    # its lifetime n_obs would overstate progress after a reset.
+    samples = cal.get("samples", 0)
     return {"efficacy": cal.get("efficacy"), "calibration_state": cal.get("state"),
-            # A snapshot from before `samples` was recorded shows no count:
-            # its lifetime n_obs would overstate progress after a reset.
-            "samples": cal.get("samples", 0),
+            "samples": samples,
+            # The snapshot carries no rates to compare; it only stands in for
+            # a zone the efficacy store has no state for.
+            "consistent": samples,
             "last_reject_reason": cal.get("last_reject_reason")}
 
 
@@ -110,10 +123,13 @@ def parse_refill_depth(runtimes_attrs: Mapping[str, Any] | None, rachio_zone_id:
 
 def parse_efficacy(store: Mapping[str, Any] | None, key: str) -> dict[str, Any]:
     rec = (store or {}).get(key) or {}
+    # Progress toward convergence is the accepted samples still in the
+    # window, not lifetime n_obs (which survives a recalibration reset).
+    recent = rec.get("recent") or []
     return {"efficacy": rec.get("efficacy"), "calibration_state": rec.get("state"),
-            # Progress toward convergence is the accepted samples still in the
-            # window, not lifetime n_obs (which survives a recalibration reset).
-            "samples": len(rec.get("recent") or []),
+            "samples": len(recent),
+            # Judged on the newest sample's dose, as the engine judges it.
+            "consistent": consistent_count(recent, _DEFAULTS, rec.get("prior_minutes")),
             "last_reject_reason": rec.get("last_reject_reason")}
 
 
@@ -217,6 +233,7 @@ class ZoneStateCoordinator:
                 out["calibration_state"] = cal["calibration_state"]
                 # Take progress + reject reason from the same source as the state.
                 out["samples"] = cal["samples"]
+                out["consistent"] = cal["consistent"]
                 out["last_reject_reason"] = cal["last_reject_reason"]
             if out["efficacy"] is None and cal["efficacy"] is not None:
                 out["efficacy"] = cal["efficacy"]
@@ -224,7 +241,7 @@ class ZoneStateCoordinator:
         # the helper keys so the returned dict keeps its documented shape.
         out["calibration_state"] = format_calibration_status(
             out.get("calibration_state"), out.pop("samples", 0),
-            out.pop("last_reject_reason", None))
+            out.pop("consistent", 0), out.pop("last_reject_reason", None))
         return out
 
     @callback
