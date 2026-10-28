@@ -46,6 +46,19 @@ after v1.1.0 is `1.2.0-beta.1` (or `1.1.1-beta.1` for fixes only), and
 promoting it is `1.2.0`. Never publish a beta of a version that is already
 stable; it would sort below it (`tools/release.sh` refuses).
 
+**Never go past `-beta.9`.** HACS does not sort releases by version: it takes
+the first non-draft pre-release in GitHub's releases list as the newest, and
+GitHub does not order that list by version or creation date. It listed
+`v1.3.1-beta.9` ahead of `v1.3.1-beta.10`, published eleven hours later, so
+HACS kept offering beta.9 and no one was offered beta.10 (it could only be
+installed by hand, via Redownload). After `-beta.9`, promote the stable or
+move to the next patch's betas (`v1.3.1-beta.10` went out again as
+`v1.3.2-beta.1`). After publishing, check that the new tag is listed first:
+
+```bash
+gh api "repos/{owner}/{repo}/releases?per_page=3" -q '.[].tag_name'
+```
+
 CHANGELOG sections:
 
 - **Each beta** gets its own section, `## v1.2.0-beta.2 — Title`, covering
@@ -194,6 +207,7 @@ UTC (`tests/engine/conftest.py`), so fixtures are identical on any machine.
 - Beta or stable? Default to a beta; a stable should promote a beta that has
   already run on your box, unless it's an urgent fix.
 - `custom_components/geodrops_rachio/manifest.json`'s `"version"` was bumped.
+- A beta number is 9 or less (see *Beta and stable*).
 - A stable's CHANGELOG section covers everything since the previous stable,
   not just the last beta.
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests_brain` passes.
