@@ -258,8 +258,9 @@ Home Assistant restarts is not recorded.
   skipped from both the nightly plan and calibration probing. Its *Deficit*
   still shows, with an `excluded: true` attribute.
   A zone whose GeoDrops probe has its *Active* switch off (GeoDrops 0.9.0-beta.3 or
-  later) is skipped the same way, shown as `probe_inactive` among the skipped
-  zones; see [Examples](#examples).
+  later) is skipped the same way: notifications show it as *Inactive*, and
+  the skipped-zones attribute lists it as `probe_inactive`; see
+  [Examples](#examples).
 - **Moisture target** (`select`) — the GeoDrops band (Dry → Wet+) the
   scheduler keeps the zone at. The same setting as the zone's target moisture
   level in the options; changing it takes effect from the next plan without

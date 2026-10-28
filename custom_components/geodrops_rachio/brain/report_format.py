@@ -92,6 +92,17 @@ def display_name(zone_key: str) -> str:
     return zone_key.replace("_", " ").title()
 
 
+# Skip reasons whose internal key is not fit to show. The keys stay as they are
+# in the plan/run records and state attributes, which code and tests compare.
+_REASON_TEXT = {"probe_inactive": "Inactive"}
+
+
+def display_reason(reason: str) -> str:
+    """Operator-facing text for a zone's skip reason: "probe_inactive" ->
+    "Inactive"; a reason already written as words is shown as given."""
+    return _REASON_TEXT.get(reason, reason)
+
+
 def _window_line(r: RunResult) -> str:
     """"Window: 00:52–04:52 (4.0h)", or "" when the window is unknown."""
     if not (r.window_start and r.window_end):
@@ -115,7 +126,8 @@ def format_notification(r: RunResult) -> str:
     if r.note:
         lines.append(r.note)
     if r.uncompleted:
-        parts = [f"{display_name(z)} ({reason})" for z, reason in r.uncompleted.items()]
+        parts = [f"{display_name(z)} ({display_reason(reason)})"
+                 for z, reason in r.uncompleted.items()]
         lines.append(f"Not completed: {', '.join(parts)}")
     if r.recoveries:
         plural = "s" if r.recoveries != 1 else ""
@@ -156,7 +168,7 @@ def format_preview(
     if skipped:
         lines.append("Skipped:")
         for zone, reason in skipped.items():
-            lines.append(f"- {display_name(zone)}: {reason}")
+            lines.append(f"- {display_name(zone)}: {display_reason(reason)}")
     if window_note:
         lines.append(window_note)
     lines.append(f"Drought: {drought_level}")
@@ -184,7 +196,7 @@ def format_calendar(r: RunResult, tun_cycle: int, tun_soak: int) -> tuple[str, s
     if r.uncompleted:
         lines.append("Not completed:")
         for z, reason in r.uncompleted.items():
-            lines.append(f"- {display_name(z)}: {reason}")
+            lines.append(f"- {display_name(z)}: {display_reason(reason)}")
     return (title, "\n".join(lines))
 
 

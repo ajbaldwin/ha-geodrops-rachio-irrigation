@@ -92,3 +92,18 @@ async def test_a_probe_back_after_a_long_absence_recalibrates(freezer):
     rec = eng.store.read(EFFICACY)["back"]
     assert rec["state"] == "recalibrating"
     assert "excluded_since" not in rec
+
+
+async def test_the_zone_logbook_says_inactive(freezer):
+    from custom_components.geodrops_rachio.engine.orchestration import (
+        OrchestrationMixin)
+    freezer.move_to(T_PLAN)
+    data = entry_data()
+    world = FakeWorld(freezer)
+    populate(world, data)
+    eng = native_engine(world, data, OrchestrationMixin, IOMixin)
+    cfg = eng._load_cfg()
+    await eng._log_zone_outcomes(cfg, [], {}, {"back": "probe_inactive"})
+    messages = [d["message"] for dom, svc, d in world.calls
+                if (dom, svc) == ("logbook", "log")]
+    assert messages == ["Back not watered (Inactive)"]

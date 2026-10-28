@@ -242,3 +242,19 @@ def test_run_result_carries_full_iso_watering_end():
     r = result(end="04:55", end_iso="2026-09-16T04:55:03-04:00")
     assert r.end == "04:55"
     assert r.end_iso == "2026-09-16T04:55:03-04:00"
+
+
+def test_an_inactive_probe_reads_inactive_on_every_surface():
+    r = result(uncompleted={"zone_c": "probe_inactive"})
+    text = rf.format_notification(r)
+    assert "Zone C (Inactive)" in text and "probe_inactive" not in text
+    _title, body = rf.format_calendar(r, 12, 30)
+    assert "- Zone C: Inactive" in body and "probe_inactive" not in body
+    preview = rf.format_preview("Level 1", [("zone_a", 12)],
+                                {"zone_c": "probe_inactive"})
+    assert "- Zone C: Inactive" in preview
+
+
+def test_other_reasons_are_shown_as_given():
+    assert rf.display_reason("insufficient window") == "insufficient window"
+    assert rf.display_reason("excluded") == "excluded"
