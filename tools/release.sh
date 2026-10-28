@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Publish the version in custom_components/*/manifest.json as a GitHub release
-# (which is what HACS delivers). Run on main after the release PR is merged.
+# (which is what HACS delivers). Run on main after the release PR is merged,
+# locally or through .github/workflows/publish.yml.
 #
 #   X.Y.Z-beta.N  -> pre-release: HACS offers it only to users who turned on
 #                    this integration's HACS "Pre-release" switch.
@@ -12,7 +13,17 @@
 #
 # Usage: tools/release.sh publish [--dry-run]
 #   --dry-run  run every check and show the notes, but tag and publish nothing.
+#
+# Environment:
+#   RELEASE_CI_TIMEOUT  seconds to wait for CI runs on HEAD to start and
+#                       finish (default 900).
 set -euo pipefail
+
+# Workflows that must have a passing push run on HEAD. HACS wants the release
+# created after its checks (Validate) passed, and right after a merge they may
+# not have started yet.
+REQUIRED_WORKFLOWS=("CI" "Validate")
+CI_TIMEOUT="${RELEASE_CI_TIMEOUT:-900}"
 
 usage() { echo "usage: $0 publish [--dry-run]" >&2; exit 2; }
 [ "${1:-}" = "publish" ] || usage
@@ -57,6 +68,14 @@ echo
 
 # --- Repository state --------------------------------------------------------
 echo "Checks:"
+if ! command -v gh >/dev/null; then
+  problem "gh is not installed"
+elif ! gh auth status >/dev/null 2>&1; then
+  problem "gh is not signed in; run gh auth login"
+else
+  ok "gh signed in"
+fi
+
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$BRANCH" = main ]; then ok "on main"; else problem "on branch '$BRANCH', not main"; fi
 
@@ -82,46 +101,61 @@ if [ "$PRERELEASE" = true ]; then
   else
     ok "$BASE_TAG not released yet"
   fi
+  # HACS doesn't sort releases: it offers the first pre-release in GitHub's
+  # release list, and GitHub lists beta.9 ahead of beta.10. A beta.10 would
+  # publish fine and never be offered.
+  if [ "${VERSION##*-beta.}" -ge 10 ]; then
+    problem "beta number ${VERSION##*-beta.} is above 9 and HACS won't offer it; promote ${BASE_TAG#v} or move to the next patch's -beta.1"
+  else
+    ok "beta number is single-digit"
+  fi
 fi
 
-# CI: the latest run of every workflow on HEAD must have passed. A run still
-# queued or in progress (CI on a just-merged release PR) is waited for, not
-# failed, so publishing right after the merge needs no separate wait.
+# --- CI on HEAD --------------------------------------------------------------
+# Only push runs count: publish.yml dry runs (workflow_dispatch) and
+# release-guard.yml (release) also run on HEAD, and an earlier failed dry run
+# must not block publishing. The latest push run of every workflow must pass,
+# and every REQUIRED_WORKFLOWS entry must have one. Runs not started or not
+# finished yet (CI on a just-merged release PR) are waited for, up to
+# CI_TIMEOUT, so publishing right after the merge needs no separate wait.
 ci_runs() {
   # unique_by keeps the first entry per workflow; gh lists newest first.
-  gh run list --commit "$SHA" --json databaseId,workflowName,status,conclusion \
+  gh run list --commit "$SHA" --event push --json databaseId,workflowName,status,conclusion \
     --jq 'unique_by(.workflowName)[] | "\(.databaseId)|\(.workflowName)|\(.status)|\(.conclusion)"' \
     2>/dev/null || true
 }
-ci=$(ci_runs)
-waited=0
-while IFS='|' read -r id name status _; do
-  [ -n "$id" ] || continue
-  # run from inside a workflow, that workflow's own run is still in progress
-  if [ -n "${GITHUB_WORKFLOW:-}" ] && [ "$name" = "$GITHUB_WORKFLOW" ]; then
-    continue
-  fi
-  if [ "$status" != completed ]; then
-    echo "  wait  CI '$name' is $status; waiting for it to finish"
-    gh run watch "$id" </dev/null >/dev/null 2>&1 || true
-    waited=1
-  fi
-done <<< "$ci"
-if [ "$waited" = 1 ]; then
+missing_workflows() {
+  local required
+  for required in "${REQUIRED_WORKFLOWS[@]}"; do
+    grep -q "^[^|]*|$required|" <<< "$ci" || echo "$required"
+  done
+}
+# Polled rather than followed with `gh run watch`, so one deadline also covers
+# a run stuck in the queue. Each wait is printed once.
+shown=""
+note() { grep -qxF -- "$1" <<< "$shown" || { echo "  wait  $1"; shown+="$1"$'\n'; }; }
+deadline=$((SECONDS + CI_TIMEOUT))
+while :; do
   ci=$(ci_runs)
-fi
-# Drop the run id: the checks below read name|status|conclusion.
-ci=$(printf '%s\n' "$ci" | cut -d'|' -f2-)
-if [ -z "$ci" ]; then
-  problem "no CI runs found for ${SHA:0:7}"
-else
-  while IFS='|' read -r name status conclusion; do
-    # run from inside a workflow, that workflow's own run is still in progress
-    if [ -n "${GITHUB_WORKFLOW:-}" ] && [ "$name" = "$GITHUB_WORKFLOW" ]; then
-      continue
-    fi
+  pending=$(awk -F'|' '$3 != "completed"' <<< "$ci")
+  missing=$(missing_workflows)
+  [ -z "$pending$missing" ] && break
+  [ "$SECONDS" -ge "$deadline" ] && break
+  while IFS='|' read -r _ name status _; do
+    [ -n "$name" ] && note "CI '$name' is $status; waiting for it to finish"
+  done <<< "$pending"
+  while read -r name; do
+    [ -n "$name" ] && note "CI '$name' has no run on ${SHA:0:7} yet; waiting for it to start"
+  done <<< "$missing"
+  sleep 15
+done
+while read -r name; do
+  [ -n "$name" ] && problem "CI '$name' has no push run on ${SHA:0:7} after ${CI_TIMEOUT}s"
+done <<< "$missing"
+if [ -n "$ci" ]; then
+  while IFS='|' read -r _ name status conclusion; do
     if [ "$status" != completed ]; then
-      problem "CI '$name' is still $status"
+      problem "CI '$name' is still $status after ${CI_TIMEOUT}s"
     elif [ "$conclusion" != success ]; then
       problem "CI '$name' concluded $conclusion"
     else
@@ -131,13 +165,14 @@ else
 fi
 
 # --- Release notes from CHANGELOG.md -----------------------------------------
-HEADING=$(awk -v ver="$VERSION" '
+# CR is dropped: a core.autocrlf checkout holds CHANGELOG.md with CRLF.
+HEADING=$(tr -d '\r' < CHANGELOG.md | awk -v ver="$VERSION" '
   /^## / { t = $2; sub(/^v/, "", t); if (t == ver) { print; exit } }
-' CHANGELOG.md)
-NOTES=$(awk -v ver="$VERSION" '
+')
+NOTES=$(tr -d '\r' < CHANGELOG.md | awk -v ver="$VERSION" '
   /^## / { if (found) exit; t = $2; sub(/^v/, "", t); if (t == ver) { found = 1; next } }
   found { print }
-' CHANGELOG.md | sed -e '/./,$!d')
+' | sed -e '/./,$!d')
 if [ -z "$HEADING" ]; then
   problem "CHANGELOG.md has no '## $TAG' section"
 elif [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
@@ -152,6 +187,8 @@ TITLE="$TAG"
 case "$HEADING" in
   *" — "*) TITLE="${HEADING#* — }" ;;
 esac
+TITLE=$(printf '%s' "$TITLE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+[ -n "$TITLE" ] || TITLE="$TAG"
 if [ "$PRERELEASE" = true ]; then
   NOTES="> **Beta.** HACS only offers this to users who turned on this integration's *Pre-release* switch in HACS.
 
@@ -186,8 +223,37 @@ printf '%s\n' "$NOTES" > "$NOTES_FILE"
 
 git tag "$TAG"
 git push origin "$TAG"
-gh release create "$TAG" --verify-tag "$FLAG" --title "$TITLE" --notes-file "$NOTES_FILE"
+if ! gh release create "$TAG" --verify-tag "$FLAG" --title "$TITLE" --notes-file "$NOTES_FILE"; then
+  # Left in place, the tag would block a rerun ("tag already exists").
+  if git push --quiet --delete origin "$TAG" && git tag -d "$TAG" >/dev/null; then
+    echo "error: creating the release failed; removed tag $TAG again, so a rerun can retry" >&2
+  else
+    echo "error: creating the release failed and tag $TAG is still there; remove it: git push --delete origin $TAG && git tag -d $TAG" >&2
+  fi
+  exit 1
+fi
 bash tools/check_release.sh "$TAG" "$PRERELEASE"
+
+# HACS takes the first non-draft release of each kind (pre-release, stable)
+# from GitHub's list, so the new tag has to come first there or HACS users
+# won't be offered it. The list can lag a just-created release; retry briefly.
+first=""
+for _ in 1 2 3 4 5 6; do
+  first=$(gh api "repos/{owner}/{repo}/releases?per_page=20" \
+    --jq "[.[] | select(.draft | not) | select(.prerelease == $PRERELEASE)][0].tag_name" || true)
+  [ "$first" = "$TAG" ] && break
+  sleep 5
+done
+if [ -z "$first" ] || [ "$first" = null ]; then
+  echo "error: $TAG is published, but the script could not read GitHub's release list to check that HACS offers it." >&2
+  echo "Check by hand: gh api \"repos/{owner}/{repo}/releases?per_page=3\" -q '.[].tag_name'" >&2
+  exit 1
+fi
+if [ "$first" != "$TAG" ]; then
+  echo "error: GitHub lists $first ahead of $TAG, so HACS won't offer $TAG; publish the next version instead" >&2
+  exit 1
+fi
+echo "ok: $TAG is first in GitHub's release list, so HACS offers it"
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
   # a release made with a workflow's token doesn't trigger release-guard.yml;
   # check_release.sh just above is the check

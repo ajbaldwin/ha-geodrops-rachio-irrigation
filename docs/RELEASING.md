@@ -53,7 +53,8 @@ GitHub does not order that list by version or creation date. It listed
 HACS kept offering beta.9 and no one was offered beta.10 (it could only be
 installed by hand, via Redownload). After `-beta.9`, promote the stable or
 move to the next patch's betas (`v1.3.1-beta.10` went out again as
-`v1.3.2-beta.1`). After publishing, check that the new tag is listed first:
+`v1.3.2-beta.1`). `tools/release.sh` refuses `-beta.10` and up, and after
+publishing it checks that GitHub lists the new tag first. To check by hand:
 
 ```bash
 gh api "repos/{owner}/{repo}/releases?per_page=3" -q '.[].tag_name'
@@ -150,13 +151,26 @@ CHANGELOG sections:
    ```
 
    The script refuses unless you are on a clean `main` that matches
-   `origin/main`, CI passed on that commit (it waits for runs still in progress),
-   the tag is new, and `CHANGELOG.md`
-   has the version's section. It then tags `vX.Y.Z` and creates the GitHub
+   `origin/main`, the CI and Validate workflows (and any other push-triggered
+   workflow) passed on that commit, the tag is new, a beta's number is 9 or
+   less, and `CHANGELOG.md` has the version's section. Only push runs count, so
+   a failed **Publish release** dry run doesn't block. It waits up to 15 minutes
+   (`RELEASE_CI_TIMEOUT`) for CI runs that haven't started or finished yet, so
+   you can publish right after the merge. It then tags `vX.Y.Z` and creates the GitHub
    release — a pre-release for `-beta.N`, the latest release for a stable —
    titled with the CHANGELOG heading's subtitle (HACS already shows the tag
-   in front of it), or with the tag when the heading has none. `--dry-run` runs every check and shows
-   the notes without publishing.
+   in front of it), or with the tag when the heading has none. Last, it checks
+   that GitHub lists the new release first among releases of its kind, since
+   that is the one HACS offers. `--dry-run` runs every check and shows the
+   notes without publishing.
+
+   **Or publish from GitHub** (no local `gh` needed): Actions → **Publish
+   release** → Run workflow on `main`. It runs the same `tools/release.sh`;
+   `dry_run` is on by default, so run it once as a dry run, check the log, then
+   run it again with `dry_run` off. A release created this way doesn't trigger
+   the release guard below (GitHub doesn't start workflows from a workflow's
+   own token), so the job runs `tools/check_release.sh` itself and fails if the
+   release is inconsistent.
 
    HACS installs updates from GitHub releases, so the release is what makes the
    new version — and its notes — visible to users' HACS instances; the

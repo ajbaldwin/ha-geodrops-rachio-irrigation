@@ -1,0 +1,37 @@
+name: Publish release
+# Runs tools/release.sh on GitHub, so a release can be published without gh
+# installed locally (e.g. from a Claude Code remote session). Same checks as a
+# local run; the top of tools/release.sh lists them.
+#
+# A release created with the workflow's GITHUB_TOKEN does not trigger other
+# workflows, so release-guard.yml won't run for it; release.sh already runs
+# tools/check_release.sh right after publishing, and this job fails if it does.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run every check and show the notes, but publish nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # push the tag, create the release
+  actions: read     # gh run list (CI check)
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30   # release.sh waits up to 15 min for CI
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Publish
+        run: bash tools/release.sh publish ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
