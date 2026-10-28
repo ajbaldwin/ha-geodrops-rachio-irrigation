@@ -349,8 +349,8 @@ class PlanningMixin(IOMixin):
         The end anchor is per drought profile: Levels 0-2 finish at sunrise so
         watering ends just as drying begins; Level 3 finishes at dawn, before any
         sun, to minimise evaporative loss when water is scarce. The Finish anchor
-        select can replace it at every level, and the Finish offset slider moves
-        the end from where the level would put it. With Automatic frost
+        select can replace it at every level, and the Finish offset slider sets
+        the finish in minutes after it, replacing the level's own offset. With Automatic frost
         adjustment on, the frost shift may then move this end later
         (_apply_frost). Reads the sun through `cfg.bindings`, so it installs
         nothing (see project_window)."""

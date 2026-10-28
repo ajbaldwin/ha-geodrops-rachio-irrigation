@@ -408,8 +408,18 @@ def test_finish_shift_parses_and_clamps():
         assert config.finish_shift(bad) == 0
 
 
-def test_finish_end_offset_shifts_the_resolved_offset():
-    # Positive shift = later = a smaller "minutes before" offset.
-    assert config.finish_end_offset(_profile(), 5, "30") == -25
-    assert config.finish_end_offset(_profile(end_offset_minutes=-30), 5, "-10") == -20
+def test_level_finish_offset_is_the_levels_end_as_minutes_after_the_anchor():
+    # The slider counts later-is-positive, the reverse of end_offset_minutes.
+    assert config.level_finish_offset(_profile(), 5) == -5
+    assert config.level_finish_offset(_profile(end_offset_minutes=-30), 5) == 30
+    assert config.level_finish_offset(_profile(end_offset_minutes=0), 5) == 0
+
+
+def test_finish_end_offset_is_the_sliders_value():
+    # The slider holds the actual finish: it replaces the level's offset.
+    assert config.finish_end_offset(_profile(), 5, "30") == -30
+    assert config.finish_end_offset(_profile(end_offset_minutes=-30), 5, "-10") == 10
+    # Unreadable slider: the level's own end.
     assert config.finish_end_offset(_profile(), 5, None) == 5
+    assert config.finish_end_offset(_profile(end_offset_minutes=-30), 5,
+                                    "unavailable") == -30
