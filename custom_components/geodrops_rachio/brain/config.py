@@ -184,7 +184,7 @@ def resolved_end_offset(profile: DroughtProfile, global_offset: int) -> int:
 # The Finish anchor select: "auto" keeps each drought profile's own end_anchor;
 # a sun event replaces it at every level.
 FINISH_ANCHORS = ["auto", "dawn", "sunrise"]
-# The Finish offset slider's range, in minutes either side of the default end.
+# The Finish offset slider's range, in minutes either side of the anchor.
 FINISH_SHIFT_MAX = 90
 
 
@@ -196,27 +196,42 @@ def finish_anchor(profile: DroughtProfile, choice: str | None) -> str:
     return profile.end_anchor
 
 
-def finish_shift(raw: str | None) -> int:
-    """The Finish offset slider's minutes (POSITIVE = later), clamped to its
-    range; 0 for anything unreadable, so a missing slider changes nothing."""
+def _finish_reading(raw: str | None) -> int | None:
+    """The slider's minutes, rounded and clamped to its range; None when it
+    does not read as a number."""
     if raw is None:
-        return 0
+        return None
     try:
         value = float(raw)
     except ValueError:
-        return 0
+        return None
     if value != value:  # NaN
-        return 0
+        return None
     return int(round(max(-FINISH_SHIFT_MAX, min(FINISH_SHIFT_MAX, value))))
+
+
+def finish_shift(raw: str | None) -> int:
+    """The Finish offset slider's minutes after the anchor (POSITIVE = later),
+    clamped to its range; 0 for anything unreadable."""
+    return _finish_reading(raw) or 0
+
+
+def level_finish_offset(profile: DroughtProfile, global_offset: int) -> int:
+    """The Finish offset slider's value for a level's own end: minutes after
+    the anchor (positive = later), the reverse of end_offset_minutes."""
+    return max(-FINISH_SHIFT_MAX,
+               min(FINISH_SHIFT_MAX, -resolved_end_offset(profile, global_offset)))
 
 
 def finish_end_offset(profile: DroughtProfile, global_offset: int,
                       shift_raw: str | None) -> int:
-    """The end offset in effect (POSITIVE = before the anchor): the profile's
-    resolved offset moved by the Finish offset slider. The slider SHIFTS the
-    default end rather than replacing it, so 0 keeps every level as configured;
-    it counts later-is-positive, the reverse of end_offset_minutes."""
-    return resolved_end_offset(profile, global_offset) - finish_shift(shift_raw)
+    """The end offset in effect (POSITIVE = before the anchor): the Finish
+    offset slider's finish, which replaces the level's own. An unreadable
+    slider falls back to the level's, while a real 0 is the anchor itself."""
+    reading = _finish_reading(shift_raw)
+    if reading is None:
+        return resolved_end_offset(profile, global_offset)
+    return -reading
 
 
 def frost_adjustment(raw: str | None) -> bool:

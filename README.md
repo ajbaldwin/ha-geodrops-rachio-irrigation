@@ -155,7 +155,7 @@ shown). Units are °F, mph and mm; readings in other units are converted.
 | --- | --- | --- |
 | `cycle_minutes` | 12 | Longest single watering cycle before a soak. |
 | `soak_minutes` | 20 | Soak between cycles of the same zone. |
-| `end_offset_minutes` | 5 | Finish this many minutes before dawn/sunrise (negative: after). The *Finish offset* slider moves the end from here. |
+| `end_offset_minutes` | 5 | Finish this many minutes before dawn/sunrise (negative: after). The *Finish offset* slider starts from it. |
 | `window_base_cap_hours` | 6.0 | Longest watering window. |
 | `window_disease_cap_hours` | 3.0 | Longest window on a warm, humid, still night. |
 | `warm_temp_f` | 68.0 | Overnight mean temperature that counts as warm. |
@@ -198,10 +198,13 @@ zone, with these entities (all prefixed `geodrops_rachio_`):
   watering window ends at. *Level default* (the default) keeps each drought
   level's own: sunrise at Levels 0–2, dawn at Levels 3–4. *Dawn* or *Sunrise*
   applies at every level.
-- **Finish offset** (`number`, slider, under *Configuration*) — moves the end
-  of the window from where the drought level puts it, −90 to +90 minutes:
-  positive finishes later, negative earlier, 0 changes nothing. It shifts any
-  per-level `end_offset_minutes` override rather than replacing it.
+- **Finish offset** (`number`, slider, under *Configuration*) — when watering
+  finishes, in minutes after the anchor, −90 to +90 (negative: before it). It
+  starts at the drought level's finish (`end_offset_minutes`, or the level's
+  own override) and goes back to the new level's finish whenever the drought
+  level changes; a slider still at its level's finish follows an edit to
+  `end_offset_minutes` (global or per level), while a value you set by hand
+  is kept until the next drought level change.
   Changes to either control apply from the next plan, without a restart.
 - **Automatic frost adjustment** (`switch`, under *Configuration*, off by
   default) — on, cold mornings move the finish the two Finish controls set

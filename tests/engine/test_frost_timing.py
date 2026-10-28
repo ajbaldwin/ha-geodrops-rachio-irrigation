@@ -44,7 +44,7 @@ async def test_frost_adjustment_keeps_the_finish_controls(freezer):
     world.set("select.geodrops_rachio_finish_anchor", "dawn")
     world.set("number.geodrops_rachio_finish_offset", "10")
     profile = cfg.drought_profiles["Level 1 - Mild"]
-    assert eng._window_end(cfg, profile) == ("dawn", -5, _utc("04:35"))
+    assert eng._window_end(cfg, profile) == ("dawn", -10, _utc("04:40"))
 
 
 async def test_frost_moves_the_finish_the_controls_set(freezer):

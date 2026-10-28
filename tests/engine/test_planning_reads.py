@@ -136,27 +136,31 @@ async def test_finish_anchor_sunrise_applies_at_every_level(freezer):
     assert eng._window_end(eng._current_cfg, profile)[0] == "sunrise"
 
 
-async def test_finish_offset_shifts_the_end_later_when_positive(freezer):
+async def test_finish_offset_sets_the_end_after_the_anchor(freezer):
+    """The slider is the finish itself, in minutes after the anchor."""
     world, eng = _eng(freezer)
     world.set("number.geodrops_rachio_finish_offset", "30.0")
     profile = eng._current_cfg.drought_profiles["Level 1 - Mild"]
     assert eng._window_end(eng._current_cfg, profile) == (
-        "sunrise", -25, _utc("2026-07-02T05:25:00+00:00"))
+        "sunrise", -30, _utc("2026-07-02T05:30:00+00:00"))
     world.set("number.geodrops_rachio_finish_offset", "-30")
     assert eng._window_end(eng._current_cfg, profile)[2] == _utc(
-        "2026-07-02T04:25:00+00:00")
+        "2026-07-02T04:30:00+00:00")
 
 
-async def test_finish_offset_shifts_a_per_level_override(freezer):
-    """The slider moves the level's configured end, so a per-level
-    end_offset_minutes keeps applying underneath it."""
+async def test_finish_offset_replaces_a_per_level_override(freezer):
+    """A per-level end_offset_minutes is only the slider's starting value:
+    the slider's own value is what applies."""
     data = entry_data(overrides=(
         'drought_profiles:\n  "Level 1 - Mild": {end_offset_minutes: -30}\n'))
     world, eng = _eng(freezer, data)
-    world.set("number.geodrops_rachio_finish_offset", "15")
     profile = eng._current_cfg.drought_profiles["Level 1 - Mild"]
+    # No slider yet: the level's own end, 30 min after sunrise.
     assert eng._window_end(eng._current_cfg, profile)[2] == _utc(
-        "2026-07-02T05:45:00+00:00")
+        "2026-07-02T05:30:00+00:00")
+    world.set("number.geodrops_rachio_finish_offset", "15")
+    assert eng._window_end(eng._current_cfg, profile)[2] == _utc(
+        "2026-07-02T05:15:00+00:00")
 
 
 async def test_plan_context_reports_the_finish_controls(freezer):
@@ -165,8 +169,8 @@ async def test_plan_context_reports_the_finish_controls(freezer):
     world.set("number.geodrops_rachio_finish_offset", "-10")
     ctx = await eng._plan_context(eng._current_cfg)
     assert ctx["end_anchor"] == "dawn"
-    assert ctx["end_offset_minutes"] == 15
-    assert ctx["end"] == _utc("2026-07-02T04:15:00+00:00")
+    assert ctx["end_offset_minutes"] == 10
+    assert ctx["end"] == _utc("2026-07-02T04:20:00+00:00")
 
 
 async def test_project_window_from_the_forecast(freezer):
@@ -176,12 +180,21 @@ async def test_project_window_from_the_forecast(freezer):
     w = eng.project_window()
     assert w is not None
     assert (w["start"], w["end"]) == (
-        _utc("2026-07-01T23:05:00+00:00"), _utc("2026-07-02T05:05:00+00:00"))
+        _utc("2026-07-01T23:10:00+00:00"), _utc("2026-07-02T05:10:00+00:00"))
     assert w["anchor"] == "sunrise" and w["anchor_choice"] == "auto"
-    assert (w["shift_minutes"], w["end_offset_minutes"]) == (10, -5)
+    assert (w["shift_minutes"], w["end_offset_minutes"]) == (10, -10)
     assert (w["cap_hours"], w["cap_source"], w["pressure"]) == (
         6.0, "forecast", [])
     assert w["drought_level"] == "Level 1 - Mild"
+
+
+async def test_project_window_reports_the_finish_in_force(freezer):
+    """No readable slider: the reported finish is the level's own, the same
+    minutes after the anchor the window ends at."""
+    world, eng = _eng(freezer)
+    world.set("number.geodrops_rachio_finish_offset", "unavailable")
+    w = eng.project_window()
+    assert (w["shift_minutes"], w["end_offset_minutes"]) == (-5, 5)
 
 
 async def test_project_window_shrinks_under_disease_pressure(freezer):

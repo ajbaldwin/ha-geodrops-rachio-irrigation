@@ -1096,7 +1096,9 @@ async def test_finish_controls_default_change_and_restore(
     assert hass.states.get(anchor).attributes["options"] == [
         "auto", "dawn", "sunrise"]
     st = hass.states.get(offset)
-    assert float(st.state) == -20
+    # Saved before the slider held the actual finish, -20 was a shift of the
+    # level's own end (5 min before the anchor): the same finish is now -25.
+    assert float(st.state) == -25
     assert (st.attributes["min"], st.attributes["max"], st.attributes["step"],
             st.attributes["mode"]) == (-90, 90, 5, "slider")
     await hass.services.async_call("select", "select_option",
@@ -1107,6 +1109,179 @@ async def test_finish_controls_default_change_and_restore(
                                    blocking=True)
     assert hass.states.get(anchor).state == "sunrise"
     assert float(hass.states.get(offset).state) == 45
+
+
+_OFFSET = "number.geodrops_rachio_finish_offset"
+_LEVEL = "select.geodrops_rachio_drought_level"
+_LEVEL_OVERRIDES = (
+    'drought_profiles:\n'
+    '  "Level 0 - Normal": {end_offset_minutes: 20}\n'
+    '  "Level 3 - Critical": {end_offset_minutes: -15}\n')
+
+
+async def test_finish_offset_starts_at_the_levels_own_finish(
+        hass, enable_pyscript_and_rachio):
+    """No saved value: the slider shows the drought level's finish, in
+    minutes after the anchor (Level 1 ends 5 min before it)."""
+    await _setup_observed(hass, ENTRY_DATA)
+    assert float(hass.states.get(_OFFSET).state) == -5
+
+
+async def test_finish_offset_resets_to_the_new_levels_finish(
+        hass, enable_pyscript_and_rachio):
+    await _setup_observed(hass, {**ENTRY_DATA,
+                                 "advanced_overrides": _LEVEL_OVERRIDES})
+    # A value set by hand holds while the level stays.
+    await hass.services.async_call("number", "set_value",
+                                   {"entity_id": _OFFSET, "value": 45},
+                                   blocking=True)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(_OFFSET).state) == 45
+    # A level change puts the slider at that level's finish.
+    await hass.services.async_call("select", "select_option",
+                                   {"entity_id": _LEVEL,
+                                    "option": "Level 0 - Normal"},
+                                   blocking=True)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(_OFFSET).state) == -20
+    await hass.services.async_call("select", "select_option",
+                                   {"entity_id": _LEVEL,
+                                    "option": "Level 3 - Critical"},
+                                   blocking=True)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(_OFFSET).state) == 15
+    # Picking the level already set changes nothing.
+    await hass.services.async_call("number", "set_value",
+                                   {"entity_id": _OFFSET, "value": 30},
+                                   blocking=True)
+    await hass.services.async_call("select", "select_option",
+                                   {"entity_id": _LEVEL,
+                                    "option": "Level 3 - Critical"},
+                                   blocking=True)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(_OFFSET).state) == 30
+
+
+async def test_finish_offset_keeps_a_saved_finish_across_restart(
+        hass, enable_pyscript_and_rachio):
+    """A value saved since the slider held the actual finish restores as is,
+    and the restored drought level does not reset it."""
+    mock_restore_cache_with_extra_data(hass, [(
+        State(_OFFSET, "-20"),
+        {"native_value": -20, "native_unit_of_measurement": "min",
+         "native_min_value": -90, "native_max_value": 90, "native_step": 5,
+         "from_anchor": True})])
+    await _setup_observed(hass, ENTRY_DATA)
+    assert float(hass.states.get(_OFFSET).state) == -20
+
+
+def _offset_entity(hass):
+    return hass.data["entity_components"]["number"].get_entity(_OFFSET)
+
+
+def _saved_offset(value, **extra):
+    return (State(_OFFSET, str(value)),
+            {"native_value": value, "native_unit_of_measurement": "min",
+             "native_min_value": -90, "native_max_value": 90, "native_step": 5,
+             **extra})
+
+
+async def test_finish_offset_save_is_marked_as_the_actual_finish(
+        hass, enable_pyscript_and_rachio):
+    await _setup_observed(hass, ENTRY_DATA)
+    saved = _offset_entity(hass).extra_restore_state_data.as_dict()
+    assert saved["native_value"] == -5
+    assert saved["from_anchor"] is True
+    assert saved["level_finish"] == -5
+
+
+async def test_finish_offset_starts_at_the_restored_levels_finish(
+        hass, enable_pyscript_and_rachio):
+    """After a restart the slider seeds from the drought level the select
+    restores, not the default level, and restoring the select resets nothing."""
+    from pytest_homeassistant_custom_component.common import mock_restore_cache
+    mock_restore_cache(hass, [State(_LEVEL, "Level 3 - Critical")])
+    await _setup_observed(hass, {**ENTRY_DATA,
+                                 "advanced_overrides": _LEVEL_OVERRIDES})
+    assert hass.states.get(_LEVEL).state == "Level 3 - Critical"
+    assert float(hass.states.get(_OFFSET).state) == 15
+
+
+async def test_finish_offset_reads_the_level_the_select_will_restore(
+        hass, enable_pyscript_and_rachio):
+    """The number can be added before the select: the level then comes from
+    the restore cache. Platform order varies, so check that path directly."""
+    from pytest_homeassistant_custom_component.common import mock_restore_cache
+    mock_restore_cache(hass, [State(_LEVEL, "Level 3 - Critical")])
+    await _setup_observed(hass, {**ENTRY_DATA,
+                                 "advanced_overrides": _LEVEL_OVERRIDES})
+    hass.states.async_remove(_LEVEL)
+    assert _offset_entity(hass)._current_level() == "Level 3 - Critical"
+
+
+async def test_finish_offset_converts_an_old_save_at_the_restored_level(
+        hass, enable_pyscript_and_rachio):
+    """An old save shifted the level's own finish: +10 at Level 3 (15 min
+    after the anchor) is the same finish as 25 now."""
+    # One call: each mock_restore_cache* replaces the whole cache.
+    mock_restore_cache_with_extra_data(hass, [
+        (State(_LEVEL, "Level 3 - Critical"), {}), _saved_offset(10)])
+    await _setup_observed(hass, {**ENTRY_DATA,
+                                 "advanced_overrides": _LEVEL_OVERRIDES})
+    assert float(hass.states.get(_OFFSET).state) == 25
+
+
+async def test_finish_offset_reads_a_renamed_drought_level_select(
+        hass, enable_pyscript_and_rachio):
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import mock_restore_cache
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="renamed_entry", data={
+        **ENTRY_DATA, "advanced_overrides": _LEVEL_OVERRIDES})
+    entry.add_to_hass(hass)
+    er.async_get(hass).async_get_or_create(
+        "select", DOMAIN, "renamed_entry_drought_level",
+        suggested_object_id="lawn_drought", config_entry=entry)
+    mock_restore_cache(hass, [State("select.lawn_drought", "Level 3 - Critical")])
+    with patch("custom_components.geodrops_rachio.engine.scheduler.Scheduler.async_start"):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("select.lawn_drought").state == "Level 3 - Critical"
+    assert float(hass.states.get(_OFFSET).state) == 15
+
+
+async def test_finish_offset_keeps_an_old_save_when_the_config_cannot_load(
+        hass, enable_pyscript_and_rachio):
+    """No level finish to convert with: the slider reads unknown (the engine
+    uses the level's own finish) and the old save is kept, unmarked, for the
+    next start to convert."""
+    mock_restore_cache_with_extra_data(hass, [_saved_offset(10)])
+    with patch("custom_components.geodrops_rachio.engine.scheduler."
+               "Scheduler.level_finish_offset", return_value=None):
+        await _setup_observed(hass, ENTRY_DATA)
+        assert hass.states.get(_OFFSET).state == "unknown"
+        saved = _offset_entity(hass).extra_restore_state_data.as_dict()
+    assert saved["native_value"] == 10
+    assert "from_anchor" not in saved
+
+
+async def test_finish_offset_follows_a_new_level_finish_until_set_by_hand(
+        hass, enable_pyscript_and_rachio):
+    """A slider still at its level's finish follows an edit to that finish
+    (here the global end_offset_minutes); one set by hand keeps its value."""
+    edited = {**ENTRY_DATA, "advanced_overrides": "end_offset_minutes: 15\n"}
+    mock_restore_cache_with_extra_data(hass, [_saved_offset(
+        -5, from_anchor=True, level_finish=-5)])
+    await _setup_observed(hass, edited)
+    assert float(hass.states.get(_OFFSET).state) == -15
+
+
+async def test_finish_offset_set_by_hand_survives_a_level_finish_edit(
+        hass, enable_pyscript_and_rachio):
+    edited = {**ENTRY_DATA, "advanced_overrides": "end_offset_minutes: 15\n"}
+    mock_restore_cache_with_extra_data(hass, [_saved_offset(
+        30, from_anchor=True, level_finish=-5)])
+    await _setup_observed(hass, edited)
+    assert float(hass.states.get(_OFFSET).state) == 30
 
 
 async def test_watering_window_follows_its_inputs(
@@ -1137,13 +1312,14 @@ async def test_watering_window_follows_its_inputs(
         blocking=True)
     await hass.async_block_till_done()
     st = hass.states.get(window)
-    assert st.state == "22:40–04:40"
+    # The slider is the finish: 15 min after dawn.
+    assert st.state == "22:45–04:45"
     assert st.attributes["finish_anchor_source"] == "Finish anchor"
     assert (st.attributes["finish_offset"],
-            st.attributes["minutes_after_anchor"]) == (15, 10)
+            st.attributes["minutes_after_anchor"]) == (15, 15)
     hass.states.async_set("sensor.sun_next_dawn", "2026-07-03T04:31:00+00:00")
     await hass.async_block_till_done()
-    assert hass.states.get(window).state == "22:41–04:41"
+    assert hass.states.get(window).state == "22:46–04:46"
 
 
 async def test_watering_window_shows_dollar_spot(

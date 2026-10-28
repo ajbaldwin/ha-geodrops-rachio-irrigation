@@ -18,7 +18,7 @@ from homeassistant.helpers.event import (async_call_later,
                                          async_track_time_change)
 from homeassistant.helpers.start import async_at_started
 
-from ..brain import recovery
+from ..brain import config, recovery
 from .base import EngineBase, FetchDailyMeans, ZoneData
 from .disease_risk import DiseaseRiskMixin
 from .io import IOMixin
@@ -428,6 +428,20 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             await self._publish_targets(self._load_cfg())
         except Exception as err:
             _LOGGER.warning("target-floor publish skipped (%s)", err)
+
+    def level_finish_offset(self, level: str) -> int | None:
+        """The Finish offset slider's value for a drought level's own end, from
+        the config as it is now; None when the config cannot be loaded. An
+        unknown level falls back to Level 3 - Critical, as the plan does."""
+        try:
+            cfg = self._load_cfg()
+            profile = (cfg.drought_profiles.get(level)
+                       or cfg.drought_profiles["Level 3 - Critical"])
+            return config.level_finish_offset(
+                profile, cfg.tunables.end_offset_minutes)
+        except Exception as err:
+            _LOGGER.warning("level finish offset unavailable (%s)", err)
+            return None
 
     async def request_stop(self) -> None:
         """The Stop button: raise the manual-stop flag the watch loop honours."""
