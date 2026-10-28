@@ -91,7 +91,13 @@ async def async_setup_entry(hass: HomeAssistant,
         fetch_daily_means=lambda temp_id, rh_id, first, end: (
             disease_stats.async_daily_means(
                 hass, resolve(temp_id), resolve(rh_id), first, end)))
-    coordinator = ZoneStateCoordinator(hass, entry, scheduler)
+    # The engine's switch is the tunable, which the advanced overrides can set.
+    try:
+        calibrating = bool(
+            config_writer.build_config(data)["tunables"]["self_calibration_enabled"])
+    except ValueError:  # unparseable overrides: the engine's load fails the same way
+        calibrating = bool(data.get("self_calibration_enabled"))
+    coordinator = ZoneStateCoordinator(hass, entry, scheduler, calibrating)
     coordinator.async_start()
     # Registered up front so zone devices can link to it by its registry id.
     hub = dr.async_get(hass).async_get_or_create(
@@ -117,14 +123,6 @@ async def async_setup_entry(hass: HomeAssistant,
     entry.async_on_unload(lambda: issues.async_clear(hass, entry))
     # The unresponsive-zones repair follows the efficacy store: re-checked on
     # every engine write, and at setup for a zone already stuck.
-
-    # The engine's switch is the tunable, which the advanced overrides can set.
-    try:
-        calibrating = bool(
-            config_writer.build_config(data)["tunables"]["self_calibration_enabled"])
-    except ValueError:  # unparseable overrides: the engine's load fails the same way
-        calibrating = bool(data.get("self_calibration_enabled"))
-
     @callback
     def _check_unresponsive() -> None:
         issues.async_check_unresponsive(

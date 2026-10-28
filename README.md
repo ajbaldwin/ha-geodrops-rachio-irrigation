@@ -323,6 +323,7 @@ The **Active Watering Calibration** option in the Advanced step of the
 wizard is **Beta and off by default** (`self_calibration_enabled`). Leave it
 off unless you specifically want to try it; it is not required for the
 scheduler's normal drought-level/soil-moisture-driven watering to work.
+While it is off, every zone's *Calibration state* reads *Disabled*.
 
 With it on, a calibrating zone gets a short probe watering, and the next
 probe grows until it raises soil moisture by a measurable amount (3 points).
@@ -337,7 +338,8 @@ full refill gives no measurable rise, the zone's *Calibration state* reads
 still watered when dry), and a repair under **Settings → System → Repairs**
 lists what to check. Submit the repair once you have checked the zone to
 restart its calibration; it also clears on its own if a later watering shows
-a measurable rise.
+a measurable rise. A zone whose GeoDrops probe has its *Active* switch off
+reads *Inactive*, and picks up where it left off once the switch is back on.
 
 ## If watering is interrupted
 

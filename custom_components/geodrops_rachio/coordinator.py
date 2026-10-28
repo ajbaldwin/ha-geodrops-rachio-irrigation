@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .brain.calibration import consistent_count
 from .brain.config import Tunables
+from .engine import port
 from .engine.store import EFFICACY, ZONE_WATERED
 
 if TYPE_CHECKING:
@@ -172,10 +173,12 @@ class ZoneStateCoordinator:
     """Fans the scheduler's records + efficacy document out to per-zone sensors."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry,
-                 scheduler: Scheduler) -> None:
+                 scheduler: Scheduler, calibrating: bool) -> None:
         self.hass = hass
         self.entry = entry
         self._scheduler = scheduler
+        # Active Watering Calibration; changing it reloads the entry.
+        self._calibrating = calibrating
         self._listeners: list[Callable[[], None]] = []
         self._unsub: Callable[[], None] | None = None
 
@@ -249,7 +252,20 @@ class ZoneStateCoordinator:
         out["calibration_state"] = format_calibration_status(
             out.get("calibration_state"), out.pop("samples", 0),
             out.pop("consistent", 0), out.pop("last_reject_reason", None))
+        # Nothing updates the store while calibration is off or the probe is
+        # out of service, so its state would read as progress frozen in place.
+        if not self._calibrating:
+            out["calibration_state"] = "Disabled"
+        elif port.probe_out_of_service(self.active_entity(key),
+                                       self._scheduler.port.state):
+            out["calibration_state"] = "Inactive"
         return out
+
+    def active_entity(self, key: str) -> str | None:
+        """The zone's GeoDrops probe Active switch, or None when it has none."""
+        dominant = next((z.get("dominant_sensor") for z in self.entry.data.get("zones", [])
+                         if z.get("key") == key), None)
+        return self._scheduler.port.probe_active_entity(dominant) if dominant else None
 
     @callback
     def async_start(self) -> None:
