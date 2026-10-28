@@ -634,7 +634,7 @@ async def test_zone_status_sensors(hass, enable_pyscript_and_rachio):
                    "dominant_sensor": "sensor.d", "state_sensor": "sensor.s",
                    "quality_sensors": [], "target_range": "moist",
                    "runtime_minutes": 20, "refill_depth_mm": 10}],
-        "self_calibration_enabled": False, "advanced_overrides": ""})
+        "self_calibration_enabled": True, "advanced_overrides": ""})
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -683,7 +683,7 @@ async def test_calibration_state_shows_progress_and_reason(hass, enable_pyscript
             {"key": "side", "rachio_switch": "switch.y", "dominant_sensor": "s.e",
              "state_sensor": "s.f", "quality_sensors": [], "target_range": "moist",
              "runtime_minutes": 20, "refill_depth_mm": 10}],
-        "self_calibration_enabled": False, "advanced_overrides": ""})
+        "self_calibration_enabled": True, "advanced_overrides": ""})
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -964,9 +964,10 @@ _ZONE = {"key": "front", "rachio_switch": "switch.x", "dominant_sensor": "sensor
          "geography": "front", "runtime_minutes": 20, "refill_depth_mm": 10}
 
 
-async def _setup_zone(hass, **zone):
+async def _setup_zone(hass, calibrating=False, **zone):
     entry = MockConfigEntry(domain=DOMAIN, data={
         **ENTRY_DATA, "zones": [dict(_ZONE, **zone)],
+        "self_calibration_enabled": calibrating,
         "bindings": {"drought_level_select": "select.geodrops_rachio_drought_level"}})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -1455,6 +1456,39 @@ async def test_plan_refreshes_when_a_probes_active_switch_changes(
         hass.states.async_set(active, "off")
         await _settle(hass, 10)
         refresh.assert_awaited_once()
+
+
+async def test_calibration_state_follows_the_probes_active_switch(
+        hass, enable_pyscript_and_rachio):
+    """An out-of-service probe reads "Inactive" as soon as its switch turns
+    off, and its own state again once it turns back on."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    geo = MockConfigEntry(domain="geodrops")
+    geo.add_to_hass(hass)
+    probe = dr.async_get(hass).async_get_or_create(
+        config_entry_id=geo.entry_id, identifiers={("geodrops", "SN1")})
+    reg = er.async_get(hass)
+    reg.async_get_or_create("sensor", "geodrops", "SN1_moisture", device_id=probe.id,
+                            config_entry=geo, suggested_object_id="d")
+    active = reg.async_get_or_create(
+        "switch", "geodrops", "SN1_active", device_id=probe.id, config_entry=geo,
+        suggested_object_id="front_probe_active").entity_id
+    hass.states.async_set(active, "on")
+    from tests.conftest import publish_record
+    entry = await _setup_zone(hass, calibrating=True)
+    publish_record(hass, entry, "last_nightly", 1, {"calibration": {
+        "front": {"state": "calibrating", "samples": 2}}})
+    await hass.async_block_till_done()
+    label = "sensor.geodrops_rachio_front_calibration_state"
+    progress = "Calibrating (2 of 3 consistent)"
+    assert hass.states.get(label).state == progress
+    hass.states.async_set(active, "off")
+    await hass.async_block_till_done()
+    assert hass.states.get(label).state == "Inactive"
+    hass.states.async_set(active, "on")
+    await hass.async_block_till_done()
+    assert hass.states.get(label).state == progress
 
 
 async def test_plan_refreshes_when_a_moisture_target_changes(

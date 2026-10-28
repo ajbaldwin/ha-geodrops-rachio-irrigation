@@ -10,10 +10,15 @@ async def _nosave(_docs):
     return None
 
 
-def _scheduler_stub(records=None, docs=None):
+def _scheduler_stub(records=None, docs=None, states=None):
+    # Each probe's Active switch is "switch.<dominant sensor>_active".
+    states = states or {}
+    port = SimpleNamespace(
+        state=states.get,
+        probe_active_entity=lambda dominant: f"switch.{dominant}_active")
     return SimpleNamespace(records=records or {},
                            store=EngineStore(docs or {}, _nosave),
-                           add_listener=lambda cb: (lambda: None))
+                           add_listener=lambda cb: (lambda: None), port=port)
 
 
 def test_format_calibration_status():
@@ -155,7 +160,7 @@ def test_parse_efficacy_counts_only_the_newest_samples_that_agree():
 
 
 def test_remove_listener_stops_callbacks():
-    c = ZoneStateCoordinator(None, None, _scheduler_stub())
+    c = ZoneStateCoordinator(None, None, _scheduler_stub(), True)
     calls = []
     cb = lambda: calls.append(1)
     c.add_listener(cb)
@@ -168,7 +173,7 @@ def test_remove_listener_stops_callbacks():
 
 
 def test_failing_sensor_callback_does_not_skip_the_others(caplog):
-    c = ZoneStateCoordinator(None, None, _scheduler_stub())
+    c = ZoneStateCoordinator(None, None, _scheduler_stub(), True)
     calls = []
 
     def boom():
@@ -198,7 +203,7 @@ def test_data_for_reads_scheduler_records(hass):
             "preview": {"value": 1, "attributes": {"planned_minutes": {"front": 30}}},
         },
         docs={"efficacy": {"front": {"efficacy": 0.4}}})
-    out = ZoneStateCoordinator(hass, entry, sched).data_for("front")
+    out = ZoneStateCoordinator(hass, entry, sched, True).data_for("front")
     assert out["last_delivered_runtime"] == 42.0
     assert out["target_floor"] == 65.0
     assert out["refill_depth"] == 8.5
@@ -222,7 +227,7 @@ def test_store_calibration_wins_over_stale_nightly_snapshot(hass):
                                      "efficacy": 0.325, "last_reject_reason": None},
                            # no state in the store: the nightly snapshot fills in
                            "back": {"excluded_since": "2026-09-20T19:54:38-04:00"}}})
-    c = ZoneStateCoordinator(hass, entry, sched)
+    c = ZoneStateCoordinator(hass, entry, sched, True)
     front, back = c.data_for("front"), c.data_for("back")
     assert front["calibration_state"] == "Recalibrating (2 of 3 consistent)"
     assert front["efficacy"] == 0.325
@@ -241,7 +246,7 @@ def test_zone_watered_wins_over_last_nightly(hass):
         # (an install upgraded since its last run) and keeps the nightly values.
         docs={"zone_watered": {"front": {"end_iso": "2026-09-13T17:05:00+00:00",
                                          "minutes": 6.0, "trigger": "rachio"}}})
-    c = ZoneStateCoordinator(hass, entry, sched)
+    c = ZoneStateCoordinator(hass, entry, sched, True)
     front, back = c.data_for("front"), c.data_for("back")
     assert front["last_watered"] == "2026-09-13T17:05:00+00:00"
     assert front["last_delivered_runtime"] == 6.0
@@ -258,3 +263,37 @@ def test_parse_last_nightly_prefers_the_zones_own_close_time():
     # A record from before zone_end_iso existed (or missing this zone) keeps
     # the run's end.
     assert parse_last_nightly(attrs, "front")["last_watered"] == "2026-07-02T04:55:00+00:00"
+
+
+def _calibrating_zones():
+    entry = SimpleNamespace(data={"zones": [{"key": "front", "dominant_sensor": "front"},
+                                            {"key": "back", "dominant_sensor": "back"},
+                                            {"key": "manual"}]})
+    docs = {"efficacy": {k: {"state": "recalibrating", "recent": [0.3, 0.35],
+                             "prior_minutes": 20}
+                         for k in ("front", "back", "manual")}}
+    return entry, docs
+
+
+def test_inactive_probe_reads_inactive(hass):
+    # Active off: the store's progress is frozen, so the label says why.
+    entry, docs = _calibrating_zones()
+    sched = _scheduler_stub(docs=docs, states={"switch.front_active": "off",
+                                               "switch.back_active": "unavailable"})
+    c = ZoneStateCoordinator(hass, entry, sched, True)
+    assert c.data_for("front")["calibration_state"] == "Inactive"
+    # Unavailable or no switch at all fails safe to in service.
+    assert c.data_for("back")["calibration_state"] == "Recalibrating (2 of 3 consistent)"
+    assert c.data_for("manual")["calibration_state"] == "Recalibrating (2 of 3 consistent)"
+    assert c.active_entity("manual") is None
+
+
+def test_calibration_off_reads_disabled(hass):
+    # Off wins over an inactive probe and over a never-calibrated zone.
+    entry, docs = _calibrating_zones()
+    sched = _scheduler_stub(docs=docs, states={"switch.front_active": "off"})
+    c = ZoneStateCoordinator(hass, entry, sched, False)
+    assert c.data_for("front")["calibration_state"] == "Disabled"
+    assert c.data_for("back")["calibration_state"] == "Disabled"
+    assert ZoneStateCoordinator(hass, entry, _scheduler_stub(), False).data_for(
+        "back")["calibration_state"] == "Disabled"

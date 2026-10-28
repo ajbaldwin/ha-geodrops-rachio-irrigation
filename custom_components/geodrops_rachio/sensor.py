@@ -391,6 +391,16 @@ class ZoneCoordinatorSensor(GeodropsRachioZoneEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         self._coord.add_listener(self._update)
         self.async_on_remove(lambda: self._coord.remove_listener(self._update))
+        # Turning the probe's Active switch off shows "Inactive" at once.
+        active = (self._coord.active_entity(self._key)
+                  if self._ckey == "calibration_state" else None)
+        if active:
+            self.async_on_remove(async_track_state_change_event(
+                self.hass, active, self._active_changed))
+        self._update()
+
+    @callback
+    def _active_changed(self, _event: Event[EventStateChangedData]) -> None:
         self._update()
 
     @callback
