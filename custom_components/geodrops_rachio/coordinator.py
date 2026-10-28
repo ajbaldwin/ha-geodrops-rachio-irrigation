@@ -12,6 +12,7 @@ from .brain.calibration import consistent_count
 from .brain.config import Tunables
 from .engine import port
 from .engine.store import EFFICACY, ZONE_WATERED
+from .util import slug
 
 if TYPE_CHECKING:
     from .engine.scheduler import Scheduler
@@ -252,14 +253,25 @@ class ZoneStateCoordinator:
         out["calibration_state"] = format_calibration_status(
             out.get("calibration_state"), out.pop("samples", 0),
             out.pop("consistent", 0), out.pop("last_reject_reason", None))
-        # Nothing updates the store while calibration is off or the probe is
-        # out of service, so its state would read as progress frozen in place.
+        # Nothing updates the store while calibration is off, the zone is
+        # excluded or its probe is out of service, so its state would read as
+        # progress frozen in place (or unknown, for a zone never calibrated).
         if not self._calibrating:
             out["calibration_state"] = "Disabled"
+        elif self._scheduler.port.state(self.exclude_entity(key)) == "on":
+            out["calibration_state"] = "Excluded"
         elif port.probe_out_of_service(self.active_entity(key),
                                        self._scheduler.port.state):
             out["calibration_state"] = "Inactive"
         return out
+
+    def exclude_entity(self, key: str) -> str:
+        """The zone's Exclude from Watering/Calibration switch, as configured."""
+        zone = next((z for z in self.entry.data.get("zones", [])
+                     if z.get("key") == key), {})
+        # As build_config does: only a missing key takes the default.
+        return zone.get("exclude_boolean",
+                        f"switch.geodrops_rachio_{slug(key)}_exclude") or ""
 
     def active_entity(self, key: str) -> str | None:
         """The zone's GeoDrops probe Active switch, or None when it has none."""

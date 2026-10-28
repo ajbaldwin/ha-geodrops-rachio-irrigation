@@ -297,3 +297,26 @@ def test_calibration_off_reads_disabled(hass):
     assert c.data_for("back")["calibration_state"] == "Disabled"
     assert ZoneStateCoordinator(hass, entry, _scheduler_stub(), False).data_for(
         "back")["calibration_state"] == "Disabled"
+
+
+def test_excluded_zone_reads_excluded(hass):
+    # An excluded zone is never probed: a never-calibrated one has only
+    # excluded_since in the store, which read as unknown.
+    entry, docs = _calibrating_zones()
+    entry.data["zones"][1]["exclude_boolean"] = "input_boolean.back_off"
+    docs["efficacy"]["manual"] = {"excluded_since": "2026-09-20T19:54:38-04:00"}
+    sched = _scheduler_stub(docs=docs, states={
+        "switch.geodrops_rachio_front_exclude": "on", "switch.front_active": "off",
+        "input_boolean.back_off": "on",
+        "switch.geodrops_rachio_manual_exclude": "on"})
+    c = ZoneStateCoordinator(hass, entry, sched, True)
+    # Excluded wins over an inactive probe; a configured switch is honored.
+    assert c.data_for("front")["calibration_state"] == "Excluded"
+    assert c.data_for("back")["calibration_state"] == "Excluded"
+    assert c.data_for("manual")["calibration_state"] == "Excluded"
+    # Disabled still wins over everything.
+    assert ZoneStateCoordinator(hass, entry, sched, False).data_for(
+        "front")["calibration_state"] == "Disabled"
+    # Back in: its own state again.
+    sched.port.state = {"switch.geodrops_rachio_front_exclude": "off"}.get
+    assert c.data_for("front")["calibration_state"] == "Recalibrating (2 of 3 consistent)"

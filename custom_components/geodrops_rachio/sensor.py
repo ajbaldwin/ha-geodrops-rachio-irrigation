@@ -381,6 +381,7 @@ class ZoneCoordinatorSensor(GeodropsRachioZoneEntity, SensorEntity):
                  unit: str | None, precision: int | None = None) -> None:
         super().__init__(entry, ENTITY_ID_FORMAT, key, hub_device_id, suffix)
         self._key, self._coord, self._ckey = key, coordinator, ckey
+        self._entry = entry
         if suffix in _ZONE_DIAGNOSTIC:
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_device_class = device_class
@@ -391,16 +392,19 @@ class ZoneCoordinatorSensor(GeodropsRachioZoneEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         self._coord.add_listener(self._update)
         self.async_on_remove(lambda: self._coord.remove_listener(self._update))
-        # Turning the probe's Active switch off shows "Inactive" at once.
-        active = (self._coord.active_entity(self._key)
-                  if self._ckey == "calibration_state" else None)
-        if active:
+        # Excluding the zone or turning its probe's Active switch off shows
+        # "Excluded" / "Inactive" at once.
+        if self._ckey == "calibration_state":
+            resolve = owned_entities.resolver(
+                self.hass, self._entry, self._entry.runtime_data.renamed)
+            switches = [resolve(self._coord.exclude_entity(self._key)),
+                        self._coord.active_entity(self._key)]
             self.async_on_remove(async_track_state_change_event(
-                self.hass, active, self._active_changed))
+                self.hass, [e for e in switches if e], self._switch_changed))
         self._update()
 
     @callback
-    def _active_changed(self, _event: Event[EventStateChangedData]) -> None:
+    def _switch_changed(self, _event: Event[EventStateChangedData]) -> None:
         self._update()
 
     @callback
