@@ -338,8 +338,9 @@ full refill gives no measurable rise, the zone's *Calibration state* reads
 still watered when dry), and a repair under **Settings → System → Repairs**
 lists what to check. Submit the repair once you have checked the zone to
 restart its calibration; it also clears on its own if a later watering shows
-a measurable rise. A zone whose GeoDrops probe has its *Active* switch off
-reads *Inactive*, and picks up where it left off once the switch is back on.
+a measurable rise. A zone with *Exclude from Watering/Calibration* on reads
+*Excluded*, and one whose GeoDrops probe has its *Active* switch off reads
+*Inactive*; either picks up where it left off once the switch changes back.
 
 ## If watering is interrupted
 

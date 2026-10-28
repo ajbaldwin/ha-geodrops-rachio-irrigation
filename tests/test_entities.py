@@ -1489,6 +1489,13 @@ async def test_calibration_state_follows_the_probes_active_switch(
     hass.states.async_set(active, "on")
     await hass.async_block_till_done()
     assert hass.states.get(label).state == progress
+    # The zone's own Exclude switch: "Excluded" at once, and back.
+    exclude = "switch.geodrops_rachio_front_exclude"
+    for service, expected in (("turn_on", "Excluded"), ("turn_off", progress)):
+        await hass.services.async_call(
+            "switch", service, {"entity_id": exclude}, blocking=True)
+        await hass.async_block_till_done()
+        assert hass.states.get(label).state == expected
 
 
 async def test_plan_refreshes_when_a_moisture_target_changes(
