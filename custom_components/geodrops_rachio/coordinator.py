@@ -56,6 +56,10 @@ def format_calibration_status(state: str | None, samples: int | None,
         # The repair says what to check; the label points there.
         return "Not responding — check heads and probe"
     label = state.replace("_", " ").title()
+    # A full count is only ever calibrated. A converged zone demoted after
+    # misses keeps the samples that agreed on its new rate until the next
+    # probe, and a scheduler override can draw the band differently.
+    consistent = min(consistent or 0, _CONVERGENCE_TARGET - 1)
     phrase = _REJECT_PHRASES.get(last_reject_reason or "")
     if phrase:
         return f"{label} — {phrase}"
@@ -128,7 +132,10 @@ def parse_efficacy(store: Mapping[str, Any] | None, key: str) -> dict[str, Any]:
     recent = rec.get("recent") or []
     return {"efficacy": rec.get("efficacy"), "calibration_state": rec.get("state"),
             "samples": len(recent),
-            # Judged on the newest sample's dose, as the engine judges it.
+            # Judged on the newest sample's dose, as the engine judges it. A
+            # rejected probe overwrites prior_minutes without adding a sample,
+            # but its reject phrase wins over the count until the next
+            # accepted probe resets both (format_calibration_status).
             "consistent": consistent_count(recent, _DEFAULTS, rec.get("prior_minutes")),
             "last_reject_reason": rec.get("last_reject_reason")}
 

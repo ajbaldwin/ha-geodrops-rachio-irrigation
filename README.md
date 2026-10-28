@@ -323,10 +323,11 @@ scheduler's normal drought-level/soil-moisture-driven watering to work.
 With it on, a calibrating zone gets a short probe watering, and the next
 probe grows until it raises soil moisture by a measurable amount (3 points).
 A rise smaller than that is treated as noise and not learned from. A zone is
-*Calibrated* once 3 waterings in a row agree on how fast it wets. Until then
-its *Calibration state* counts the recent waterings that agree, e.g.
-*Calibrating (2 of 3 consistent)*, or reads *results vary* when the newest
-agrees with none of the others; a later watering that agrees moves it on. If even a
+*Calibrated* once its last 3 measured waterings agree on how fast it wets.
+Until then its *Calibration state* counts the recent waterings that agree,
+e.g. *Calibrating (2 of 3 consistent)*, or reads *results vary* when the
+newest agrees with none of the others. A calibrated zone keeps learning, and
+starts calibrating again only after 3 waterings in a row miss its rate. If even a
 full refill gives no measurable rise, the zone's *Calibration state* reads
 *Not responding — check heads and probe*, it stops getting probes (it is
 still watered when dry), and a repair under **Settings → System → Repairs**

@@ -33,6 +33,9 @@ def test_format_calibration_status():
         "Calibrating (1 of 3 consistent)"
     assert format_calibration_status("recalibrating", 3, 2, None) == \
         "Recalibrating (2 of 3 consistent)"
+    # Only a calibrated zone shows a full count: a zone demoted after misses
+    # keeps the samples that agreed on the new rate until its next probe.
+    assert format_calibration_status("calibrating", 3, 3, None) ==         "Calibrating (2 of 3 consistent)"
     # Several runs and the newest agrees with none of them.
     assert format_calibration_status("recalibrating", 3, 1, None) == \
         "Recalibrating — results vary"

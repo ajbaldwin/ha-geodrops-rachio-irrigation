@@ -86,6 +86,11 @@ def test_consistent_count_is_the_newest_samples_that_agree():
     assert calibration.consistent_count([0.504, 0.614, 0.657], t, 28) == 2
     # 13-min doses, 1.3 pts apart: both agree.
     assert calibration.consistent_count([0.377, 0.477], t, 13) == 2
+    # No dose known: the relative band alone.
+    assert calibration.consistent_count([0.40, 0.42], t) == 2
+    assert calibration.consistent_count([0.30, 0.35], t) == 1
+    # A zero mean never agrees, as in `converged`.
+    assert calibration.consistent_count([0.1, -0.1], t, 28) == 1
 
 
 def test_a_full_consistent_window_is_exactly_convergence():
