@@ -83,7 +83,9 @@ class FinishOffsetNumber(GeodropsRachioEntity, RestoreNumber):
         ) or DROUGHT_LEVEL_ENTITY
         state = self.hass.states.get(entity_id)
         if state is None:
-            state = restore_state.async_get(self.hass).last_states.get(entity_id)
+            # A StoredState, which wraps the saved State.
+            stored = restore_state.async_get(self.hass).last_states.get(entity_id)
+            state = stored.state if stored is not None else None
         level = state.state if state is not None else None
         return level if level in DROUGHT_LEVELS else DEFAULT_DROUGHT_LEVEL
 

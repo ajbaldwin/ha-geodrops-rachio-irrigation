@@ -1207,6 +1207,18 @@ async def test_finish_offset_starts_at_the_restored_levels_finish(
     assert float(hass.states.get(_OFFSET).state) == 15
 
 
+async def test_finish_offset_reads_the_level_the_select_will_restore(
+        hass, enable_pyscript_and_rachio):
+    """The number can be added before the select: the level then comes from
+    the restore cache. Platform order varies, so check that path directly."""
+    from pytest_homeassistant_custom_component.common import mock_restore_cache
+    mock_restore_cache(hass, [State(_LEVEL, "Level 3 - Critical")])
+    await _setup_observed(hass, {**ENTRY_DATA,
+                                 "advanced_overrides": _LEVEL_OVERRIDES})
+    hass.states.async_remove(_LEVEL)
+    assert _offset_entity(hass)._current_level() == "Level 3 - Critical"
+
+
 async def test_finish_offset_converts_an_old_save_at_the_restored_level(
         hass, enable_pyscript_and_rachio):
     """An old save shifted the level's own finish: +10 at Level 3 (15 min
