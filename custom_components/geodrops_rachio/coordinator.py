@@ -267,11 +267,11 @@ class ZoneStateCoordinator:
 
     def exclude_entity(self, key: str) -> str:
         """The zone's Exclude from Watering/Calibration switch, as configured."""
-        zone = next((z for z in self.entry.data.get("zones", [])
-                     if z.get("key") == key), {})
+        zone: dict[str, Any] = next((z for z in self.entry.data.get("zones", [])
+                                     if z.get("key") == key), {})
         # As build_config does: only a missing key takes the default.
-        return zone.get("exclude_boolean",
-                        f"switch.geodrops_rachio_{slug(key)}_exclude") or ""
+        return str(zone.get("exclude_boolean",
+                            f"switch.geodrops_rachio_{slug(key)}_exclude") or "")
 
     def active_entity(self, key: str) -> str | None:
         """The zone's GeoDrops probe Active switch, or None when it has none."""
