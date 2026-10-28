@@ -926,7 +926,8 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
             if zone is None:
                 continue
             await self._activity(
-                f"{report_format.display_name(zone_key)} not watered ({reason})",
+                f"{report_format.display_name(zone_key)} not watered "
+                f"({report_format.display_reason(reason)})",
                 entity_id=zone.rachio_switch,
             )
 
