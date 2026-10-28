@@ -8,10 +8,9 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from .brain.config import BAND_ORDER, FINISH_ANCHORS
-from .const import DROUGHT_LEVELS, DEFAULT_DROUGHT_LEVEL
+from .const import DROUGHT_LEVELS, DEFAULT_DROUGHT_LEVEL, level_changed_signal
 from .coordinator import GeodropsRachioConfigEntry
 from .entity import GeodropsRachioEntity, GeodropsRachioZoneEntity
-from .number import level_changed_signal
 
 # A local setting; nothing to fetch.
 PARALLEL_UPDATES = 0

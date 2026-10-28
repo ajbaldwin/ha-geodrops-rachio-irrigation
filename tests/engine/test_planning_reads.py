@@ -188,6 +188,15 @@ async def test_project_window_from_the_forecast(freezer):
     assert w["drought_level"] == "Level 1 - Mild"
 
 
+async def test_project_window_reports_the_finish_in_force(freezer):
+    """No readable slider: the reported finish is the level's own, the same
+    minutes after the anchor the window ends at."""
+    world, eng = _eng(freezer)
+    world.set("number.geodrops_rachio_finish_offset", "unavailable")
+    w = eng.project_window()
+    assert (w["shift_minutes"], w["end_offset_minutes"]) == (-5, 5)
+
+
 async def test_project_window_shrinks_under_disease_pressure(freezer):
     world, eng = _eng(freezer)
     world.set("sensor.forecast_overnight_temp", "75")

@@ -202,7 +202,9 @@ zone, with these entities (all prefixed `geodrops_rachio_`):
   finishes, in minutes after the anchor, −90 to +90 (negative: before it). It
   starts at the drought level's finish (`end_offset_minutes`, or the level's
   own override) and goes back to the new level's finish whenever the drought
-  level changes; a value you set by hand holds until then.
+  level changes; a slider still at its level's finish follows an edit to
+  `end_offset_minutes` (global or per level), while a value you set by hand
+  is kept until the next drought level change.
   Changes to either control apply from the next plan, without a restart.
 - **Automatic frost adjustment** (`switch`, under *Configuration*, off by
   default) — on, cold mornings move the finish the two Finish controls set

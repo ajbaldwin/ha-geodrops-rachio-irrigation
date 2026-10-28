@@ -531,8 +531,8 @@ class PlanningMixin(IOMixin):
             "start": end - dt.timedelta(minutes=cap), "end": end,
             "anchor": anchor,
             "anchor_choice": self.port.state(cfg.bindings.finish_anchor_select),
-            "shift_minutes": config.finish_shift(
-                self.port.state(cfg.bindings.finish_offset_number)),
+            # The finish in force, minutes after the anchor.
+            "shift_minutes": -end_offset,
             "end_offset_minutes": end_offset,
             "cap_hours": round(cap / 60.0, 2), "cap_source": cap_source,
             "pressure": pressure, "drought_level": level,
