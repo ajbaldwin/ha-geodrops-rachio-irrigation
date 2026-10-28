@@ -4,6 +4,29 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.1-beta.9 — Clearer calibration state and finish time
+
+### Changes
+
+- **A zone skipped because its GeoDrops probe is out of service now reads
+  *Inactive*** in notifications, the calendar, the preview and the zone's
+  Logbook, instead of `probe_inactive`.
+- **With *Active Watering Calibration* on, *Calibration state* counts the
+  waterings that agree**, e.g. *Calibrating (2 of 3 consistent)*, reads
+  *results vary* when the newest agrees with none of the others, and reads
+  *Calibrated* when done, so *3 of 3* no longer shows for a zone that has not
+  finished.
+- **The *Finish offset* slider now shows when watering finishes**, in minutes
+  after the end anchor (negative is before it), starting at the drought
+  level's finish and moving to the new level's finish when you change level,
+  with your current setting converted to the same finish time (a slider at 0
+  now reads -5).
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.1-beta.8 → restart. The *Finish offset*
+slider then reads its value as a shift again, so set it back to 0 for the
+drought level's own finish.
+
 ## v1.3.1-beta.8 — Probes out of service; faster calibration
 
 ### Changes
