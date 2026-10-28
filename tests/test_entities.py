@@ -696,7 +696,8 @@ async def test_calibration_state_shows_progress_and_reason(hass, enable_pyscript
     await hass.async_block_till_done()
     # Progress toward convergence.
     assert hass.states.get(
-        "sensor.geodrops_rachio_front_calibration_state").state == "Calibrating (2/3)"
+        "sensor.geodrops_rachio_front_calibration_state").state == \
+        "Calibrating (2 of 3 consistent)"
     # A reject reason wins over the count.
     assert hass.states.get(
         "sensor.geodrops_rachio_side_calibration_state").state == "Calibrating — soil too wet"

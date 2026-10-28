@@ -17,25 +17,40 @@ def _scheduler_stub(records=None, docs=None):
 
 
 def test_format_calibration_status():
-    # Converged: just the label.
-    assert format_calibration_status("converged", 3, None) == "Converged"
+    # Done: a plain word, not the internal "converged".
+    assert format_calibration_status("converged", 3, 3, None) == "Calibrated"
     # A reject reason wins over the count — it explains why probes aren't adding up.
-    assert format_calibration_status("calibrating", 1, "saturated") == \
+    assert format_calibration_status("calibrating", 1, 1, "saturated") == \
         "Calibrating — soil too wet"
-    assert format_calibration_status("calibrating", 0, "no_rise") == \
+    assert format_calibration_status("calibrating", 0, 0, "no_rise") == \
         "Calibrating — probe too small"
-    assert format_calibration_status("recalibrating", 0, "rain") == \
+    assert format_calibration_status("recalibrating", 0, 0, "rain") == \
         "Recalibrating — rained out"
-    # No reject, some accepted probes -> progress out of the convergence target.
-    assert format_calibration_status("calibrating", 2, None) == "Calibrating (2/3)"
+    # Progress counts the runs that agree, so a full count means calibrated.
+    assert format_calibration_status("calibrating", 2, 2, None) == \
+        "Calibrating (2 of 3 consistent)"
+    assert format_calibration_status("calibrating", 1, 1, None) == \
+        "Calibrating (1 of 3 consistent)"
+    assert format_calibration_status("recalibrating", 3, 2, None) == \
+        "Recalibrating (2 of 3 consistent)"
+    # Only a calibrated zone shows a full count: a zone demoted after misses
+    # keeps the samples that agreed on the new rate until its next probe.
+    assert format_calibration_status("calibrating", 3, 3, None) ==         "Calibrating (2 of 3 consistent)"
+    # Several runs and the newest agrees with none of them.
+    assert format_calibration_status("recalibrating", 3, 1, None) == \
+        "Recalibrating — results vary"
+    assert format_calibration_status("calibrating", 2, 1, None) == \
+        "Calibrating — results vary"
     # No reject, no probes yet -> plain label.
-    assert format_calibration_status("calibrating", 0, None) == "Calibrating"
+    assert format_calibration_status("calibrating", 0, 0, None) == "Calibrating"
     # Missing state passes through.
-    assert format_calibration_status(None, 0, None) is None
+    assert format_calibration_status(None, 0, 0, None) is None
     # A small rise reads like no rise: the probe was too small to measure.
-    assert format_calibration_status("calibrating", 1, "small_rise") ==         "Calibrating — probe too small"
+    assert format_calibration_status("calibrating", 1, 1, "small_rise") == \
+        "Calibrating — probe too small"
     # An unresponsive zone's label names the problem, whatever the last reason.
-    assert format_calibration_status("unresponsive", 2, "small_rise") ==         "Not responding — check heads and probe"
+    assert format_calibration_status("unresponsive", 2, 2, "small_rise") == \
+        "Not responding — check heads and probe"
 
 
 def test_parse_refill_depth_prefers_live_then_static():
@@ -88,19 +103,22 @@ def test_parse_nightly_calibration_extracts_zone_state():
                                        "n_obs": 5, "samples": 2,
                                        "last_reject_reason": "no_rise"}}}
     # Progress is the samples counting toward convergence, not lifetime n_obs.
+    # The snapshot carries no rates, so its samples count as agreeing (it only
+    # stands in for a zone the efficacy store has no state for).
     assert parse_nightly_calibration(attrs, "front") == {
         "efficacy": 0.35, "calibration_state": "calibrating",
-        "samples": 2, "last_reject_reason": "no_rise"}
+        "samples": 2, "consistent": 2, "last_reject_reason": "no_rise"}
     # A snapshot from before `samples` was recorded shows no count at all.
     old = {"calibration": {"front": {"state": "calibrating", "n_obs": 4}}}
     assert parse_nightly_calibration(old, "front")["samples"] == 0
+    assert parse_nightly_calibration(old, "front")["consistent"] == 0
     # A zone not in this night's calibration block -> state/efficacy/reason None.
     assert parse_nightly_calibration(attrs, "back") == {
         "efficacy": None, "calibration_state": None,
-        "samples": 0, "last_reject_reason": None}
+        "samples": 0, "consistent": 0, "last_reject_reason": None}
     assert parse_nightly_calibration({}, "front") == {
         "efficacy": None, "calibration_state": None,
-        "samples": 0, "last_reject_reason": None}
+        "samples": 0, "consistent": 0, "last_reject_reason": None}
 
 
 def test_parse_last_nightly_missing_keys_are_none():
@@ -117,11 +135,23 @@ def test_parse_efficacy_extracts_zone():
                        "recent": [0.61], "last_reject_reason": None}}
     assert parse_efficacy(store, "front") == {
         "efficacy": 0.42, "calibration_state": "converged",
-        "samples": 3, "last_reject_reason": None}
+        "samples": 3, "consistent": 3, "last_reject_reason": None}
     assert parse_efficacy(store, "slope")["samples"] == 1
+    assert parse_efficacy(store, "slope")["consistent"] == 1
     assert parse_efficacy(store, "missing") == {
         "efficacy": None, "calibration_state": None,
-        "samples": 0, "last_reject_reason": None}
+        "samples": 0, "consistent": 0, "last_reject_reason": None}
+
+
+def test_parse_efficacy_counts_only_the_newest_samples_that_agree():
+    # Three 28-min runs, the middle one 4.3 pts off: a full window, not calibrated.
+    store = {"slope": {"state": "recalibrating", "recent": [0.614, 0.504, 0.657],
+                       "prior_minutes": 28},
+             # 13-min runs 1.3 pts apart: inside the 2-pt noise floor.
+             "wall": {"state": "recalibrating", "recent": [0.377, 0.477],
+                      "prior_minutes": 13}}
+    assert parse_efficacy(store, "slope")["consistent"] == 1
+    assert parse_efficacy(store, "wall")["consistent"] == 2
 
 
 def test_remove_listener_stops_callbacks():
@@ -174,7 +204,7 @@ def test_data_for_reads_scheduler_records(hass):
     assert out["refill_depth"] == 8.5
     assert out["planned_runtime"] == 30
     assert out["efficacy"] == 0.4
-    assert out["calibration_state"] == "Calibrating (2/3)"
+    assert out["calibration_state"] == "Calibrating (2 of 3 consistent)"
 
 
 def test_store_calibration_wins_over_stale_nightly_snapshot(hass):
@@ -188,15 +218,15 @@ def test_store_calibration_wins_over_stale_nightly_snapshot(hass):
                 "back": {"state": "calibrating", "n_obs": 1, "samples": 1,
                          "efficacy": 0.2}}}}},
         docs={"efficacy": {"front": {"state": "recalibrating", "n_obs": 2,
-                                     "recent": [0.3, 0.35],
+                                     "recent": [0.3, 0.35], "prior_minutes": 20,
                                      "efficacy": 0.325, "last_reject_reason": None},
                            # no state in the store: the nightly snapshot fills in
                            "back": {"excluded_since": "2026-09-20T19:54:38-04:00"}}})
     c = ZoneStateCoordinator(hass, entry, sched)
     front, back = c.data_for("front"), c.data_for("back")
-    assert front["calibration_state"] == "Recalibrating (2/3)"
+    assert front["calibration_state"] == "Recalibrating (2 of 3 consistent)"
     assert front["efficacy"] == 0.325
-    assert back["calibration_state"] == "Calibrating (1/3)"
+    assert back["calibration_state"] == "Calibrating (1 of 3 consistent)"
     assert back["efficacy"] == 0.2
 
 

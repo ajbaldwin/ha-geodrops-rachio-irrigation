@@ -404,7 +404,7 @@ class ZoneCoordinatorSensor(GeodropsRachioZoneEntity, SensorEntity):
                 parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
             value = parsed
         # calibration_state arrives already display-ready from the coordinator
-        # (format_calibration_status), e.g. "Calibrating (2/3)" — no title-casing
+        # (format_calibration_status), e.g. "Calibrating (2 of 3 consistent)" — no title-casing
         # here. The Status sensor still uses _pretty_status on its own value.
         self._attr_native_value = value
         if self.hass:

@@ -162,6 +162,19 @@ def converged(recent: Sequence[float], t: Tunables, minutes: float | None = None
     return agrees(max(recent) - min(recent), mean, minutes, t)
 
 
+def consistent_count(recent: Sequence[float], t: Tunables,
+                     minutes: float | None = None) -> int:
+    """How many of the newest samples agree with each other, by the band of
+    `converged`: 0 with none, 1 when the newest agrees with no older one.
+    A full window of agreeing samples is exactly convergence."""
+    for k in range(len(recent), 1, -1):
+        newest = recent[-k:]
+        mean = converged_efficacy(newest)
+        if mean != 0 and agrees(max(newest) - min(newest), mean, minutes, t):
+            return k
+    return min(len(recent), 1)
+
+
 def next_state(state: str, converged_flag: bool, training: bool, miss_streak: int,
                t: Tunables) -> str:
     """State machine: compute next calibration state.
