@@ -317,7 +317,8 @@ Home Assistant restarts is not recorded.
 - **Observed overnight sensors** — on every weather-station change, and every
   5 minutes.
 - **Sunrise** — the forecast calibration compares last night's forecast with
-  what was observed. Calibration samples are checked on the hour and half hour.
+  what was observed (on a day the sun does not rise, it waits for the next
+  sunrise). Calibration samples are checked on the hour and half hour.
 - **Zone sensors** (soil moisture, deficit, last watered, …) update as soon as
   their source does.
 

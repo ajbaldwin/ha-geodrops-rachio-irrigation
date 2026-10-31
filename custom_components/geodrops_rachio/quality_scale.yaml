@@ -132,7 +132,7 @@ rules:
   entity-disabled-by-default:
     status: done
     comment: >-
-      No entity qualifies: the overnight weather sensors are what the 06:00
+      No entity qualifies: the overnight weather sensors are what the sunrise
       calibration reads, and the rest are the integration's controls and
       results.
   entity-translations: done

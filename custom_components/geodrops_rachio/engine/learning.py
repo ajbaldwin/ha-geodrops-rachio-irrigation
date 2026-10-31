@@ -20,7 +20,10 @@ _LOGGER = logging.getLogger(__name__)
 
 # How old the last_nightly record may be and still count as the night being
 # scored: it is stamped when the 23:00 plan starts (later for a startup heal).
-NIGHTLY_MAX_AGE = dt.timedelta(hours=12)
+# Checked once the run has finished, which can be well after a winter sunrise
+# (after 09:00 at high latitudes) plus a later finish; still under a day, so
+# the night before never qualifies.
+NIGHTLY_MAX_AGE = dt.timedelta(hours=18)
 
 
 class LearningMixin(PlanningMixin):

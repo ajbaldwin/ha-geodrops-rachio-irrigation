@@ -105,7 +105,9 @@ def prune_observed(samples: list[tuple[dt.datetime, float]],
 def _in_span(periods: list[dict[str, Any]], field: str, start: dt.datetime,
              end: dt.datetime) -> list[tuple[dt.datetime, float]]:
     """(time, value) of each forecast period from `start` (inclusive) to `end`
-    that carries `field`. A naive period time is taken in the span's zone."""
+    that carries `field`. A naive period time is taken in the span's zone. An
+    hour that starts before `end` counts in full (the forecast has no finer
+    grain), so a 07:00 hour counts toward a night ending at a 07:16 sunrise."""
     out: list[tuple[dt.datetime, float]] = []
     for p in periods:
         ts = p.get("datetime")

@@ -603,7 +603,7 @@ async def test_calibrate_without_a_run_task_does_not_wait(freezer):
 
 @pytest.mark.parametrize("stamp, scored", [
     ("2026-07-01T23:00:00+00:00", True),     # aware, 7 h old
-    ("2026-07-01T17:59:00+00:00", False),    # aware, just past 12 h
+    ("2026-07-01T11:59:00+00:00", False),    # aware, just past 18 h
     ("not a time", False),
 ])
 async def test_calibrate_nightly_stamp_freshness(freezer, stamp, scored):
@@ -622,3 +622,15 @@ async def test_all_training_depths_reject_the_sample_in_either_format(freezer):
     await _poll(w, eng, PEAK_ONLY)
     front = eng.store.read(EFFICACY)["front"]
     assert front["last_reject_reason"] == "training" and front["efficacy"] is None
+
+
+async def test_calibrate_scores_a_late_winter_night(freezer):
+    """At a high latitude in December sunrise is after 09:00, and a finish held
+    past it (Finish offset, frost shift) can end the run after 11:00, more
+    than 12 h after the 23:00 plan. That night is still the one to score."""
+    w, eng = _calibrate_engine(freezer)
+    freezer.move_to("2026-07-02 11:30:00")
+    eng._publish("last_nightly", 0, {"updated": "2026-07-01T23:00:00",
+                                     "pressure_forecast": HUMID_FORECAST})
+    await eng.irrigation_calibrate()
+    assert "calibration" in eng.records
