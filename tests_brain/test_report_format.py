@@ -268,3 +268,7 @@ def test_an_inactive_probe_reads_inactive_on_the_calendar_and_preview():
 def test_other_reasons_are_shown_as_given():
     assert rf.display_reason("insufficient window") == "insufficient window"
     assert rf.display_reason("excluded") == "excluded"
+
+
+def test_a_probe_too_wet_reads_too_wet():
+    assert rf.display_reason("too_wet") == "Too Wet"

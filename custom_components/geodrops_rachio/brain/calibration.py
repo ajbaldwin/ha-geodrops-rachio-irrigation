@@ -311,6 +311,14 @@ def should_probe(state: str, dominant_now: float, pinned: bool, t: Tunables) -> 
     return True
 
 
+def too_wet_to_probe(state: str, dominant_now: float, pinned: bool,
+                     t: Tunables) -> bool:
+    """True when the zone would probe but for its moisture: calibrating or
+    recalibrating, not pinned, and at/above t.probe_headroom_ceiling."""
+    return (state in ("calibrating", "recalibrating") and not pinned
+            and dominant_now >= t.probe_headroom_ceiling)
+
+
 def settle_decision(now: dt.datetime, run_end: dt.datetime, retain_hours: float,
                     max_wait_hours: float, has_sample: bool,
                     has_retained: bool = False) -> str:

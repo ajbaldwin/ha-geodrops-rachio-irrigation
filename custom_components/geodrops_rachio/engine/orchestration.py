@@ -447,7 +447,11 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                             }
                     if moisture_dropped:
                         for k in moisture_dropped:
-                            uncompleted[k] = "moisture-risen"
+                            # A probe now at/above the ceiling reads like one
+                            # skipped for it at plan time.
+                            uncompleted[k] = (
+                                "too_wet" if moisture_dropped[k]["reason"] == "saturated"
+                                else "moisture-risen")
                         ctx["window_start_dropped"] = moisture_dropped
                         survivors = [
                             z for z in priority

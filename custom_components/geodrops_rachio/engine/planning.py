@@ -692,6 +692,11 @@ class PlanningMixin(IOMixin):
                 if calibration.should_probe(rec.get("state", "calibrating"),
                                             dominant_by_zone[key], pinned, tun):
                     priority.append(key)
+                elif calibration.too_wet_to_probe(rec.get("state", "calibrating"),
+                                                  dominant_by_zone[key], pinned, tun):
+                    # Say why it is not probing tonight; otherwise it drops out
+                    # of the recap like a zone that needed nothing.
+                    uncompleted[key] = "too_wet"
         minutes: dict[str, float] = {}
         runtime_sources: dict[str, str] = {}
         doses: dict[str, dosing.DoseResult] = {}
