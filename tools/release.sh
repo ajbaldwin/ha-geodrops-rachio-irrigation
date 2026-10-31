@@ -165,14 +165,17 @@ if [ -n "$ci" ]; then
 fi
 
 # --- Release notes from CHANGELOG.md -----------------------------------------
-# CR is dropped: a core.autocrlf checkout holds CHANGELOG.md with CRLF.
-HEADING=$(tr -d '\r' < CHANGELOG.md | awk -v ver="$VERSION" '
+# CR is dropped: a core.autocrlf checkout holds CHANGELOG.md with CRLF. Read
+# once into a variable: piping a large file into an awk that exits early
+# kills the writer with SIGPIPE, which pipefail turns into a silent exit.
+CHANGELOG=$(tr -d '\r' < CHANGELOG.md)
+HEADING=$(awk -v ver="$VERSION" '
   /^## / { t = $2; sub(/^v/, "", t); if (t == ver) { print; exit } }
-')
-NOTES=$(tr -d '\r' < CHANGELOG.md | awk -v ver="$VERSION" '
+' <<< "$CHANGELOG")
+NOTES=$(awk -v ver="$VERSION" '
   /^## / { if (found) exit; t = $2; sub(/^v/, "", t); if (t == ver) { found = 1; next } }
   found { print }
-' | sed -e '/./,$!d')
+' <<< "$CHANGELOG" | sed -e '/./,$!d')
 if [ -z "$HEADING" ]; then
   problem "CHANGELOG.md has no '## $TAG' section"
 elif [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
@@ -223,7 +226,20 @@ printf '%s\n' "$NOTES" > "$NOTES_FILE"
 
 git tag "$TAG"
 git push origin "$TAG"
-if ! gh release create "$TAG" --verify-tag "$FLAG" --title "$TITLE" --notes-file "$NOTES_FILE"; then
+release_exists() { # retried: create just failed, so the network may be flaky
+  local try
+  for try in 1 2 3; do
+    gh release view "$TAG" >/dev/null 2>&1 && return 0
+    if [ "$try" -lt 3 ]; then sleep 3; fi
+  done
+  return 1
+}
+if gh release create "$TAG" --verify-tag "$FLAG" --title "$TITLE" --notes-file "$NOTES_FILE"; then
+  :
+elif release_exists; then
+  # gh failed client-side (e.g. a timeout) after GitHub created the release.
+  echo "warning: gh release create reported an error, but release $TAG exists; checking it"
+else
   # Left in place, the tag would block a rerun ("tag already exists").
   if git push --quiet --delete origin "$TAG" && git tag -d "$TAG" >/dev/null; then
     echo "error: creating the release failed; removed tag $TAG again, so a rerun can retry" >&2
@@ -238,11 +254,11 @@ bash tools/check_release.sh "$TAG" "$PRERELEASE"
 # from GitHub's list, so the new tag has to come first there or HACS users
 # won't be offered it. The list can lag a just-created release; retry briefly.
 first=""
-for _ in 1 2 3 4 5 6; do
+for try in 1 2 3 4 5 6; do
   first=$(gh api "repos/{owner}/{repo}/releases?per_page=20" \
     --jq "[.[] | select(.draft | not) | select(.prerelease == $PRERELEASE)][0].tag_name" || true)
   [ "$first" = "$TAG" ] && break
-  sleep 5
+  if [ "$try" -lt 6 ]; then sleep 5; fi
 done
 if [ -z "$first" ] || [ "$first" = null ]; then
   echo "error: $TAG is published, but the script could not read GitHub's release list to check that HACS offers it." >&2
