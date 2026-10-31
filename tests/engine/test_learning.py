@@ -500,7 +500,7 @@ async def test_calibrate_reports_agreement(freezer):
     cal = eng.records["calibration"]["attributes"]
     assert cal["mismatches"] == []
     # The span the observed sensors actually average (weather_derive).
-    assert cal["window"] == "23:00-06:00"
+    assert cal["window"] == "23:00-sunrise"
     assert any("forecast 0/3 vs observed 0/3 — all signals agree" in m
                for m in _logbook(w))
 

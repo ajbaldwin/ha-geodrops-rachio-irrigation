@@ -12,9 +12,10 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any
 
-from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.helpers.event import (async_call_later,
                                          async_track_state_change_event,
+                                         async_track_sunrise,
                                          async_track_time_change)
 from homeassistant.helpers.start import async_at_started
 
@@ -87,7 +88,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         self._create_task = create_task
         self.run_task: asyncio.Task[None] | None = None
         self.startup_task: asyncio.Task[None] | None = None
-        # In-flight timed jobs (06:00 calibrate, :00/:30 settle), cancelled on
+        # In-flight timed jobs (sunrise calibrate, :00/:30 settle), cancelled on
         # shutdown like the run and startup tasks.
         self._jobs: set[asyncio.Task[None]] = set()
         self._unsubs: list[Callable[[], None]] = []
@@ -535,8 +536,9 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         self._unsubs += [
             async_track_time_change(hass, self.irrigation_nightly,
                                     hour=23, minute=0, second=0),
-            async_track_time_change(hass, self._on_calibrate_time,
-                                    hour=6, minute=0, second=0),
+            # At sunrise, when the observed overnight window ends; the
+            # forecast window the 23:00 plan read ends there too.
+            async_track_sunrise(hass, self._on_sunrise),
             async_track_time_change(hass, self._on_settle_time,
                                     minute=[0, 30], second=0),
             async_track_time_change(hass, self._on_plan_time,
@@ -548,7 +550,8 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             self._unsubs.append(async_track_state_change_event(
                 hass, list(self._native_switches), self._on_switch_event))
 
-    async def _on_calibrate_time(self, _now: dt.datetime) -> None:
+    @callback
+    def _on_sunrise(self) -> None:
         self._spawn_job(self.irrigation_calibrate(), "geodrops_rachio_calibrate")
 
     async def _on_settle_time(self, _now: dt.datetime) -> None:

@@ -5,7 +5,8 @@ from typing import Any, cast
 from homeassistant.components.sensor import (
     SensorDeviceClass, SensorEntity, ENTITY_ID_FORMAT)
 from homeassistant.const import (
-    MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, EntityCategory,
+    MATCH_ALL, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, SUN_EVENT_SUNRISE,
+    EntityCategory,
     UnitOfLength, UnitOfSpeed, UnitOfTemperature)
 from homeassistant.core import (
     CALLBACK_TYPE, Event, EventStateChangedData, HassJob, HomeAssistant, State,
@@ -14,6 +15,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
     async_call_later, async_track_state_change_event, async_track_time_interval)
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
+from homeassistant.helpers.sun import get_astral_event_date
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import METRIC_SYSTEM
@@ -38,8 +40,18 @@ _FORECAST_INTERVAL = dt.timedelta(hours=1)
 _FORECAST_RETRY_DELAY_S = 60
 _FORECAST_RETRIES = 15
 # How often the observed means recompute with nothing changing: a steady reading
-# is still accruing time, and the 06:00 read should see the window's tail.
+# is still accruing time, and the sunrise read should see the window's tail.
 _OBSERVED_RECOMPUTE_INTERVAL = dt.timedelta(minutes=5)
+
+
+def _sunrise(hass: HomeAssistant) -> weather_derive.Sunrise:
+    """Sunrise on a given date at the home's location (None in polar day or
+    night), which ends the overnight windows."""
+    def on(day: dt.date) -> dt.datetime | None:
+        return get_astral_event_date(hass, SUN_EVENT_SUNRISE, day)
+    return on
+
+
 # (key suffix, forecast field, device class, native unit, units kind). Native
 # values are in the scheduler's units whatever the sources report. The device
 # class lets HA show them in the home's units; the scheduler reads them back
@@ -124,7 +136,7 @@ class _ObservedSamples(ExtraStoredData):
 
 class ObservedOvernightSensor(GeodropsRachioEntity, SensorEntity, RestoreEntity):
     """Time-weighted mean of a weather reading over last night's window
-    (weather_derive.observed_overnight_window), the observed side of the 06:00
+    (weather_derive.observed_overnight_window), the observed side of the sunrise
     forecast calibration.
 
     Samples survive a restart (restore data), the source's reading at startup
@@ -172,14 +184,15 @@ class ObservedOvernightSensor(GeodropsRachioEntity, SensorEntity, RestoreEntity)
             return
         val = units.to_scheduler(val, units.unit_of(state.attributes), self._kind)
         # Local time: the window is in the home's timezone (the scheduler
-        # calibrates at 06:00 local), not UTC.
+        # calibrates at local sunrise), not UTC.
         self._samples.append((dt_util.now(), val))
 
     def _recompute(self) -> None:
         now = dt_util.now()
-        self._samples = weather_derive.prune_observed(self._samples, now)
+        sunrise = _sunrise(self.hass)
+        self._samples = weather_derive.prune_observed(self._samples, now, sunrise)
         self._attr_native_value = weather_derive.observed_overnight_mean(
-            self._samples, now)
+            self._samples, now, sunrise)
 
     @callback
     def _on_source(self, event: Event[EventStateChangedData]) -> None:
@@ -299,8 +312,10 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
         """This sensor's value from the hourly forecast periods, in its
         native unit; None when they hold no hours it covers."""
         now = dt_util.now()
-        night, _end = weather_derive.overnight_window(now)
-        value = weather_derive.overnight_forecast_mean(periods, self._field, now)
+        sunrise = _sunrise(self.hass)
+        night, _end = weather_derive.overnight_window(now, sunrise)
+        value = weather_derive.overnight_forecast_mean(
+            periods, self._field, now, sunrise)
         if value is None:
             # No hours of a night already read: keep its value rather than read
             # unknown (the Watering window would fall back to live weather).

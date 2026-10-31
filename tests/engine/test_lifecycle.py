@@ -18,8 +18,15 @@ def _scheduler(freezer):
     return native_scheduler(w, data)
 
 
+async def _fire(eng, trigger):
+    if trigger == "_on_sunrise":       # a plain callback: it spawns the job
+        eng._on_sunrise()
+    else:
+        await getattr(eng, trigger)(None)
+
+
 @pytest.mark.parametrize("trigger, job", [
-    ("_on_calibrate_time", "irrigation_calibrate"),
+    ("_on_sunrise", "irrigation_calibrate"),
     ("_on_settle_time", "_settle_and_learn"),
 ])
 async def test_shutdown_cancels_an_in_flight_timed_job(freezer, trigger, job):
@@ -34,7 +41,7 @@ async def test_shutdown_cancels_an_in_flight_timed_job(freezer, trigger, job):
             events.append("cancelled")
             raise
     setattr(eng, job, blocked)
-    fired = asyncio.get_running_loop().create_task(getattr(eng, trigger)(None))
+    fired = asyncio.get_running_loop().create_task(_fire(eng, trigger))
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     assert events == ["started"]
@@ -50,7 +57,7 @@ async def test_finished_timed_job_is_forgotten(freezer):
     async def quick():
         return None
     eng.irrigation_calibrate = quick
-    await eng._on_calibrate_time(None)
+    eng._on_sunrise()
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     assert eng._jobs == set()
@@ -74,3 +81,19 @@ async def test_task_failing_while_cancelled_is_logged_once(freezer, caplog):
             if r.name.startswith(ENGINE) and "teardown boom" in r.getMessage()
             and r.levelno >= logging.WARNING]
     assert [r.levelname for r in hits] == ["ERROR"]
+
+
+async def test_calibration_runs_at_sunrise_not_six(freezer):
+    from unittest.mock import MagicMock, patch
+    eng = _scheduler(freezer)
+    with patch(f"{ENGINE}.scheduler.async_track_time_change") as at_time, \
+            patch(f"{ENGINE}.scheduler.async_track_sunrise") as at_sunrise, \
+            patch(f"{ENGINE}.scheduler.async_at_started"):
+        eng.async_start(MagicMock())
+    assert at_sunrise.call_args.args[1] == eng._on_sunrise
+    assert all(c.kwargs.get("hour") != 6 for c in at_time.call_args_list)
+    calls = []
+    eng.irrigation_calibrate = lambda: calls.append(1) or asyncio.sleep(0)
+    eng._on_sunrise()
+    await asyncio.sleep(0)
+    assert calls == [1]
