@@ -556,14 +556,34 @@ async def test_observed_sensor_is_time_weighted(hass, enable_pyscript_and_rachio
     the 06:00 value is weighted by time (~12.9), not the event average (20)."""
     await hass.config.async_set_time_zone("UTC")
     freezer.move_to("2026-06-15 22:00:00")
-    await _setup_observed(hass)
-    hass.states.async_set("sensor.station_temp", "10.0")
-    await hass.async_block_till_done()
-    freezer.move_to("2026-06-16 05:00:00")
-    hass.states.async_set("sensor.station_temp", "30.0")
-    await hass.async_block_till_done()
-    await _tick(hass, freezer, "2026-06-16 06:00:00")
-    assert _native(hass, OBSERVED_TEMP) == pytest.approx(90.0 / 7)
+    with _sunrise_at(6):
+        await _setup_observed(hass)
+        hass.states.async_set("sensor.station_temp", "10.0")
+        await hass.async_block_till_done()
+        freezer.move_to("2026-06-16 05:00:00")
+        hass.states.async_set("sensor.station_temp", "30.0")
+        await hass.async_block_till_done()
+        await _tick(hass, freezer, "2026-06-16 06:00:00")
+        assert _native(hass, OBSERVED_TEMP) == pytest.approx(90.0 / 7)
+
+
+async def test_observed_sensor_counts_up_to_sunrise(
+        hass, enable_pyscript_and_rachio, freezer):
+    """The observed night runs to sunrise: a reading after 06:00 counts, and
+    time after sunrise does not."""
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-10-30 22:00:00")
+    with _sunrise_at(7, 16):
+        await _setup_observed(hass)
+        hass.states.async_set("sensor.station_temp", "10.0")
+        await hass.async_block_till_done()
+        freezer.move_to("2026-10-31 06:30:00")
+        hass.states.async_set("sensor.station_temp", "30.0")   # counts
+        await hass.async_block_till_done()
+        await _tick(hass, freezer, "2026-10-31 09:00:00")     # past sunrise
+        # 7.5 h at 10 (23:00-06:30), 46 min at 30 (06:30-07:16).
+        assert _native(hass, OBSERVED_TEMP) == pytest.approx(
+            (450 * 10 + 46 * 30) / 496)
 
 
 async def test_observed_window_is_local_not_utc(hass, enable_pyscript_and_rachio, freezer):
@@ -572,11 +592,12 @@ async def test_observed_window_is_local_not_utc(hass, enable_pyscript_and_rachio
     UTC-based window would read 'unknown'."""
     await hass.config.async_set_time_zone("America/New_York")
     freezer.move_to("2026-01-15 09:00:00")          # 04:00 EST
-    await _setup_observed(hass)
-    hass.states.async_set("sensor.station_temp", "10.0")
-    await hass.async_block_till_done()
-    await _tick(hass, freezer, "2026-01-15 10:00:00")
-    assert _native(hass, OBSERVED_TEMP) == 10.0
+    with _sunrise_at(6):                            # 06:00 EST
+        await _setup_observed(hass)
+        hass.states.async_set("sensor.station_temp", "10.0")
+        await hass.async_block_till_done()
+        await _tick(hass, freezer, "2026-01-15 10:00:00")
+        assert _native(hass, OBSERVED_TEMP) == 10.0
 
 
 async def test_observed_sensor_seeds_from_the_source_at_startup(
@@ -1633,6 +1654,17 @@ async def test_forecast_sensor_refreshes_when_the_weather_entity_comes_up(
     assert _native(hass, temp_id) == 70.0
 
 
+def _sunrise_at(hour, minute=0):
+    """Patch the overnight windows' sunrise to hour:minute local time every
+    day, so a test does not depend on the test location's real sunrise."""
+    import datetime as dt
+    from homeassistant.util import dt as dt_util
+    return patch(
+        "custom_components.geodrops_rachio.sensor.get_astral_event_date",
+        lambda _hass, _event, day: dt.datetime.combine(
+            day, dt.time(hour, minute), tzinfo=dt_util.get_default_time_zone()))
+
+
 async def test_overnight_forecast_holds_tonight_until_the_night_ends(
         hass, enable_pyscript_and_rachio, freezer):
     """Near the night's end the hourly forecast has no hours of it left. The
@@ -1643,15 +1675,30 @@ async def test_overnight_forecast_holds_tonight_until_the_night_ends(
     freezer.move_to("2026-06-16 04:30:00")
     hass.states.async_set("weather.home", "cloudy", {"temperature_unit": "°F"})
     forecast = [{"datetime": "2026-06-16T05:00:00+00:00", "temperature": 50.0}]
-    await _setup_forecast(hass, forecast)
     temp_id = "sensor.geodrops_rachio_forecast_overnight_temp"
-    assert _native(hass, temp_id) == 50.0
+    with _sunrise_at(6):
+        await _setup_forecast(hass, forecast)
+        assert _native(hass, temp_id) == 50.0
 
-    forecast[:] = [{"datetime": "2026-06-16T06:00:00+00:00", "temperature": 60.0}]
-    freezer.move_to("2026-06-16 05:30:00")
-    await _settle(hass, 0)
-    assert _native(hass, temp_id) == 50.0          # held, not unknown
+        forecast[:] = [{"datetime": "2026-06-16T06:00:00+00:00", "temperature": 60.0}]
+        freezer.move_to("2026-06-16 05:30:00")
+        await _settle(hass, 0)
+        assert _native(hass, temp_id) == 50.0          # held, not unknown
 
-    freezer.move_to("2026-06-16 06:30:00")         # the next night's window
-    await _settle(hass, 0)
-    assert hass.states.get(temp_id).state == "unknown"   # last night's not carried
+        freezer.move_to("2026-06-16 06:30:00")         # the next night's window
+        await _settle(hass, 0)
+        assert hass.states.get(temp_id).state == "unknown"   # last night's not carried
+
+
+async def test_overnight_forecast_counts_the_hours_up_to_sunrise(
+        hass, enable_pyscript_and_rachio, freezer):
+    """The overnight span ends at sunrise, not 06:00: an hour starting
+    between 06:00 and sunrise counts, one starting after sunrise does not."""
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-10-30 23:00:00")
+    hass.states.async_set("weather.home", "cloudy", {"temperature_unit": "°F"})
+    forecast = [{"datetime": f"2026-10-31T0{h}:00:00+00:00", "temperature": t}
+                for h, t in ((5, 40.0), (7, 50.0), (8, 90.0))]
+    with _sunrise_at(7, 16):
+        await _setup_forecast(hass, forecast)
+    assert _native(hass, "sensor.geodrops_rachio_forecast_overnight_temp") == 45.0

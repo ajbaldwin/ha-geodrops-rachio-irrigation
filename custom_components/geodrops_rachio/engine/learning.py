@@ -1,4 +1,4 @@
-"""Learning passes: the 06:00 forecast calibration and the 30-min settle poll.
+"""Learning passes: the sunrise forecast calibration and the 30-min settle poll.
 
 Ported from v0.9.15 bundled_app/geodrops_rachio.py lines 2372-2459 and 2467-2601.
 """
@@ -20,20 +20,23 @@ _LOGGER = logging.getLogger(__name__)
 
 # How old the last_nightly record may be and still count as the night being
 # scored: it is stamped when the 23:00 plan starts (later for a startup heal).
-NIGHTLY_MAX_AGE = dt.timedelta(hours=12)
+# Checked once the run has finished, which can be well after a winter sunrise
+# (after 09:00 at high latitudes) plus a later finish; still under a day, so
+# the night before never qualifies.
+NIGHTLY_MAX_AGE = dt.timedelta(hours=18)
 
 
 class LearningMixin(PlanningMixin):
     async def irrigation_calibrate(self) -> None:
         """Score last night's forecast against what actually happened.
 
-        Runs at 06:00 for a reason: `sensor.observed_overnight_*` are time-weighted
-        means over 23:00-06:00 (weather_derive.observed_overnight_window) — the
+        Runs at sunrise for a reason: `sensor.observed_overnight_*` are time-weighted
+        means over 23:00-sunrise (weather_derive.observed_overnight_window) — the
         span the forecast read by the 23:00 plan covers, hour by hour. Same
         window, same statistic, so the two are actually comparable.
 
-        The forecast side is NOT recomputed here: by 06:00 the forecast sensors
-        describe the hours before TOMORROW's dawn. It is read back from the record
+        The forecast side is NOT recomputed here: by sunrise the forecast sensors
+        describe the hours before TOMORROW's sunrise. It is read back from the record
         the nightly run left behind.
 
         Publishes the comparison and logs a one-line verdict, so a week of Logbook
@@ -41,9 +44,9 @@ class LearningMixin(PlanningMixin):
         these thresholds encode turf pathology, not a fitted parameter, and a loop
         quietly adjusting them would change watering with nothing to catch it.
 
-        From late September the watering window closes after 06:00, so the
-        nightly is often still in progress now. The observed side is read at
-        06:00 regardless (it is the window being scored); the comparison then
+        A finish set after sunrise (the Finish offset, a frost shift) leaves
+        the nightly still in progress now. The observed side is read at sunrise
+        regardless (it is the window being scored); the comparison then
         waits for the run to finish, since the run's own record is the forecast
         side. It reads its config into locals, never the run-scoped globals a live
         run reads through.

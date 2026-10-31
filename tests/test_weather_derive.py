@@ -75,7 +75,7 @@ def test_observed_overnight_window_matches_the_nightly_forecast():
     # A 06:00 read captures LAST night.
     start, end = weather_derive.observed_overnight_window(D(2026, 9, 13, 6, 0))
     assert (start, end) == (D(2026, 9, 12, 23, 0), D(2026, 9, 13, 6, 0))
-    assert weather_derive.OBSERVED_WINDOW_LABEL == "23:00-06:00"
+    assert weather_derive.OBSERVED_WINDOW_LABEL == "23:00-sunrise"
 
 
 def test_observed_overnight_window_evening_and_daytime():
@@ -123,3 +123,59 @@ def test_prune_keeps_the_reading_carried_into_the_window():
                (D(2026, 9, 13, 1, 0), 3.0)]
     kept = weather_derive.prune_observed(samples, D(2026, 9, 13, 2, 0))
     assert kept == samples[1:]
+
+
+# --- The night ends at sunrise -----------------------------------------------
+# A fixed sunrise per date, as hass's location would give it.
+_SUNRISE = {dt.date(2026, 10, 31): dt.time(7, 16), dt.date(2026, 11, 1): dt.time(6, 17)}
+
+
+def _sunrise(day):
+    t = _SUNRISE.get(day)
+    return dt.datetime.combine(day, t) if t else None
+
+
+@pytest.mark.parametrize(("now", "start", "end"), [
+    (dt.datetime(2026, 10, 30, 22, 0), dt.datetime(2026, 10, 30, 20, 0),
+     dt.datetime(2026, 10, 31, 7, 16)),
+    (dt.datetime(2026, 10, 31, 7, 0), dt.datetime(2026, 10, 30, 20, 0),
+     dt.datetime(2026, 10, 31, 7, 16)),       # after 06:00, before sunrise
+    (dt.datetime(2026, 10, 31, 7, 20), dt.datetime(2026, 10, 31, 20, 0),
+     dt.datetime(2026, 11, 1, 6, 17)),        # past sunrise: the coming night
+])
+def test_overnight_window_ends_at_sunrise(now, start, end):
+    assert weather_derive.overnight_window(now, _sunrise) == (start, end)
+
+
+def test_overnight_window_without_a_sunrise_ends_at_six():
+    # Polar night / day, or no location: the old fixed end.
+    now = dt.datetime(2026, 12, 1, 2, 0)
+    assert weather_derive.overnight_window(now, _sunrise) == (
+        dt.datetime(2026, 11, 30, 20, 0), dt.datetime(2026, 12, 1, 6, 0))
+
+
+def test_overnight_forecast_mean_counts_the_hours_up_to_sunrise():
+    now = dt.datetime(2026, 10, 30, 23, 0)
+    periods = [{"datetime": f"2026-10-31T0{h}:00:00", "temperature": float(h)}
+               for h in (5, 6, 7, 8)]
+    # 05:00, 06:00 and 07:00 start before the 07:16 sunrise; 08:00 does not.
+    assert weather_derive.overnight_forecast_mean(
+        periods, "temperature", now, _sunrise) == 6.0
+
+
+@pytest.mark.parametrize("now", [
+    dt.datetime(2026, 10, 31, 7, 16),   # the calibration, at sunrise
+    dt.datetime(2026, 10, 31, 12, 0),   # a daytime read: still last night
+])
+def test_observed_window_ends_at_sunrise(now):
+    assert weather_derive.observed_overnight_window(now, _sunrise) == (
+        dt.datetime(2026, 10, 30, 23, 0), dt.datetime(2026, 10, 31, 7, 16))
+
+
+def test_observed_mean_counts_the_hour_after_six():
+    samples = [(dt.datetime(2026, 10, 30, 23, 0), 10.0),
+               (dt.datetime(2026, 10, 31, 6, 0), 20.0)]
+    # 7 h at 10, then 1 h 16 min at 20 (up to sunrise), not stopped at 06:00.
+    mean = weather_derive.observed_overnight_mean(
+        samples, dt.datetime(2026, 10, 31, 7, 16), _sunrise)
+    assert mean == pytest.approx((7 * 60 * 10 + 76 * 20) / (7 * 60 + 76))

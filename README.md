@@ -284,15 +284,16 @@ Home Assistant restarts is not recorded.
 **Weather (main device)**
 
 - **Forecast overnight** sensors for temperature, humidity and wind — the
-  forecast averaged over the local overnight hours up to 06:00.
+  forecast averaged over the local overnight hours up to sunrise (06:00 where
+  the sun doesn't rise or set that day).
 - **Forecast morning low** — the coldest forecast hour of the coming
   morning (00:00–12:00), with every hour in its `hourly` attribute (°F), for
   the frost shift. It keeps hours already past and its hours survive a
   restart, so a re-planned run still sees the cold it is waiting out.
 - **Observed overnight** sensors for the same three — what the weather station
-  actually measured over last night's 23:00→06:00 (local), weighted by how long
-  each reading held. They keep their readings across a restart. The 06:00
-  forecast calibration compares the two. All six show in your home's units.
+  actually measured over last night's 23:00→sunrise (local), weighted by how
+  long each reading held. They keep their readings across a restart. The
+  sunrise forecast calibration compares the two. All six show in your home's units.
 
 ## How it updates
 
@@ -311,12 +312,13 @@ Home Assistant restarts is not recorded.
 - **Forecast overnight and morning sensors** — hourly, from the forecast
   entity, and as soon as that entity comes up after a restart. While the forecast has none of
   tonight's hours (or cannot be read), they retry every minute for 15 minutes.
-  The overnight sensors keep a night's value until the night ends (06:00), even
-  once the forecast no longer covers its last hour.
+  The overnight sensors keep a night's value until the night ends at sunrise,
+  even once the forecast no longer covers its last hour.
 - **Observed overnight sensors** — on every weather-station change, and every
   5 minutes.
-- **06:00** — the forecast calibration compares last night's forecast with
-  what was observed. Calibration samples are checked on the hour and half hour.
+- **Sunrise** — the forecast calibration compares last night's forecast with
+  what was observed (on a day the sun does not rise, it waits for the next
+  sunrise). Calibration samples are checked on the hour and half hour.
 - **Zone sensors** (soil moisture, deficit, last watered, …) update as soon as
   their source does.
 

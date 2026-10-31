@@ -1,6 +1,6 @@
 from __future__ import annotations
 import datetime as dt
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 
@@ -11,34 +11,53 @@ def overnight_mean(samples: Sequence[float | None]) -> float | None:
     return sum(vals) / len(vals)
 
 
-def overnight_window(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
-    """The 20:00→06:00 overnight window containing `now`."""
-    if now.hour < 6:
+# The night ends at sunrise: the grass stays wet until the sun dries it, and
+# from late September the watering finishes after 06:00. `sunrise` maps a date
+# to that morning's sunrise; without one (no location, polar day or night) the
+# night ends at the old fixed 06:00.
+FALLBACK_END = dt.time(6, 0)
+Sunrise = Callable[[dt.date], dt.datetime | None]
+
+
+def night_end(day: dt.date, sunrise: Sunrise | None,
+              tz: dt.tzinfo | None) -> dt.datetime:
+    """When the night ending on the morning of `day` ends, in `tz`."""
+    rise = sunrise(day) if sunrise is not None else None
+    if rise is None:
+        return dt.datetime.combine(day, FALLBACK_END, tzinfo=tz)
+    if rise.tzinfo is None:
+        return rise.replace(tzinfo=tz)
+    return rise.astimezone(tz) if tz is not None else rise.replace(tzinfo=None)
+
+
+def overnight_window(now: dt.datetime, sunrise: Sunrise | None = None,
+                     ) -> tuple[dt.datetime, dt.datetime]:
+    """The overnight window (20:00 → sunrise) containing `now`: last night's
+    until this morning's sunrise, the coming night's after it."""
+    if now < night_end(now.date(), sunrise, now.tzinfo):
         start_day = now.date() - dt.timedelta(days=1)
     else:
         start_day = now.date()
     start = dt.datetime.combine(start_day, dt.time(20, 0), tzinfo=now.tzinfo)
-    end = dt.datetime.combine(start_day + dt.timedelta(days=1), dt.time(6, 0),
-                              tzinfo=now.tzinfo)
-    return start, end
+    return start, night_end(start_day + dt.timedelta(days=1), sunrise, now.tzinfo)
 
 
-# The observed window is what the 06:00 calibration scores against the nightly's
-# forecast. The nightly plans at 23:00 and its hourly forecast starts then, so
-# the observed side covers the same 23:00 -> 06:00, not the evening before it.
+# The observed window is what the sunrise calibration scores against the
+# nightly's forecast. The nightly plans at 23:00 and its hourly forecast starts
+# then, so the observed side covers the same 23:00 -> sunrise, not the evening
+# before it.
 OBSERVED_WINDOW_START_HOUR = 23
-OBSERVED_WINDOW_END_HOUR = 6
-OBSERVED_WINDOW_LABEL = (
-    f"{OBSERVED_WINDOW_START_HOUR:02d}:00-{OBSERVED_WINDOW_END_HOUR:02d}:00")
+OBSERVED_WINDOW_LABEL = f"{OBSERVED_WINDOW_START_HOUR:02d}:00-sunrise"
 
 
-def observed_overnight_window(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
-    """The observed overnight span (23:00→06:00) anchored to the most recent
-    23:00 at or before `now` (backward-looking).
+def observed_overnight_window(now: dt.datetime, sunrise: Sunrise | None = None,
+                              ) -> tuple[dt.datetime, dt.datetime]:
+    """The observed overnight span (23:00 → the next sunrise) anchored to the
+    most recent 23:00 at or before `now` (backward-looking).
 
     Unlike `overnight_window`, this never points at a future night: a read at
-    06:00 (when the scheduler's calibration runs) captures the night that just
-    ended, and a daytime read reflects last night.
+    sunrise (when the scheduler's calibration runs) captures the night that
+    just ended, and a daytime read reflects last night.
     """
     if now.hour >= OBSERVED_WINDOW_START_HOUR:
         start_day = now.date()
@@ -46,13 +65,12 @@ def observed_overnight_window(now: dt.datetime) -> tuple[dt.datetime, dt.datetim
         start_day = now.date() - dt.timedelta(days=1)
     start = dt.datetime.combine(start_day, dt.time(OBSERVED_WINDOW_START_HOUR, 0),
                                 tzinfo=now.tzinfo)
-    end = dt.datetime.combine(start_day + dt.timedelta(days=1),
-                              dt.time(OBSERVED_WINDOW_END_HOUR, 0), tzinfo=now.tzinfo)
-    return start, end
+    return start, night_end(start_day + dt.timedelta(days=1), sunrise, now.tzinfo)
 
 
 def observed_overnight_mean(samples: list[tuple[dt.datetime, float]],
-                            now: dt.datetime) -> float | None:
+                            now: dt.datetime, sunrise: Sunrise | None = None,
+                            ) -> float | None:
     """Time-weighted mean over the observed overnight window for `now`.
 
     `samples` are (when the reading arrived, value), oldest first. Each reading
@@ -62,7 +80,7 @@ def observed_overnight_mean(samples: list[tuple[dt.datetime, float]],
     changes, and an event average would under-count exactly those hours. None
     until some reading has held for a moment inside the window.
     """
-    start, end = observed_overnight_window(now)
+    start, end = observed_overnight_window(now, sunrise)
     upto = min(now, end)
     total = weight = 0.0
     for i, (t, v) in enumerate(samples):
@@ -75,10 +93,11 @@ def observed_overnight_mean(samples: list[tuple[dt.datetime, float]],
 
 
 def prune_observed(samples: list[tuple[dt.datetime, float]],
-                   now: dt.datetime) -> list[tuple[dt.datetime, float]]:
+                   now: dt.datetime, sunrise: Sunrise | None = None,
+                   ) -> list[tuple[dt.datetime, float]]:
     """The samples still needed for `now`'s window: those inside it, plus the
     latest one before it (its value is in effect when the window opens)."""
-    start, _end = observed_overnight_window(now)
+    start, _end = observed_overnight_window(now, sunrise)
     before = [s for s in samples if s[0] < start]
     return before[-1:] + [s for s in samples if s[0] >= start]
 
@@ -86,7 +105,9 @@ def prune_observed(samples: list[tuple[dt.datetime, float]],
 def _in_span(periods: list[dict[str, Any]], field: str, start: dt.datetime,
              end: dt.datetime) -> list[tuple[dt.datetime, float]]:
     """(time, value) of each forecast period from `start` (inclusive) to `end`
-    that carries `field`. A naive period time is taken in the span's zone."""
+    that carries `field`. A naive period time is taken in the span's zone. An
+    hour that starts before `end` counts in full (the forecast has no finer
+    grain), so a 07:00 hour counts toward a night ending at a 07:16 sunrise."""
     out: list[tuple[dt.datetime, float]] = []
     for p in periods:
         ts = p.get("datetime")
@@ -103,8 +124,9 @@ def _in_span(periods: list[dict[str, Any]], field: str, start: dt.datetime,
 
 
 def overnight_forecast_mean(periods: list[dict[str, Any]], field: str,
-                            now: dt.datetime) -> float | None:
-    start, end = overnight_window(now)
+                            now: dt.datetime, sunrise: Sunrise | None = None,
+                            ) -> float | None:
+    start, end = overnight_window(now, sunrise)
     return overnight_mean([v for _t, v in _in_span(periods, field, start, end)])
 
 
