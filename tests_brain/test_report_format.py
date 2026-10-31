@@ -244,10 +244,20 @@ def test_run_result_carries_full_iso_watering_end():
     assert r.end_iso == "2026-09-16T04:55:03-04:00"
 
 
-def test_an_inactive_probe_reads_inactive_on_every_surface():
-    r = result(uncompleted={"zone_c": "probe_inactive"})
+def test_the_recap_push_leaves_out_an_inactive_probe():
+    r = result(uncompleted={"zone_c": "probe_inactive", "zone_d": "excluded"})
     text = rf.format_notification(r)
-    assert "Zone C (Inactive)" in text and "probe_inactive" not in text
+    assert "Not completed: Zone D (excluded)" in text
+    assert "Zone C" not in text
+
+
+def test_a_recap_with_only_inactive_probes_has_no_not_completed_line():
+    text = rf.format_notification(result(uncompleted={"zone_c": "probe_inactive"}))
+    assert "Not completed" not in text
+
+
+def test_an_inactive_probe_reads_inactive_on_the_calendar_and_preview():
+    r = result(uncompleted={"zone_c": "probe_inactive"})
     _title, body = rf.format_calendar(r, 12, 30)
     assert "- Zone C: Inactive" in body and "probe_inactive" not in body
     preview = rf.format_preview("Level 1", [("zone_a", 12)],
