@@ -107,3 +107,31 @@ async def test_the_zone_logbook_says_inactive(freezer):
     messages = [d["message"] for dom, svc, d in world.calls
                 if (dom, svc) == ("logbook", "log")]
     assert messages == ["Back not watered (Inactive)"]
+
+
+def _result(uncompleted):
+    from custom_components.geodrops_rachio.brain import report_format
+    return report_format.RunResult(
+        watered=["front"], uncompleted=uncompleted, start="04:00", end="04:30",
+        per_zone_minutes={"front": 30.0}, standby=False)
+
+
+def test_the_recap_push_leaves_out_an_inactive_probe():
+    from custom_components.geodrops_rachio.brain import report_format
+    msg = report_format.format_notification(_result(
+        {"back": "probe_inactive", "side": "excluded"}))
+    assert "Not completed: Side (excluded)" in msg
+    assert "Back" not in msg
+
+
+def test_a_recap_with_only_inactive_probes_has_no_not_completed_line():
+    from custom_components.geodrops_rachio.brain import report_format
+    msg = report_format.format_notification(_result({"back": "probe_inactive"}))
+    assert "Not completed" not in msg
+
+
+def test_the_calendar_entry_still_lists_an_inactive_probe():
+    from custom_components.geodrops_rachio.brain import report_format
+    _title, desc = report_format.format_calendar(
+        _result({"back": "probe_inactive"}), 12, 20)
+    assert "- Back: Inactive" in desc
