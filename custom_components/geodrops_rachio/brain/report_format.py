@@ -94,7 +94,7 @@ def display_name(zone_key: str) -> str:
 
 # Skip reasons whose internal key is not fit to show. The keys stay as they are
 # in the plan/run records and state attributes, which code and tests compare.
-_REASON_TEXT = {"probe_inactive": "Inactive"}
+_REASON_TEXT = {"probe_inactive": "Inactive", "too_wet": "Too Wet"}
 
 
 def display_reason(reason: str) -> str:

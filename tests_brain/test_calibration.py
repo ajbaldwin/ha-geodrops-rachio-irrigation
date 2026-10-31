@@ -400,3 +400,14 @@ def test_apply_reject_does_not_mutate_input():
     rec = {"state": "calibrating"}
     calibration.apply_reject(rec, "no_rise", 10.0, -0.5, Tunables())
     assert rec == {"state": "calibrating"}
+
+
+@pytest.mark.parametrize(("state", "dominant", "pinned", "expected"), [
+    ("calibrating", 85.0, False, True),
+    ("recalibrating", 90.0, False, True),
+    ("calibrating", 84.9, False, False),   # room to probe
+    ("calibrating", 90.0, True, False),    # pinned: never probes
+    ("converged", 90.0, False, False),     # done calibrating
+])
+def test_too_wet_to_probe(state, dominant, pinned, expected):
+    assert calibration.too_wet_to_probe(state, dominant, pinned, Tunables()) is expected
