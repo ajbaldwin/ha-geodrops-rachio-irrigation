@@ -1631,3 +1631,27 @@ async def test_forecast_sensor_refreshes_when_the_weather_entity_comes_up(
     hass.states.async_set("weather.home", "rainy", {"temperature_unit": "°F"})
     await hass.async_block_till_done()
     assert _native(hass, temp_id) == 70.0
+
+
+async def test_overnight_forecast_holds_tonight_until_the_night_ends(
+        hass, enable_pyscript_and_rachio, freezer):
+    """Near the night's end the hourly forecast has no hours of it left. The
+    sensor keeps the night's value instead of going unknown, which sent the
+    Watering window to live weather for the last hour; a new night starts
+    from its own forecast."""
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to("2026-06-16 04:30:00")
+    hass.states.async_set("weather.home", "cloudy", {"temperature_unit": "°F"})
+    forecast = [{"datetime": "2026-06-16T05:00:00+00:00", "temperature": 50.0}]
+    await _setup_forecast(hass, forecast)
+    temp_id = "sensor.geodrops_rachio_forecast_overnight_temp"
+    assert _native(hass, temp_id) == 50.0
+
+    forecast[:] = [{"datetime": "2026-06-16T06:00:00+00:00", "temperature": 60.0}]
+    freezer.move_to("2026-06-16 05:30:00")
+    await _settle(hass, 0)
+    assert _native(hass, temp_id) == 50.0          # held, not unknown
+
+    freezer.move_to("2026-06-16 06:30:00")         # the next night's window
+    await _settle(hass, 0)
+    assert hass.states.get(temp_id).state == "unknown"   # last night's not carried

@@ -215,6 +215,8 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
         self._kind = kind
         self._retries_left = 0
         self._cancel_retry: CALLBACK_TYPE | None = None
+        # Start of the overnight window the current value was read for.
+        self._held_night: dt.datetime | None = None
 
     async def async_added_to_hass(self) -> None:
         if self._source:
@@ -296,10 +298,17 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
     def _value_from(self, periods: list[dict[str, Any]]) -> float | None:
         """This sensor's value from the hourly forecast periods, in its
         native unit; None when they hold no hours it covers."""
-        value = weather_derive.overnight_forecast_mean(
-            periods, self._field, dt_util.now())
+        now = dt_util.now()
+        night, _end = weather_derive.overnight_window(now)
+        value = weather_derive.overnight_forecast_mean(periods, self._field, now)
         if value is None:
+            # The forecast starts at the coming hour, so the night's last hour
+            # has none of it left: keep the night's value rather than read
+            # unknown (the Watering window would fall back to live weather).
+            if self._held_night == night:
+                return cast(float | None, self._attr_native_value)
             return None
+        self._held_night = night
         return units.to_scheduler(value, self._forecast_unit(), self._kind)
 
     def _forecast_unit(self) -> str | None:
