@@ -4,6 +4,25 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.2-beta.2 — Quieter recap, Too Wet zones and a steadier window
+
+### Changes
+
+- **The nightly recap no longer lists zones whose GeoDrops probe is
+  *Inactive*.** They are skipped every night until the probe is back, so the
+  line was noise; the calendar entry, the zone's Logbook and the Preview still
+  show them.
+- **A calibrating zone too wet for its calibration probe (85% moisture or
+  more, by default) is now listed as *Too Wet*** in the recap, instead of
+  dropping out of it without a word. A probe that rises that high before
+  watering starts is reported the same way.
+- **Fixed:** the *Watering window* sensor no longer jumps between two lengths
+  in the last hour before 06:00. The overnight forecast sensors used to go
+  `unknown` then, and the window was sized from live weather instead.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.2-beta.1 → restart.
+
 ## v1.3.2-beta.1 — Calibration state says why a zone isn't calibrating
 
 HACS never offered v1.3.1-beta.10 (it sorted below beta.9), so this beta

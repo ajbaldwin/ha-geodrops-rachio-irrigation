@@ -261,8 +261,9 @@ Home Assistant restarts is not recorded.
   skipped from both the nightly plan and calibration probing. Its *Deficit*
   still shows, with an `excluded: true` attribute.
   A zone whose GeoDrops probe has its *Active* switch off (GeoDrops 0.9.0-beta.3 or
-  later) is skipped the same way: notifications show it as *Inactive*, and
-  the skipped-zones attribute lists it as `probe_inactive`; see
+  later) is skipped the same way. The nightly recap notification leaves it
+  out; the calendar entry, the zone's Logbook and the Preview show it as
+  *Inactive*, and the skipped-zones attribute lists it as `probe_inactive`; see
   [Examples](#examples).
 - **Moisture target** (`select`) — the GeoDrops band (Dry → Wet+) the
   scheduler keeps the zone at. The same setting as the zone's target moisture
@@ -310,6 +311,8 @@ Home Assistant restarts is not recorded.
 - **Forecast overnight and morning sensors** — hourly, from the forecast
   entity, and as soon as that entity comes up after a restart. While the forecast has none of
   tonight's hours (or cannot be read), they retry every minute for 15 minutes.
+  The overnight sensors keep a night's value until the night ends (06:00), even
+  once the forecast no longer covers its last hour.
 - **Observed overnight sensors** — on every weather-station change, and every
   5 minutes.
 - **06:00** — the forecast calibration compares last night's forecast with
@@ -327,7 +330,9 @@ While it is off, every zone's *Calibration state* reads *Disabled*.
 
 With it on, a calibrating zone gets a short probe watering, and the next
 probe grows until it raises soil moisture by a measurable amount (3 points).
-A rise smaller than that is treated as noise and not learned from. A zone is
+A rise smaller than that is treated as noise and not learned from. A zone at
+or above 85% moisture (the default) gets no probe that night; the recap lists
+it as *Too Wet* (`too_wet` in the skipped-zones attribute). A zone is
 *Calibrated* once its last 3 measured waterings agree on how fast it wets.
 Until then its *Calibration state* counts the recent waterings that agree,
 e.g. *Calibrating (2 of 3 consistent)*, or reads *results vary* when the
