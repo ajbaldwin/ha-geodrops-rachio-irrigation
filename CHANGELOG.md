@@ -4,6 +4,24 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.2-beta.3 — Overnight weather runs to sunrise
+
+### Changes
+
+- **The overnight forecast and observed weather now run to sunrise instead
+  of stopping at 06:00.** The grass stays wet until the sun is up, and from
+  late autumn watering finishes after 06:00, so the disease-pressure average
+  that sizes the watering window was missing its last hour or more. The
+  forecast sensors also move to the next night at sunrise, not partway
+  through a run.
+- **The forecast calibration runs at sunrise,** so it compares the same hours
+  on both sides; its `window` attribute reads `23:00-sunrise`. On a day the
+  sun does not rise, the windows end at 06:00 and calibration waits for the
+  next sunrise.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.2-beta.2 → restart.
+
 ## v1.3.2-beta.2 — Quieter recap, Too Wet zones and a steadier window
 
 ### Changes
