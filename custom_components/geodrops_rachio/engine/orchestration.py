@@ -674,6 +674,10 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
         order += [z for z in owed if z not in order]
         for z in order:
             uncompleted.pop(z, None)
+        # Resume folds in no probes, and a zone too wet now may have been
+        # probed before the restart: "too wet" says nothing true about tonight.
+        for z in [z for z, r in uncompleted.items() if r == "too_wet"]:
+            del uncompleted[z]
         geo = {z: cfg.zones[z].geography for z in order}
         adjacency = {z: cfg.zones[z].adjacency for z in order}
         the_plan = plan.build_plan(order, owed, geo, adjacency, ctx["cap_minutes"], tun)

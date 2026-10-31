@@ -263,3 +263,20 @@ async def test_a_failed_progress_clear_is_logged_not_fatal(freezer, caplog):
     assert eng.records["status"]["value"] == "idle"
     assert any("could not clear run progress (disk full)" in r.getMessage()
                for r in caplog.records)
+
+
+async def test_a_probe_that_watered_before_the_restart_is_not_called_too_wet(freezer):
+    # Resume folds in no probes, so a zone already probed tonight that now
+    # reads above the ceiling must not be reported as skipped for it.
+    from custom_components.geodrops_rachio.engine.store import EFFICACY
+    data = entry_data(self_cal=True)
+    world = _world(freezer, "2026-07-02 02:40:00", data)
+    world.set("sensor.back_dominant", "86.0")
+    left = {"stamp": "2026-07-01T23:00:00", "trigger": "nightly",
+            "window_end": WINDOW_END, "planned": {"front": 24, "back": 10},
+            "delivered": {"front": 12, "back": 10}}
+    eng = native_scheduler(world, data, docs={
+        RUN_PROGRESS: left, EFFICACY: {"back": {"state": "recalibrating"}}})
+    await eng._on_startup()
+    await eng.run_task
+    assert "back" not in eng.records["last_run"]["attributes"]["uncompleted"]
