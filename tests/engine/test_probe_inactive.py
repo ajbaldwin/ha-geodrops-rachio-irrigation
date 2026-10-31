@@ -107,3 +107,4 @@ async def test_the_zone_logbook_says_inactive(freezer):
     messages = [d["message"] for dom, svc, d in world.calls
                 if (dom, svc) == ("logbook", "log")]
     assert messages == ["Back not watered (Inactive)"]
+

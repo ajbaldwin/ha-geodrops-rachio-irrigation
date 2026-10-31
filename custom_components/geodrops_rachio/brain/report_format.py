@@ -125,9 +125,12 @@ def format_notification(r: RunResult) -> str:
         lines.append(window)
     if r.note:
         lines.append(r.note)
-    if r.uncompleted:
-        parts = [f"{display_name(z)} ({display_reason(reason)})"
-                 for z, reason in r.uncompleted.items()]
+    # An inactive probe is out of service until the user turns it back on, so
+    # repeating it in every night's push is noise. The calendar entry and the
+    # zone's Logbook still record it.
+    parts = [f"{display_name(z)} ({display_reason(reason)})"
+             for z, reason in r.uncompleted.items() if reason != "probe_inactive"]
+    if parts:
         lines.append(f"Not completed: {', '.join(parts)}")
     if r.recoveries:
         plural = "s" if r.recoveries != 1 else ""
