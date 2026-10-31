@@ -302,9 +302,10 @@ class ForecastOvernightSensor(GeodropsRachioEntity, SensorEntity):
         night, _end = weather_derive.overnight_window(now)
         value = weather_derive.overnight_forecast_mean(periods, self._field, now)
         if value is None:
-            # The forecast starts at the coming hour, so the night's last hour
-            # has none of it left: keep the night's value rather than read
+            # No hours of a night already read: keep its value rather than read
             # unknown (the Watering window would fall back to live weather).
+            # Mostly the night's last hour, which the forecast (starting at the
+            # coming hour) no longer covers; also a provider's empty answer.
             if self._held_night == night:
                 return cast(float | None, self._attr_native_value)
             return None
