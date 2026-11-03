@@ -4,6 +4,22 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.2-beta.4 — Quiet standby nights
+
+### Changes
+
+- **Standby nights no longer send a recap notification.** Standby can last a
+  whole off-season; the calendar entry and Logbook line still record each
+  night. Run now and Preview in Standby still notify.
+- **A probe taken out during Standby now recalibrates when it comes back.**
+  Turning off a probe's *Active* switch in GeoDrops (or excluding its zone)
+  while in Standby used to leave its old calibration in place; a zone out for
+  48 hours or more now restarts calibration on return, as it already did
+  outside Standby.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.2-beta.3 → restart.
+
 ## v1.3.2-beta.3 — Overnight weather runs to sunrise
 
 ### Changes
