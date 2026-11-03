@@ -10,14 +10,6 @@
    }
   ],
   [
-   "notify",
-   "phone",
-   {
-    "message": "Irrigation Standby — system paused, no zones watered.",
-    "title": "Irrigation Recap"
-   }
-  ],
-  [
    "calendar",
    "create_event",
    {

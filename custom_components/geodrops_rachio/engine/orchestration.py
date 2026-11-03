@@ -222,8 +222,17 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 await self._publish_standby_plan(
                     stamp, "System in Standby — nothing waters tonight.", trigger)
                 self._set_status("standby")
+                try:
+                    await self._stamp_excluded_zones(cfg)
+                except Exception as err:
+                    # The stamp is bookkeeping; the night's records come first.
+                    _LOGGER.warning("could not stamp excluded zones (%s)", err)
                 await self._activity("Standby — nothing watered tonight")
-                await self._report(standby_result, tun, event_time=event_time)
+                # No push on a standby night: standby can last a whole
+                # off-season, and a nightly "paused" push says nothing the
+                # switch doesn't. Run now still answers the button press.
+                await self._report(standby_result, tun, event_time=event_time,
+                                   push=not wait)
                 return
 
             # Run now waters at once, so frost cannot move its finish.
@@ -942,7 +951,8 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
     async def _report(self, result: report_format.RunResult, tun: config.Tunables,
                       event_time: dt.datetime | None = None,
                       started_at: dt.datetime | None = None,
-                      ended_at: dt.datetime | None = None) -> None:
+                      ended_at: dt.datetime | None = None,
+                      push: bool = True) -> None:
         """Notify + write the calendar entry.
 
         When water actually ran, `started_at`/`ended_at` make the entry SPAN the
@@ -964,9 +974,13 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
         before a ~04:55 dawn), in which case a spanning entry begins on the previous
         day. That is accurate rather than tidy, and only affects which day the entry
         sorts under.
+
+        `push=False` skips the notification only; the calendar entry is still
+        written.
         """
-        msg = report_format.format_notification(result)
-        await self._notify(msg, "Irrigation Recap")
+        if push:
+            msg = report_format.format_notification(result)
+            await self._notify(msg, "Irrigation Recap")
         title, desc = report_format.format_calendar(
             result, tun.cycle_minutes, tun.soak_minutes
         )
