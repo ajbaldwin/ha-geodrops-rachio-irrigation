@@ -223,7 +223,11 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                     stamp, "System in Standby — nothing waters tonight.", trigger)
                 self._set_status("standby")
                 await self._activity("Standby — nothing watered tonight")
-                await self._report(standby_result, tun, event_time=event_time)
+                # No push on a standby night: standby can last a whole
+                # off-season, and a nightly "paused" push says nothing the
+                # switch doesn't. Run now still answers the button press.
+                await self._report(standby_result, tun, event_time=event_time,
+                                   push=not wait)
                 return
 
             # Run now waters at once, so frost cannot move its finish.
@@ -942,7 +946,8 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
     async def _report(self, result: report_format.RunResult, tun: config.Tunables,
                       event_time: dt.datetime | None = None,
                       started_at: dt.datetime | None = None,
-                      ended_at: dt.datetime | None = None) -> None:
+                      ended_at: dt.datetime | None = None,
+                      push: bool = True) -> None:
         """Notify + write the calendar entry.
 
         When water actually ran, `started_at`/`ended_at` make the entry SPAN the
@@ -965,11 +970,10 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
         day. That is accurate rather than tidy, and only affects which day the entry
         sorts under.
 
-        A standby night sends no push: standby can last a whole off-season, and
-        a nightly "paused" push says nothing the switch doesn't. The calendar
-        entry and Logbook line still record the night.
+        `push=False` skips the notification only; the calendar entry is still
+        written.
         """
-        if not result.standby:
+        if push:
             msg = report_format.format_notification(result)
             await self._notify(msg, "Irrigation Recap")
         title, desc = report_format.format_calendar(

@@ -228,7 +228,8 @@ zone, with these entities (all prefixed `geodrops_rachio_`):
   the window has opened is clamped to the time left, which this does not
   show.
 - **Standby** (`switch`) — pause scheduling. Standby nights send no recap
-  notification; the calendar and Logbook still record them.
+  notification (Run now still does); the calendar and Logbook still record
+  them.
 - **Run active** (`binary_sensor`) — read-only; on while the scheduler is
   running a watering schedule.
 - **Status sensors** — `sensor.geodrops_rachio_status` (state is a

@@ -225,6 +225,28 @@ async def test_standby_note_without_dawn_is_recorded_now(freezer, caplog):
     assert "dawn unavailable for standby note" in caplog.text
 
 
+async def test_standby_pushes_only_for_run_now(freezer):
+    """A standby night is silent (calendar + Logbook only); Run now in standby
+    still answers the button press with a push."""
+    data = entry_data()
+    w = _prepare(freezer, "x", data)
+    w.set("switch.geodrops_rachio_standby", "on")
+    eng = native_engine(w, data, *ALL_MIXINS)
+
+    def pushes(calls):
+        return [c for c in calls if c[0] == "notify"]
+
+    before = len(w.calls)
+    await eng._plan_and_run(True, "nightly")
+    night = w.calls[before:]
+    assert pushes(night) == []
+    assert any(c[:2] == ("calendar", "create_event") for c in night)
+
+    before = len(w.calls)
+    await eng._plan_and_run(False, "run_now")
+    assert [c[2]["title"] for c in pushes(w.calls[before:])] == ["Irrigation Recap"]
+
+
 async def test_run_now_waters_through_a_rain_forecast(freezer, caplog):
     """A manual run expresses intent to water: the rain forecast is logged,
     not obeyed."""
