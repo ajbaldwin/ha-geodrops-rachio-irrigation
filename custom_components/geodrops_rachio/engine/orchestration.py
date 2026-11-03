@@ -964,9 +964,14 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
         before a ~04:55 dawn), in which case a spanning entry begins on the previous
         day. That is accurate rather than tidy, and only affects which day the entry
         sorts under.
+
+        A standby night sends no push: standby can last a whole off-season, and
+        a nightly "paused" push says nothing the switch doesn't. The calendar
+        entry and Logbook line still record the night.
         """
-        msg = report_format.format_notification(result)
-        await self._notify(msg, "Irrigation Recap")
+        if not result.standby:
+            msg = report_format.format_notification(result)
+            await self._notify(msg, "Irrigation Recap")
         title, desc = report_format.format_calendar(
             result, tun.cycle_minutes, tun.soak_minutes
         )
