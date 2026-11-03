@@ -112,8 +112,12 @@ async def test_a_probe_pulled_during_standby_recalibrates_on_return(freezer, how
                                 "span_pts": 12.0}}}
     eng = native_engine(world, data, *ALL_MIXINS, docs=docs)
     await eng._plan_and_run(True, "nightly")
-    assert "excluded_since" in eng.store.read(EFFICACY)["back"]
+    stamp = eng.store.read(EFFICACY)["back"]["excluded_since"]
     assert "front" not in eng.store.read(EFFICACY)   # active zones untouched
+
+    freezer.tick(dt.timedelta(days=1))               # later nights keep the date
+    await eng._plan_and_run(True, "nightly")
+    assert eng.store.read(EFFICACY)["back"]["excluded_since"] == stamp
 
     freezer.tick(dt.timedelta(days=150))
     world.set("switch.geodrops_rachio_standby", "off")
@@ -123,6 +127,24 @@ async def test_a_probe_pulled_during_standby_recalibrates_on_return(freezer, how
     await eng._plan_context(cfg)
     rec = eng.store.read(EFFICACY)["back"]
     assert rec["state"] == "recalibrating" and rec["efficacy"] is None
+
+
+async def test_a_failed_standby_stamp_still_records_the_night(freezer, caplog):
+    from tests.engine.scenario import ALL_MIXINS
+    freezer.move_to(T_PLAN)
+    data = entry_data()
+    world = FakeWorld(freezer)
+    populate(world, data)
+    world.set("switch.geodrops_rachio_standby", "on")
+    world.set("switch.geodrops_rachio_back_exclude", "on")
+    eng = native_engine(world, data, *ALL_MIXINS)
+
+    async def broken(_store):
+        raise OSError("disk full")
+    eng._write_efficacy_store = broken
+    await eng._plan_and_run(True, "nightly")
+    assert any(c[:2] == ("calendar", "create_event") for c in world.calls)
+    assert "could not stamp excluded zones (disk full)" in caplog.text
 
 
 async def test_the_zone_logbook_says_inactive(freezer):
