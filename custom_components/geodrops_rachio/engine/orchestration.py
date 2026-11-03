@@ -222,6 +222,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                 await self._publish_standby_plan(
                     stamp, "System in Standby — nothing waters tonight.", trigger)
                 self._set_status("standby")
+                await self._stamp_excluded_zones(cfg)
                 await self._activity("Standby — nothing watered tonight")
                 # No push on a standby night: standby can last a whole
                 # off-season, and a nightly "paused" push says nothing the

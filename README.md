@@ -400,7 +400,8 @@ Pull a probe for the winter or a battery swap: turn off its *Active* switch on
 the GeoDrops device page instead. Its zone is skipped as if excluded, and its
 unavailable sensors raise no repair. Either way, with Active Watering
 Calibration on, a zone out for 48 hours or more restarts calibration when it
-comes back, since the probe may not sit where it did. GeoDrops versions
+comes back, since the probe may not sit where it did. That holds while
+*Standby* is on, too. GeoDrops versions
 without the switch work as before.
 
 ## Known limitations

@@ -94,6 +94,37 @@ async def test_a_probe_back_after_a_long_absence_recalibrates(freezer):
     assert "excluded_since" not in rec
 
 
+@pytest.mark.parametrize("how", ["inactive", "excluded"])
+async def test_a_probe_pulled_during_standby_recalibrates_on_return(freezer, how):
+    """Standby nights plan nothing, but still stamp a zone taken out, so a
+    probe removed for the winter recalibrates when it comes back."""
+    from tests.engine.scenario import ALL_MIXINS
+    freezer.move_to(T_PLAN)
+    data = entry_data(self_cal=True)
+    world = FakeWorld(freezer)
+    populate(world, data)
+    world.active_links["sensor.back_dominant"] = ACTIVE
+    world.set("switch.geodrops_rachio_standby", "on")
+    out = (ACTIVE, "off") if how == "inactive" else (
+        "switch.geodrops_rachio_back_exclude", "on")
+    world.set(*out)
+    docs = {EFFICACY: {"back": {"state": "converged", "efficacy": 0.5,
+                                "span_pts": 12.0}}}
+    eng = native_engine(world, data, *ALL_MIXINS, docs=docs)
+    await eng._plan_and_run(True, "nightly")
+    assert "excluded_since" in eng.store.read(EFFICACY)["back"]
+    assert "front" not in eng.store.read(EFFICACY)   # active zones untouched
+
+    freezer.tick(dt.timedelta(days=150))
+    world.set("switch.geodrops_rachio_standby", "off")
+    world.set(out[0], "on" if how == "inactive" else "off")
+    cfg = eng._load_cfg()
+    prime(eng, cfg)
+    await eng._plan_context(cfg)
+    rec = eng.store.read(EFFICACY)["back"]
+    assert rec["state"] == "recalibrating" and rec["efficacy"] is None
+
+
 async def test_the_zone_logbook_says_inactive(freezer):
     from custom_components.geodrops_rachio.engine.orchestration import (
         OrchestrationMixin)

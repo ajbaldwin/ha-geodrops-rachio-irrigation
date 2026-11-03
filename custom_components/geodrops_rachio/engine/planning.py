@@ -24,6 +24,18 @@ _LOGGER = logging.getLogger(__name__)
 SENSOR_SKIP_REASONS = frozenset(("unavailable", "low_quality"))
 
 
+def _stamp_exclusion(efficacy_store: dict[str, Any], key: str,
+                     now: dt.datetime) -> bool:
+    """Stamp a zone's first excluded night so a later return can time-gate
+    whether to recalibrate. True when the store changed."""
+    rec = efficacy_store.get(key) or {}
+    if "excluded_since" in rec:
+        return False
+    rec["excluded_since"] = now.isoformat()
+    efficacy_store[key] = rec
+    return True
+
+
 class PlanningMixin(IOMixin):
     # ─── Orchestration ───────────────────────────────────────────────────────
 
@@ -607,6 +619,24 @@ class PlanningMixin(IOMixin):
             "target_floors": floors,
         })
 
+    def _exclusion_reason(self, zone: config.ZoneConfig) -> str | None:
+        return ("excluded" if self._zone_excluded(zone)
+                else "probe_inactive" if self._probe_inactive(zone)
+                else None)
+
+    async def _stamp_excluded_zones(self, cfg: config.Config) -> None:
+        """Stamp zones taken out while in standby, which plans nothing: a probe
+        pulled for the winter then recalibrates on return like any other long
+        exclusion. Never clears a stamp; only a real plan resolves the return."""
+        efficacy_store = self._read_efficacy_store()
+        now = self.port.now()
+        dirty = False
+        for key, zone in cfg.zones.items():
+            if self._exclusion_reason(zone):
+                dirty |= _stamp_exclusion(efficacy_store, key, now)
+        if dirty:
+            await self._write_efficacy_store(efficacy_store)
+
     async def _plan_context(self, cfg: config.Config, dry: bool = False,
                             frost_shift: bool = True) -> dict[str, Any]:
         """Evaluate zones and build the full plan — no execution. Shared by the
@@ -632,20 +662,12 @@ class PlanningMixin(IOMixin):
         dominant_by_zone: dict[str, float] = {}
         for key, zone in cfg.zones.items():
             rec = efficacy_store.get(key)
-            excluded = ("excluded" if self._zone_excluded(zone)
-                        else "probe_inactive" if self._probe_inactive(zone)
-                        else None)
+            excluded = self._exclusion_reason(zone)
             if excluded:
                 # Excluded (e.g. an overseeded zone watered separately), or its
                 # probe taken out of service in GeoDrops: skip the nightly plan AND
-                # probing. Stamp the first excluded plan so a later return can
-                # time-gate whether to recalibrate.
-                if rec is None:
-                    rec = {}
-                if "excluded_since" not in rec:
-                    rec["excluded_since"] = now.isoformat()
-                    efficacy_store[key] = rec
-                    store_dirty = True
+                # probing.
+                store_dirty |= _stamp_exclusion(efficacy_store, key, now)
                 uncompleted[key] = excluded
                 continue
             if rec is not None and rec.get("excluded_since") is not None:
