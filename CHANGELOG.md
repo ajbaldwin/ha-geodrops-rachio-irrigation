@@ -4,6 +4,87 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.2 — Frost adjustment, dollar spot, sturdier calibration and quieter nights
+
+Everything since v1.3.0, including all the 1.3.1 and 1.3.2 betas.
+
+### New
+
+- **Automatic frost adjustment** switch (under *Configuration*, off by
+  default). On a cold morning, when the hourly forecast has an hour below
+  38 °F during the run, it moves the finish later, past the cold, but never
+  past sunrise + 90 min. A shorter window drops the lowest-priority zones;
+  cold until then skips the night (`frost-forecast`). The *Finish anchor* and
+  *Finish offset* controls still apply, and frost moves the finish they set.
+  *Run irrigation now* is never moved. A new *Forecast morning low* sensor
+  (diagnostic) shows the coldest forecast hour, and the *Watering window*
+  sensor, run records and recap show the shift.
+- **Frost check when the window opens**, whether the switch is on or off: a
+  live temperature below 34 °F skips the night (`frost-at-window-start`).
+- **Dollar spot counts as disease pressure.** In spring and fall the window
+  is also shortened by dollar spot risk (Smith-Kerns model, from the last 5
+  days of temperature and humidity; 20% or more counts as warm). It uses the
+  recorder's long-term statistics; without them the window behaves as before.
+- **New repairs** (Settings → Repairs) for problems that were only logged:
+  Rachio integration not loaded, Rachio controller not on the account,
+  notification service missing, entities unavailable for a day, a failed
+  restart, and old pyscript still running. A new repair covers zones not
+  responding to watering.
+- **Calibration state says why a zone isn't calibrating:** *Disabled* (with
+  *Active Watering Calibration* off, the default), *Excluded*, *Inactive*
+  (the GeoDrops probe's *Active* switch is off), *Not responding — check
+  heads and probe*, and *Calibrating (2 of 3 consistent)* / *Calibrated*
+  with *Active Watering Calibration* on.
+- **Probes out of service are skipped like excluded zones** (shown as
+  *Inactive*), and their unavailable sensors no longer raise a repair; this
+  needs GeoDrops 0.9.0-beta.3 or later, and earlier versions work as before.
+- **The *Finish offset* slider shows when watering finishes**, in minutes
+  after the end anchor (negative is before it), and moves to the new level's
+  finish when you change drought level.
+
+### Changes
+
+- **Overnight weather runs to sunrise** instead of stopping at 06:00, so the
+  disease-pressure average sizing the window includes the last hour or more
+  of wet grass. The forecast sensors move to the next night at sunrise, and
+  forecast calibration runs then.
+- **More accurate watering calibration** (only with *Active Watering
+  Calibration* on): each zone is measured from its own watering, a rise under
+  3 points no longer counts as a sample, zones on short doses now finish
+  calibrating, a calibrated zone whose response fades goes back to
+  calibrating, and a zone whose probe was out for 48 hours or more restarts
+  calibration when it returns (also during Standby).
+- **Calibration counts a reading by when GeoDrops took it,** not when it
+  reached Home Assistant, and the retained reading is taken 6 hours after
+  watering (was 4). Expect learned retention to drop over the next several
+  calibration nights, and zones to run somewhat longer as a result.
+- **Quieter recap:** zones whose probe is *Inactive* are left out; a
+  calibrating zone too wet for its probe (85% or more by default) is listed as
+  *Too Wet*; and Standby nights send no recap notification (the calendar
+  entry and Logbook line still record each night).
+- **The *Automatic watering time* switch became *Automatic frost
+  adjustment*** and comes back off. The *Watering window* sensor and run
+  records replace `timing_mode` with `frost_adjustment`; update any template
+  or automation that reads `timing_mode`.
+- **New tunables** `dollar_spot_enabled`, `dollar_spot_threshold_pct`,
+  `frost_temp_f`, `frost_max_delay_minutes` and `frost_skip_temp_f`.
+- **Starts after the Rachio integration** at boot.
+
+### Fixes
+
+- **Deficit** shows on excluded zones, and reads as soon as the probe loads
+  after a restart.
+- **Plan** refreshes itself (hourly, after a restart and after setting
+  changes) instead of showing an old preview.
+- **Forecast overnight sensors** read as soon as the weather entity is up
+  after a restart.
+- The *Watering window* sensor no longer jumps between two lengths in the
+  last hour before 06:00.
+- **Requires a Home Assistant restart** after updating.
+
+**Rollback:** HACS → Redownload → v1.3.0 → restart. The frost switch then
+comes back as *Automatic watering time*, off.
+
 ## v1.3.2-beta.4 — Quiet standby nights
 
 ### Changes
