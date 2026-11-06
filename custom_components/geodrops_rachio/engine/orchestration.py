@@ -221,7 +221,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                                              skipped="standby")
                 await self._publish_standby_plan(
                     stamp, "System in Standby — nothing waters tonight.", trigger)
-                self._set_status("standby")
+                self._set_status("standby", detail=self._standby_source())
                 try:
                     await self._stamp_excluded_zones(cfg)
                 except Exception as err:
@@ -618,7 +618,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
             if aborted_reason:
                 self._set_status("aborted", detail=aborted_reason)
             else:
-                self._set_status("idle")
+                self._set_rest_status()
             await self._activity(
                 f"Run complete — rachio_calls={self.api_calls}, state_polls={self.state_polls}"
             )
