@@ -4,6 +4,18 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.3-beta.2 — Status shows Standby right away
+
+### Changes
+
+- **The Status sensor shows Standby whenever a standby switch is on.** It used
+  to read Idle after a restart and between runs until the 23:00 run found the
+  Rachio controller (or *Standby*) in standby. It now says Standby from
+  startup and as soon as either switch turns on, and its *detail* attribute
+  names the switch. Watering was always blocked in standby; only the status
+  was behind.
+- **Requires a Home Assistant restart** after updating.
+
 ## v1.3.3-beta.1 — Notify entities as the notification target
 
 ### Changes
