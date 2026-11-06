@@ -713,3 +713,26 @@ async def test_reset_in_standby_reports_standby(freezer):
     w.set("switch.rachio_standby", "on")
     await eng.async_reset()
     assert eng.records["status"]["value"] == "standby"
+
+
+async def test_standby_night_status_names_the_switch(freezer):
+    """The 23:00 standby night says which switch, as every other Standby
+    status does; otherwise the next refresh republishes it with the detail."""
+    w, eng = _night_scheduler(freezer, when="2026-07-01 23:00:00")
+    w.set("switch.rachio_standby", "on")
+    await eng._plan_and_run(wait=True, trigger="nightly")
+    assert eng.records["status"]["value"] == "standby"
+    assert eng.records["status"]["attributes"]["detail"] == "Rachio standby"
+
+
+async def test_rachio_switch_unavailable_at_startup_then_on(freezer):
+    """The Rachio integration can load after this one: its switch reads
+    unavailable at startup, so the status starts idle and turns Standby once
+    the switch reports on."""
+    w, eng = _night_scheduler(freezer, when="2026-07-02 14:00:00")
+    w.set("switch.rachio_standby", "unavailable")
+    await eng._on_startup()
+    assert eng.records["status"]["value"] == "idle"
+    w.set("switch.rachio_standby", "on")
+    eng.sync_standby_status()
+    assert eng.records["status"]["value"] == "standby"

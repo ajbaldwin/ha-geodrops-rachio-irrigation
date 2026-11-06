@@ -392,9 +392,10 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
 
     def sync_standby_status(self) -> None:
         """Bring the status in line with the standby switches while no run is
-        going: Standby when one is on; back to idle when both are off and the
-        status still says Standby. Any other status (a skipped or aborted night)
-        stays until the next run. A run owns the status while it is going: its
+        going. A switch on shows Standby over any status: nothing waters until
+        it is off, which matters more than how last night ended. Both off
+        clears only a Standby status; a skipped or aborted night keeps saying
+        so until the next run. A run owns the status while it is going: its
         own standby checks stop it and say so."""
         if self._run_owns_plan():
             return

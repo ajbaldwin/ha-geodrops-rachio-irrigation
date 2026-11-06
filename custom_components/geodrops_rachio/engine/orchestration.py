@@ -221,7 +221,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
                                              skipped="standby")
                 await self._publish_standby_plan(
                     stamp, "System in Standby — nothing waters tonight.", trigger)
-                self._set_status("standby")
+                self._set_status("standby", detail=self._standby_source())
                 try:
                     await self._stamp_excluded_zones(cfg)
                 except Exception as err:

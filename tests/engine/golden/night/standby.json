@@ -75,6 +75,7 @@
   "status": [
    "standby",
    {
+    "detail": "Standby switch",
     "friendly_name": "Irrigation Status",
     "updated": "2026-07-01T23:00:00"
    }
@@ -98,7 +99,7 @@
   ],
   [
    "standby",
-   null
+   "Standby switch"
   ]
  ],
  "store": {
