@@ -111,6 +111,37 @@ async def test_status_activity_notify(freezer):
     assert world.calls[-1] == ("notify", "phone", {"message": "msg", "title": "Title"})
 
 
+async def test_notify_entity_gets_send_message(freezer):
+    """A notify ENTITY (no service by that name) is sent to through
+    notify.send_message, targeted by entity_id."""
+    world, eng = _eng(freezer)
+    world.missing_services.add(("notify", "phone"))
+    world.set("notify.phone", "unknown")
+    await eng._notify("msg", "Title")
+    assert world.calls[-1] == ("notify", "send_message", {
+        "entity_id": "notify.phone", "message": "msg", "title": "Title"})
+
+
+async def test_notify_service_wins_over_an_entity_of_the_same_name(freezer):
+    """Existing installs keep calling their service even when an entity shares
+    the name."""
+    world, eng = _eng(freezer)
+    world.set("notify.phone", "unknown")
+    await eng._notify("msg", "Title")
+    assert [c for c in world.calls if c[0] == "notify"] == [
+        ("notify", "phone", {"message": "msg", "title": "Title"})]
+
+
+async def test_notify_target_missing_entirely_only_warns(freezer, caplog):
+    world, eng = _eng(freezer)
+    world.missing_services.add(("notify", "phone"))
+    world.remove("notify.phone")
+    await eng._notify("msg", "Title")                 # must not raise
+    assert not [c for c in world.calls if c[0] == "notify"]
+    assert any(r.levelname == "WARNING" and "notification failed" in r.message
+               for r in caplog.records)
+
+
 async def test_publish_record_persists_and_restores(freezer):
     world, eng = _eng(freezer)
     await eng._publish_record("targets", 2, {"target_floors": {"front": 65.0}})

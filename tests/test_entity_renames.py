@@ -193,6 +193,41 @@ async def test_renames_of_owned_entities_leave_the_entry_alone(
     assert _running(hass, entry) is scheduler
 
 
+async def test_renamed_notify_entity_is_rebound(hass, enable_pyscript_and_rachio):
+    """The bound notify target is a notify entity (no service of that name), so
+    renaming it rewrites the binding: otherwise recaps stop until reconfigured."""
+    _external(hass, "notify.phone", "unknown")
+    entry, _ = await _setup(hass)
+    _rename(hass, "notify.phone", "notify.example_phone")
+    await hass.async_block_till_done()
+    assert entry.data["bindings"]["notify_service"] == "notify.example_phone"
+
+
+async def test_notify_service_binding_ignores_an_entity_rename(
+        hass, enable_pyscript_and_rachio):
+    """A notify SERVICE named like the renamed entity is what the scheduler
+    calls, so the binding stays."""
+    hass.services.async_register("notify", "phone", lambda call: None)
+    _external(hass, "notify.phone", "unknown")
+    entry, _ = await _setup(hass)
+    _rename(hass, "notify.phone", "notify.example_phone")
+    await hass.async_block_till_done()
+    assert entry.data["bindings"]["notify_service"] == "notify.phone"
+
+
+async def test_notify_entity_renamed_onto_a_service_name_is_not_rebound(
+        hass, enable_pyscript_and_rachio):
+    """Rebinding to the new id would send through the same-named service, not
+    the renamed entity. Leave the binding on the old id instead, so the
+    notify_missing repair asks the user to pick."""
+    hass.services.async_register("notify", "mobile_app_tablet", lambda call: None)
+    _external(hass, "notify.phone", "unknown")
+    entry, _ = await _setup(hass)
+    _rename(hass, "notify.phone", "notify.mobile_app_tablet")
+    await hass.async_block_till_done()
+    assert entry.data["bindings"]["notify_service"] == "notify.phone"
+
+
 def test_bound_entity_ids_skip_services_prefixes_and_text():
     from custom_components.geodrops_rachio.entity_renames import (
         bound_entity_ids, replace_entity_id)

@@ -44,8 +44,7 @@ REQUIRED_COMPONENTS = ("rachio",)
 # (e.g. a hose/spray zone) or when the user prefers to type the numbers.
 MANUAL_ZONE = "__manual__"
 
-# notify.* services that can't be driven by `service.call("notify", <name>)`
-# the way the scheduler does — the generic entity-targeting service is excluded
+# notify.send_message needs an entity_id, so it is no target itself: excluded
 # from the notify picker and rejected by validation.
 GENERIC_NOTIFY_SERVICES = {"send_message"}
 
@@ -355,38 +354,55 @@ class _BindingsWizardSteps(_FlowBase):
             )
             self._live_zones = []
 
-    def _notify_options(self) -> list[str]:
-        """Callable notify.* services, as `notify.<name>` values.
+    def _notify_options(self) -> list[selector.SelectOptionDict]:
+        """Notify targets, as `notify.<name>` values: entities, then services.
 
-        The scheduler calls `service.call("notify", <name>)`, so the target must
-        be a real notify service (e.g. a legacy notify.mobile_app_*), NOT a
-        notify entity that only answers notify.send_message. The generic
-        send_message service needs an entity_id target, so it's excluded.
+        The scheduler calls the legacy notify service of that name when there is
+        one, else sends to the notify entity through notify.send_message, so
+        either is a valid target. A value that is both is listed once, as the
+        service (the one that wins at send time). The generic send_message
+        service needs an entity_id target, so it's excluded.
         """
         services = self.hass.services.async_services().get("notify", {})
-        return sorted(
+        service_ids = {
             f"notify.{name}" for name in services
-            if name not in GENERIC_NOTIFY_SERVICES)
+            if name not in GENERIC_NOTIFY_SERVICES}
+        options = []
+        for eid in sorted(self.hass.states.async_entity_ids("notify")):
+            if eid in service_ids:
+                continue
+            state = self.hass.states.get(eid)
+            name = (state.attributes.get("friendly_name") if state else None) \
+                or eid.split(".", 1)[1]
+            options.append(selector.SelectOptionDict(
+                value=eid, label=f"{name} ({eid}, entity)"))
+        options.extend(
+            selector.SelectOptionDict(value=sid, label=f"{sid} (service)")
+            for sid in sorted(service_ids))
+        return options
 
     def _notify_service_field(self, default: str | None) -> tuple[vol.Marker, Any]:
         options = self._notify_options()
         if options:
-            if default not in options:
-                default = options[0]
+            if default not in {o["value"] for o in options}:
+                default = options[0]["value"]
             return (
                 vol.Required("notify_service", default=default),
                 selector.SelectSelector(selector.SelectSelectorConfig(
                     options=options, mode=selector.SelectSelectorMode.DROPDOWN,
                     custom_value=True)),
             )
-        # No notify services registered (unusual) — accept free text so setup
+        # No notify targets registered (unusual) — accept free text so setup
         # isn't blocked; the submit-time check still validates it.
         return (vol.Required("notify_service", default=default or ""), str)
 
     def _notify_service_valid(self, value: str) -> bool:
+        """A notify service, or an existing notify entity of that id."""
         name = (value or "").split(".", 1)[-1]
         return bool(name) and name not in GENERIC_NOTIFY_SERVICES and (
-            self.hass.services.has_service("notify", name))
+            self.hass.services.has_service("notify", name)
+            or (value.startswith("notify.")
+                and self.hass.states.get(value) is not None))
 
     def _build_bindings_schema(self, defaults: Mapping[str, Any]) -> vol.Schema:
         notify_key, notify_selector = self._notify_service_field(

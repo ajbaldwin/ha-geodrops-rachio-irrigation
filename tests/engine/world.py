@@ -18,6 +18,8 @@ import heapq
 import inspect
 from typing import Any, Callable
 
+from homeassistant.exceptions import ServiceNotFound
+
 
 def _aware(when) -> dt.datetime:
     if isinstance(when, str):
@@ -150,6 +152,9 @@ class FakeWorld:
         self.calls: list[tuple[str, str, dict]] = []
         self.logs: list[tuple[str, str]] = []
         self.failing: set[tuple[str, str]] = set()
+        # Services that are not registered: a call raises ServiceNotFound and is
+        # not recorded, as in Home Assistant (e.g. a renamed notify service).
+        self.missing_services: set[tuple[str, str]] = set()
         self._events: list = []
         self._seq = 0
         self.rachio = RachioSim(self)
@@ -220,6 +225,8 @@ class FakeWorld:
 
     # --- services ----------------------------------------------------------
     def call(self, domain: str, service: str, data: dict) -> None:
+        if (domain, service) in self.missing_services:
+            raise ServiceNotFound(domain, service)
         data = copy.deepcopy(dict(data))
         self.calls.append((domain, service, data))
         if (domain, service) in self.failing:

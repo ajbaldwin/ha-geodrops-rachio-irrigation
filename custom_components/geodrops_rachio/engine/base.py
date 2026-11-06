@@ -211,12 +211,24 @@ class EngineBase:
         least important thing the run does — HA integrations rename notify services
         out from under a static binding (e.g. legacy notify.mobile_app_* → notify
         entities), and that must degrade to a logged warning, not a lost recap.
+
+        The binding is a legacy notify service `notify.<name>` OR a notify entity
+        of that id. A service of that name wins; only when none exists is the
+        entity sent to through notify.send_message, so a rename that moved a
+        target from service to entity keeps working.
         """
+        target = self._loaded_bindings().notify_service
         try:
-            await self.port.call(
-                "notify", self._loaded_bindings().notify_service.split(".", 1)[-1],
-                {"message": message, "title": title},
-            )
+            try:
+                await self.port.call(
+                    "notify", target.split(".", 1)[-1],
+                    {"message": message, "title": title},
+                )
+            except ServiceNotFound:
+                if self.port.state(target) is None:
+                    raise
+                await self.port.call("notify", "send_message", {
+                    "entity_id": target, "message": message, "title": title})
         except Exception as err:
             _LOGGER.warning(
                 "notification failed (%s); run records were still written", err

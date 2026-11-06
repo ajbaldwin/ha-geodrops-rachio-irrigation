@@ -82,7 +82,8 @@ Setup checks for the Rachio integration being loaded and will abort with
    - **Rachio account** — your Rachio API key (Rachio web app → Account
      Settings → Get API Key). It is checked with Rachio before you continue,
      and stored in Home Assistant's own settings like any integration's key.
-   - **Core bindings** — your notification service, calendar, Rachio
+   - **Core bindings** — your notification target (a notify entity or
+     service; if both share a name, the service is used), calendar, Rachio
      controller, standby switch, and forecast entity (all picked from lists,
      not typed by hand).
    - **Weather station** — your local temperature/humidity/wind/rain/precip
@@ -436,8 +437,8 @@ without the switch work as before.
     loaded, so safety stops fail. Fix or re-add it.
   - *… names a Rachio controller that is not on the account*: the controller
     was renamed in the Rachio app. Pick it again under Configure → Core Setup.
-  - *The notification service … does not exist*: pick another under
-    Configure → Core Setup.
+  - *The notification target … does not exist*: pick another notify entity
+    or service under Configure → Core Setup.
   - *… stopped and could not restart* or *The old … pyscript may still be
     running*: restart Home Assistant.
 - **Home Assistant asks for the Rachio API key**: Rachio rejected it. Enter a

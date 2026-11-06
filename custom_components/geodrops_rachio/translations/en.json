@@ -33,7 +33,7 @@
           "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
           "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
-          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API.",
+          "notify_service": "Pick a notify entity (e.g. your phone's notify entity) or a notify service (e.g. notify.mobile_app_*) to send run recaps to. If a notify service and a notify entity share a name, the service is used.",
           "calendar_entity": "The calendar the scheduler adds each night's watering summary to."
         }
       },
@@ -161,7 +161,7 @@
       }
     },
     "error": {
-      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity.",
+      "invalid_notify_service": "That isn't a notify entity or notify service Home Assistant knows. Pick one from the list.",
       "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name.",
       "invalid_auth": "Rachio rejected this API key. Check it and try again.",
       "cannot_connect": "Could not reach Rachio. Check your internet connection and try again.",
@@ -194,7 +194,7 @@
           "rachio_device_name": "Your Rachio controller. Auto-listed from your account when the API key resolves; otherwise type the exact device name (Rachio app → Settings → Devices).",
           "standby_switch": "Your Rachio controller's standby switch; the scheduler mirrors it to suspend watering.",
           "forecast_entity": "A weather.* entity providing an hourly forecast (used for rain-skip and overnight forecast means).",
-          "notify_service": "Pick a notify SERVICE the scheduler can call directly, e.g. one starting notify.mobile_app_. A plain notify entity won't work — the scheduler calls notify services by name, not the send_message entity API.",
+          "notify_service": "Pick a notify entity (e.g. your phone's notify entity) or a notify service (e.g. notify.mobile_app_*) to send run recaps to. If a notify service and a notify entity share a name, the service is used.",
           "calendar_entity": "The calendar the scheduler adds each night's watering summary to."
         }
       },
@@ -333,7 +333,7 @@
       }
     },
     "error": {
-      "invalid_notify_service": "That target can't be called as a notify service. Pick a notify.mobile_app_* (or similar) service, not a notify entity.",
+      "invalid_notify_service": "That isn't a notify entity or notify service Home Assistant knows. Pick one from the list.",
       "duplicate_zone_key": "A zone with this name already exists. Choose a different zone name.",
       "invalid_advanced_overrides": "Advanced overrides must be a valid YAML mapping of tunables. Fix the YAML and try again.",
       "invalid_auth": "Rachio rejected this API key. Check it and try again.",
@@ -501,8 +501,8 @@
       "description": "{title} stops, pauses and resumes the controller named {device}, but the Rachio account has no controller by that name. Its controllers: {controllers}.\n\nRachio ignores a name it does not know, without an error, so a safety stop would leave the valves running.\n\nThis usually means the controller was renamed in the Rachio app. Go to **Settings → Devices & services → GeoDrops + Rachio Irrigation → Configure** → Core Setup and pick the controller again. This notice is re-checked each time the integration starts."
     },
     "notify_missing": {
-      "title": "The notification service for {title} does not exist",
-      "description": "{title} sends each night's recap to {service}, which does not exist, so recaps are not delivered. Run records and the calendar entry are still written.\n\nA notify service usually disappears when its integration is removed or the mobile app is reinstalled under a new name. Go to **Settings → Devices & services → GeoDrops + Rachio Irrigation → Configure** → Core Setup and pick another. This notice clears as soon as the service exists."
+      "title": "The notification target for {title} does not exist",
+      "description": "{title} sends each night's recap to the notify target {service}, which does not exist, so recaps are not delivered. Run records and the calendar entry are still written.\n\nA notify target (entity or service) usually disappears when its integration is removed or the mobile app is reinstalled under a new name. Go to **Settings → Devices & services → GeoDrops + Rachio Irrigation → Configure** → Core Setup and pick another. This notice clears as soon as the notify target exists."
     },
     "unload_failed": {
       "title": "{title} stopped and could not restart",
