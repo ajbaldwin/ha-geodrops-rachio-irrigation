@@ -280,6 +280,10 @@ def async_track(hass: HomeAssistant, entry: ConfigEntry) -> CALLBACK_TYPE:
         async_check_notify(hass, entry)
 
     @callback
+    def _on_notify_entity(_event: Event[EventStateChangedData]) -> None:
+        async_check_notify(hass, entry)
+
+    @callback
     def _on_entry_changed(_change: ConfigEntryChange,
                           changed: ConfigEntry) -> None:
         if changed.domain == RACHIO_DOMAIN:
@@ -296,7 +300,7 @@ def async_track(hass: HomeAssistant, entry: ConfigEntry) -> CALLBACK_TYPE:
         notify = _notify_service(entry)
         if notify is not None and valid_entity_id(notify):
             unsubs.append(async_track_state_change_event(
-                hass, [notify], _on_notify_service))
+                hass, [notify], _on_notify_entity))
         unsubs.extend([
             async_track_state_change_event(
                 hass, sorted(watched | switches), _on_bound_state),
