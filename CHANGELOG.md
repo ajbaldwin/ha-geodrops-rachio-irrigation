@@ -4,6 +4,20 @@ Notable changes to the GeoDrops + Rachio Irrigation integration. HACS shows
 each release's notes, so entries here stay user-facing and concise — one
 section per released version, newest first.
 
+## v1.3.3-beta.1 — Notify entities as the notification target
+
+### Changes
+
+- **The notification target can be a notify entity.** Configure → Core Setup
+  now lists notify entities (such as a phone's) alongside notify services, so
+  recaps keep working when an integration offers only an entity. If a service
+  and an entity share a name, the service is still used, so existing setups
+  are unchanged.
+- **Renaming the bound notify entity keeps recaps working.** The setting
+  follows the new entity ID; the *notification target does not exist* repair
+  now counts a notify entity as well as a service.
+- **Requires a Home Assistant restart** after updating.
+
 ## v1.3.2 — Frost adjustment, dollar spot, sturdier calibration and quieter nights
 
 Everything since v1.3.0, including all the 1.3.1 and 1.3.2 betas.
