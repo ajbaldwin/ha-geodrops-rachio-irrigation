@@ -236,7 +236,10 @@ zone, with these entities (all prefixed `geodrops_rachio_`):
 - **Status sensors** — `sensor.geodrops_rachio_status` (state is a
   human-readable status line; the raw lowercase status token, e.g. `waiting`,
   `watering`, `idle`, is in its `status` attribute — template against the
-  attribute, not the state, for automations), `sensor.geodrops_rachio_last_nightly`
+  attribute, not the state, for automations; between runs it reads `standby`
+  whenever the Rachio standby switch or *Standby* is on, from startup and as
+  soon as either flips, with a `detail` attribute saying which),
+  `sensor.geodrops_rachio_last_nightly`
   (last nightly run's record), `sensor.geodrops_rachio_last_run` (last run of
   any kind, including *Run irrigation now*), and `sensor.geodrops_rachio_plan`
   (tonight's plan: what a run would water). The state of the last three is a

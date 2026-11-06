@@ -810,6 +810,28 @@ async def test_scheduler_status_sensor_mirrors_scheduler(hass, enable_pyscript_a
     assert s.attributes["status"] == "waiting"
 
 
+
+async def test_status_follows_the_rachio_standby_switch(hass, enable_pyscript_and_rachio):
+    """Turning Rachio standby on or off shows on the Status sensor at once, not
+    only at the next 23:00 run."""
+    from tests.conftest import publish_record
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    standby = entry.data.get("bindings", {}).get(
+        "standby_switch", "switch.sprinkler_standby")
+    hass.states.async_set(standby, "off")
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    publish_record(hass, entry, "status", "idle", {})
+    hass.states.async_set(standby, "on")
+    await hass.async_block_till_done()
+    s = hass.states.get("sensor.geodrops_rachio_status")
+    assert s.attributes["status"] == "standby"
+    assert s.attributes["detail"] == "Rachio standby"
+    hass.states.async_set(standby, "off")
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.geodrops_rachio_status").attributes["status"] == "idle"
+
 def test_pretty_status_titlecases_tokens_and_preserves_sentinels():
     from custom_components.geodrops_rachio.sensor import _pretty_status
     assert _pretty_status("calibrating") == "Calibrating"

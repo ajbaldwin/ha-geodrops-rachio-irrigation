@@ -256,3 +256,32 @@ class EngineBase:
         if detail is not None:
             attributes["detail"] = detail
         self._publish("status", status, attributes)
+
+    def _standby_source(self) -> str | None:
+        """Which standby switch is on, as the status detail: the Rachio
+        controller's or this integration's own. None when neither is, or when no
+        config loads (that must never stop a status from being published).
+
+        Reads the config as it is now, not the last run's: this runs between
+        runs, after the user may have rebound a switch."""
+        try:
+            bindings = self._load_cfg().bindings
+        except Exception:
+            if self._current_bindings is None:
+                return None
+            bindings = self._current_bindings
+        if self.port.state(bindings.standby_switch) == "on":
+            return "Rachio standby"
+        if self.port.state(bindings.standby_boolean) == "on":
+            return "Standby switch"
+        return None
+
+    def _set_rest_status(self, detail: str | None = None) -> None:
+        """Publish the status for "no run going": Standby when either standby
+        switch is on (so a dashboard says the system is off before the 23:00 run
+        does), otherwise idle with `detail`."""
+        source = self._standby_source()
+        if source is not None:
+            self._set_status("standby", detail=source)
+        else:
+            self._set_status("idle", detail=detail)

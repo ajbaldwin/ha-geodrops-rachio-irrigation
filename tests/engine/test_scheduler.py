@@ -641,3 +641,75 @@ async def test_each_zone_records_its_own_last_valve_close(freezer):
     assert a["end_iso"] == "2026-07-02T04:55:00+00:00"       # the run's own end
     assert a["zone_end_iso"] == {"back": "2026-07-02T04:43:00+00:00",
                                  "front": "2026-07-02T04:55:00+00:00"}
+
+
+# --- standby status: shown at startup and whenever a standby switch flips -----
+@pytest.mark.parametrize("switch, detail", [
+    ("switch.rachio_standby", "Rachio standby"),
+    ("switch.geodrops_rachio_standby", "Standby switch"),
+])
+async def test_startup_status_reflects_standby(freezer, switch, detail):
+    """A restart while in Standby must say so, not Idle: the status used to read
+    Standby only after the next 23:00 run."""
+    w, eng = _night_scheduler(freezer, when="2026-07-02 14:00:00")
+    w.set(switch, "on")
+    await eng._on_startup()
+    assert _status_trail(eng) == [("standby", detail)]
+    assert eng.run_task is None
+
+
+async def test_startup_status_with_a_broken_config_is_idle(freezer):
+    w, eng = _night_scheduler(freezer, when="2026-07-02 14:00:00")
+    w.set("switch.rachio_standby", "on")
+
+    def broken():
+        raise ValueError("bad overrides")
+    eng._load_raw_config = broken
+    await eng._on_startup()
+    assert eng.records["status"]["value"] == "idle"
+
+
+async def test_standby_flip_while_idle_updates_status(freezer):
+    w, eng = _night_scheduler(freezer, when="2026-07-02 14:00:00")
+    await eng._on_startup()
+    w.set("switch.rachio_standby", "on")
+    eng.sync_standby_status()
+    assert eng.records["status"]["value"] == "standby"
+    assert eng.records["status"]["attributes"]["detail"] == "Rachio standby"
+    w.set("switch.rachio_standby", "off")
+    eng.sync_standby_status()
+    assert eng.records["status"]["value"] == "idle"
+    eng.sync_standby_status()                       # no change: no new publish
+    assert [v for v, _d in _status_trail(eng)] == ["idle", "standby", "idle"]
+
+
+async def test_standby_off_keeps_last_nights_outcome(freezer):
+    """Turning standby off only clears a Standby status; a skipped or aborted
+    night keeps saying so until the next run."""
+    w, eng = _night_scheduler(freezer, when="2026-07-02 14:00:00")
+    await eng._on_startup()
+    eng._set_status("skipped", detail="rain")
+    eng.sync_standby_status()
+    assert eng.records["status"]["value"] == "skipped"
+    w.set("switch.geodrops_rachio_standby", "on")
+    eng.sync_standby_status()
+    assert eng.records["status"]["value"] == "standby"
+
+
+async def test_standby_flip_during_a_run_leaves_status_to_the_run(freezer):
+    w, eng = _night_scheduler(freezer, when="2026-07-02 14:00:00")
+    await eng._on_startup()
+    eng._run_in_progress = True
+    eng._set_status("waiting", detail="watering starts 03:10")
+    w.set("switch.rachio_standby", "on")
+    eng.sync_standby_status()
+    assert eng.records["status"]["value"] == "waiting"
+
+
+async def test_reset_in_standby_reports_standby(freezer):
+    w, eng = _night_scheduler(freezer, when="2026-07-02 14:00:00")
+    eng._current_cfg = eng._load_cfg()
+    eng._current_bindings = eng._current_cfg.bindings
+    w.set("switch.rachio_standby", "on")
+    await eng.async_reset()
+    assert eng.records["status"]["value"] == "standby"

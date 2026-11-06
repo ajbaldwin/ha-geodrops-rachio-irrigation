@@ -618,7 +618,7 @@ class OrchestrationMixin(PlanningMixin, RunnerMixin):
             if aborted_reason:
                 self._set_status("aborted", detail=aborted_reason)
             else:
-                self._set_status("idle")
+                self._set_rest_status()
             await self._activity(
                 f"Run complete — rachio_calls={self.api_calls}, state_polls={self.state_polls}"
             )

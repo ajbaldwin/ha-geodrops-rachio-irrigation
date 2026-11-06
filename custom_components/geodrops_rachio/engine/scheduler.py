@@ -198,8 +198,9 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         await self.port.sleep(30)
         # Status is not persisted, so it would read `unknown` until the next run.
         # Publish it now so a filtered Logbook and any dashboard card have
-        # something to point at from the moment HA comes back.
-        self._set_status("idle")
+        # something to point at from the moment HA comes back — Standby when a
+        # standby switch is already on, not Idle until the next 23:00 run.
+        self._set_rest_status()
         # Bring back last night's record and the calibration series from the Store,
         # so a restart does not erase the evidence for the very night someone is
         # about to ask about.
@@ -380,11 +381,32 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
         whose state changes ask for one after the scheduler has stopped."""
         if self._hass is None:
             return
+        # Both standby switches are plan inputs, so a flip lands here: show it
+        # on the status at once. The hourly refresh re-checks it too.
+        self.sync_standby_status()
         if self._cancel_plan_refresh is not None:
             self._cancel_plan_refresh()
         self._cancel_plan_refresh = async_call_later(
             self._hass, PLAN_REFRESH_DELAY_S,
             HassJob(self._fire_plan_refresh, cancel_on_shutdown=True))
+
+    def sync_standby_status(self) -> None:
+        """Bring the status in line with the standby switches while no run is
+        going: Standby when one is on; back to idle when both are off and the
+        status still says Standby. Any other status (a skipped or aborted night)
+        stays until the next run. A run owns the status while it is going: its
+        own standby checks stop it and say so."""
+        if self._run_owns_plan():
+            return
+        source = self._standby_source()
+        rec = self.records.get("status") or {}
+        value = rec.get("value")
+        detail = (rec.get("attributes") or {}).get("detail")
+        if source is not None:
+            if (value, detail) != ("standby", source):
+                self._set_status("standby", detail=source)
+        elif value == "standby":
+            self._set_status("idle")
 
     async def _fire_plan_refresh(self, _now: dt.datetime) -> None:
         # Run by HA as the timer's own job, so it is tracked like any timer
@@ -474,7 +496,7 @@ class Scheduler(NativeRunMixin, LearningMixin, OrchestrationMixin, PlanningMixin
             await self.store.write(RUN_PROGRESS, None)
         except Exception as err:
             _LOGGER.warning("reset — marker cleanup skipped: %s", err)
-        self._set_status("idle", detail="reset")
+        self._set_rest_status(detail="reset")
         await self._activity("Manual reset — planned/running run cancelled; system idle")
 
     # --- ported: legacy lines 2794-2834 ---------------------------------------
