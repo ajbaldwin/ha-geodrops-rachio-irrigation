@@ -334,6 +334,24 @@ async def test_missing_notify_service_raises_an_issue_until_it_exists(
     assert _issue(hass, entry, "notify_missing") is not None
 
 
+async def test_bound_notify_entity_is_not_missing_until_it_goes(
+        hass, enable_pyscript_and_rachio):
+    for eid in BOUND:
+        hass.states.async_set(eid, "1")
+    hass.states.async_set("notify.example_phone", "unknown")
+    entry = await _setup(hass, {**DATA, "bindings": {
+        **DATA["bindings"], "notify_service": "notify.example_phone"}})
+    assert _issue(hass, entry, "notify_missing") is None
+
+    hass.states.async_remove("notify.example_phone")
+    await hass.async_block_till_done()
+    assert _issue(hass, entry, "notify_missing") is not None
+
+    hass.states.async_set("notify.example_phone", "unknown")
+    await hass.async_block_till_done()
+    assert _issue(hass, entry, "notify_missing") is None
+
+
 async def test_entry_issues_wait_for_start_and_clear_on_unload(
         hass, enable_pyscript_and_rachio):
     hass.set_state(CoreState.starting)

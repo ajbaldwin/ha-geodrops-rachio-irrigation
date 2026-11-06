@@ -12,7 +12,8 @@ must go on without it:
   (every safety stop, pause and resume) fails.
 - rachio_device_unknown: the bound controller name matches no controller on
   the account. rachio.stop_watering then stops nothing, without an error.
-- notify_missing: the bound notify service does not exist; run recaps are lost.
+- notify_missing: the bound notify target (service or entity) does not exist;
+  run recaps are lost.
 - unload_failed: the scheduler stopped but the entry could not unload, so
   nothing waters until Home Assistant restarts.
 - legacy_script_loaded: the v0.9 pyscript app may still be loaded alongside
@@ -40,7 +41,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE)
 from homeassistant.core import (
     CALLBACK_TYPE, CoreState, Event, EventStateChangedData, HomeAssistant,
-    callback)
+    callback, valid_entity_id)
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -195,8 +196,10 @@ def _notify_service(entry: ConfigEntry) -> str | None:
 @callback
 def async_check_notify(hass: HomeAssistant, entry: ConfigEntry) -> None:
     service = _notify_service(entry)
-    missing = service is not None and not hass.services.has_service(
-        NOTIFY_DOMAIN, service.split(".", 1)[-1])
+    # Either a legacy notify service or a notify entity of that id is a target.
+    missing = service is not None and not (
+        hass.services.has_service(NOTIFY_DOMAIN, service.split(".", 1)[-1])
+        or hass.states.get(service) is not None)
     _set(hass, entry, NOTIFY_MISSING, missing, ir.IssueSeverity.WARNING,
          service=f"`{service}`")
 
@@ -277,6 +280,10 @@ def async_track(hass: HomeAssistant, entry: ConfigEntry) -> CALLBACK_TYPE:
         async_check_notify(hass, entry)
 
     @callback
+    def _on_notify_entity(_event: Event[EventStateChangedData]) -> None:
+        async_check_notify(hass, entry)
+
+    @callback
     def _on_entry_changed(_change: ConfigEntryChange,
                           changed: ConfigEntry) -> None:
         if changed.domain == RACHIO_DOMAIN:
@@ -288,6 +295,12 @@ def async_track(hass: HomeAssistant, entry: ConfigEntry) -> CALLBACK_TYPE:
         # A probe's GeoDrops Active switch decides whether its unavailable
         # sensors are reported, so a change to it re-checks at once too.
         switches = {s for eid in watched if (s := _active_switch(hass, eid))}
+        # A bound notify entity appearing or going away changes the notify
+        # check too (a service registering/removing is handled below).
+        notify = _notify_service(entry)
+        if notify is not None and valid_entity_id(notify):
+            unsubs.append(async_track_state_change_event(
+                hass, [notify], _on_notify_entity))
         unsubs.extend([
             async_track_state_change_event(
                 hass, sorted(watched | switches), _on_bound_state),

@@ -292,7 +292,7 @@ async def test_switch_match_normalizes_spaces_and_underscores(
 
 
 async def test_invalid_notify_service_shows_error(hass, enable_pyscript_and_rachio):
-    # Picking a notify entity the scheduler can't call as a service is rejected.
+    # A target that is neither a notify service nor a notify entity is rejected.
     with _patch_poll():
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER})
@@ -303,6 +303,66 @@ async def test_invalid_notify_service_shows_error(hass, enable_pyscript_and_rach
             result["flow_id"], bad)
     assert result["step_id"] == "bindings"
     assert result["errors"] == {"notify_service": "invalid_notify_service"}
+
+
+async def test_notify_entity_is_accepted(hass, enable_pyscript_and_rachio):
+    hass.states.async_set("notify.example_phone", "unknown", {"friendly_name": "Example Phone"})
+    with _patch_poll():
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        picked = dict(BINDINGS_INPUT, notify_service="notify.example_phone")
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], picked)
+    assert result["step_id"] != "bindings"
+    assert not result.get("errors")
+
+
+async def test_generic_send_message_is_still_rejected(hass, enable_pyscript_and_rachio):
+    hass.services.async_register("notify", "send_message", lambda call: None)
+    with _patch_poll():
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], CONNECT_INPUT)
+        bad = dict(BINDINGS_INPUT, notify_service="notify.send_message")
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], bad)
+    assert result["errors"] == {"notify_service": "invalid_notify_service"}
+
+
+def _option_values(selector_field):
+    return [o["value"] if isinstance(o, dict) else o
+            for o in selector_field.config["options"]]
+
+
+async def test_notify_picker_lists_services_and_entities_once(hass):
+    from custom_components.geodrops_rachio.config_flow import (
+        GeodropsRachioConfigFlow)
+    hass.services.async_register("notify", "send_message", lambda call: None)
+    hass.services.async_register("notify", "mobile_app_tablet", lambda call: None)
+    hass.states.async_set("notify.example_phone", "unknown", {"friendly_name": "Example Phone"})
+    hass.states.async_set("notify.phone", "unknown")    # also a service (fixture)
+    flow = GeodropsRachioConfigFlow()
+    flow.hass = hass
+    _key, field = flow._notify_service_field(None)
+    values = _option_values(field)
+    assert sorted(values) == [
+        "notify.example_phone", "notify.mobile_app_tablet", "notify.phone"]
+    labels = {o["value"]: o["label"] for o in field.config["options"]}
+    assert "Example Phone" in labels["notify.example_phone"]
+
+
+async def test_notify_field_uses_the_picker_with_only_entities(hass):
+    from custom_components.geodrops_rachio.config_flow import (
+        GeodropsRachioConfigFlow)
+    hass.services.async_remove("notify", "phone")
+    hass.states.async_set("notify.example_phone", "unknown")
+    flow = GeodropsRachioConfigFlow()
+    flow.hass = hass
+    _key, field = flow._notify_service_field(None)
+    assert _option_values(field) == ["notify.example_phone"]
 
 
 def _suggested(result, field):

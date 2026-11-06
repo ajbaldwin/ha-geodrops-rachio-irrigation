@@ -24,8 +24,9 @@ from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN
 
 # Fields whose values are not entity ids even when shaped like one: the notify
-# target is a service name (a notify entity can share it), the overrides are
-# free YAML text, the API key is a secret.
+# target is a service name or a notify entity (renames of the latter are
+# followed separately, see _notify_entries), the overrides are free YAML text,
+# the API key is a secret.
 _NOT_ENTITY_FIELDS = frozenset({"notify_service", "advanced_overrides", "api_key"})
 
 
@@ -76,6 +77,30 @@ def _binding_entries(hass: HomeAssistant, entity_id: str) -> list[ConfigEntry]:
             if entity_id in bound_entity_ids(entry.data)]
 
 
+def _names_notify_service(hass: HomeAssistant, entity_id: str) -> bool:
+    return hass.services.has_service("notify", entity_id.split(".", 1)[1])
+
+
+def _notify_entries(hass: HomeAssistant, entity_id: str,
+                    new_id: str) -> list[ConfigEntry]:
+    """Entries whose notify target is the notify ENTITY `entity_id`, renamed to
+    `new_id`.
+
+    The notify binding is excluded from the entity-id walk because it may name a
+    legacy service, which a registry rename never touches. It follows the rename
+    only when no service has the old name (so the binding can only be the
+    entity) and none has the new one: the scheduler prefers a service, so
+    rebinding there would send to that service, not the renamed entity. The
+    binding then stays on the old id and the notify_missing repair asks."""
+    if not entity_id.startswith("notify.") or not new_id.startswith("notify.") \
+            or _names_notify_service(hass, entity_id) \
+            or _names_notify_service(hass, new_id):
+        return []
+    return [entry for entry in hass.config_entries.async_entries(DOMAIN)
+            if isinstance(entry.data.get("bindings"), Mapping)
+            and entry.data["bindings"].get("notify_service") == entity_id]
+
+
 @callback
 def async_track_renames(
         hass: HomeAssistant,
@@ -93,7 +118,9 @@ def async_track_renames(
         if event_data["action"] != "update":
             return False
         old = event_data.get("old_entity_id")
-        return old is not None and bool(_binding_entries(hass, old))
+        return old is not None and bool(
+            _binding_entries(hass, old)
+            or _notify_entries(hass, old, event_data["entity_id"]))
 
     @callback
     def _on_registry_update(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
@@ -102,13 +129,19 @@ def async_track_renames(
             return  # the event filter passes only renames
         old, new = data["old_entity_id"], data["entity_id"]
         reg_entry = er.async_get(hass).async_get(new)
-        for entry in _binding_entries(hass, old):
-            if reg_entry is not None and reg_entry.config_entry_id == entry.entry_id \
+        bound = _binding_entries(hass, old)
+        notify = _notify_entries(hass, old, new)
+        # An entry binding both gets one update carrying both changes.
+        for entry in bound + [e for e in notify if e not in bound]:
+            if entry in bound and reg_entry is not None \
+                    and reg_entry.config_entry_id == entry.entry_id \
                     and reg_entry.platform == DOMAIN:
                 continue
             on_rename(entry, old, new)
-            hass.config_entries.async_update_entry(
-                entry, data=replace_entity_id(entry.data, old, new))
+            data = replace_entity_id(entry.data, old, new)
+            if entry in notify:
+                data["bindings"] = {**data["bindings"], "notify_service": new}
+            hass.config_entries.async_update_entry(entry, data=data)
 
     return hass.bus.async_listen(
         er.EVENT_ENTITY_REGISTRY_UPDATED, _on_registry_update,
